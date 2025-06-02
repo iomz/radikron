@@ -17,6 +17,8 @@ const (
 	EnvRadicronHome = "RADICRON_HOME"
 	// Language for ID3v2 tags
 	ID3v2LangJPN = "jpn"
+	// LatLng for Japan
+	JapanLatLng = 40.0
 	// Kilobytes for the metric bytes
 	Kilobytes = 1024
 	// DefaultMaxConcurrents
@@ -26,7 +28,7 @@ const (
 	// OneDay is 24 hours
 	OneDay = 24
 	// OutputDatetimeLayout for downloaded files
-	OutputDatetimeLayout = "200601021504"
+	OutputDatetimeLayout = "2006-01-02-1504"
 	// TZTokyo for time location
 	TZTokyo = "Asia/Tokyo"
 	// UserIDLength for user-id
