@@ -26,7 +26,7 @@ const (
 	// OneDay is 24 hours
 	OneDay = 24
 	// OutputDatetimeLayout for downloaded files
-	OutputDatetimeLayout = "200601021504"
+	OutputDatetimeLayout = "2006-01-02-1504"
 	// TZTokyo for time location
 	TZTokyo = "Asia/Tokyo"
 	// UserIDLength for user-id
