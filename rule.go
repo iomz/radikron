@@ -192,7 +192,7 @@ func (r *Rule) MatchWindow(ft string) bool {
 	fetchWindow, err := time.ParseDuration(r.Window)
 	if err != nil {
 		log.Printf("parsing [%s].window failed: %v (using 24h)", r.Name, err)
-		fetchWindow = time.Hour * 24
+		fetchWindow = time.Hour * OneDay
 	}
 	if startTime.Add(fetchWindow).Before(CurrentTime) {
 		return false // skip the program outside the fetch window

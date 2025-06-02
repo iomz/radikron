@@ -81,11 +81,11 @@ func (a *Asset) GenerateGPSForAreaID(areaID string) string {
 		rand.Shuffle(len(negpos), func(i, j int) {
 			negpos[i], negpos[j] = negpos[j], negpos[i]
 		})
-		lat := c.Lat + (rand.Float64()/40.0)*negpos[0] //nolint:gosec
+		lat := c.Lat + (rand.Float64()/JapanLatLng)*negpos[0] //nolint:gosec
 		rand.Shuffle(len(negpos), func(i, j int) {
 			negpos[i], negpos[j] = negpos[j], negpos[i]
 		})
-		lng := c.Lng + (rand.Float64()/40.0)*negpos[0] //nolint:gosec
+		lng := c.Lng + (rand.Float64()/JapanLatLng)*negpos[0] //nolint:gosec
 		return fmt.Sprintf("%.6f,%.6f,gps", lat, lng)
 	}
 	return ""
