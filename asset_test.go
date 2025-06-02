@@ -15,7 +15,7 @@ import (
 func TestNewAsset(t *testing.T) {
 	const nAreas = 47
 	const nRegions = 7
-	const nStations = 110
+	const nStations = 109
 	client, err := radiko.New("")
 	if err != nil {
 		t.Error(err)

@@ -6,7 +6,7 @@ import (
 
 func TestFetchXMLRegion(t *testing.T) {
 	const nRegions = 8
-	const nStations = 110
+	const nStations = 109
 
 	region, err := FetchXMLRegion()
 	if err != nil {
