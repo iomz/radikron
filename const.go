@@ -1,4 +1,4 @@
-package radicron
+package radikron
 
 const (
 	// BufferMinutes for fetching the playlist.m3u8 chunks

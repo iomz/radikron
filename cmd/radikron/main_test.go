@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iomz/radicron"
+	"github.com/iomz/radikron"
 	"github.com/yyoshiki41/go-radiko"
 	"github.com/yyoshiki41/radigo"
 )
 
 func TestConfig(t *testing.T) {
 	var err error
-	radicron.Location, err = time.LoadLocation(radicron.TZTokyo)
+	radikron.Location, err = time.LoadLocation(radikron.TZTokyo)
 	if err != nil {
 		t.Error(err)
 	}
@@ -21,8 +21,8 @@ func TestConfig(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ck := radicron.ContextKey("asset")
-	asset, err := radicron.NewAsset(client)
+	ck := radikron.ContextKey("asset")
+	asset, err := radikron.NewAsset(client)
 	if err != nil {
 		log.Fatal(err)
 	}

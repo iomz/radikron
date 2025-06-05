@@ -8,10 +8,10 @@ COPY go.mod /build/
 COPY go.sum /build/
 COPY *.go /build/
 COPY assets/ /build/assets/
-COPY cmd/radicron/ /build/cmd/radicron/
+COPY cmd/radikron/ /build/cmd/radikron/
 WORKDIR /build
 RUN go mod vendor
-RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -o radicron ./cmd/radicron/...
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -o radikron ./cmd/radikron/...
 
 # export to a single layer image
 FROM alpine:latest
@@ -23,7 +23,7 @@ RUN apk add --no-cache ca-certificates \
 
 WORKDIR /app
 
-COPY --from=build /build/radicron /app/radicron
+COPY --from=build /build/radikron /app/radikron
 
 # set timezone
 ENV TZ "Asia/Tokyo"
@@ -31,5 +31,5 @@ ENV TZ "Asia/Tokyo"
 ENV RADICRON_HOME "/radiko"
 VOLUME ["/radiko"]
 
-ENTRYPOINT ["/app/radicron"]
+ENTRYPOINT ["/app/radikron"]
 CMD ["-c", "/app/config.yml"]

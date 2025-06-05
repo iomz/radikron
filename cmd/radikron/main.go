@@ -13,19 +13,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/iomz/radicron"
+	"github.com/iomz/radikron"
 	"github.com/spf13/viper"
 	"github.com/yyoshiki41/go-radiko"
 	"github.com/yyoshiki41/radigo"
 )
 
 // reload config to set a context and returns Rules
-func reload(ctx context.Context, filename string) (radicron.Rules, error) {
+func reload(ctx context.Context, filename string) (radikron.Rules, error) {
 	// update CurrentTime
-	radicron.CurrentTime = time.Now().In(radicron.Location)
+	radikron.CurrentTime = time.Now().In(radikron.Location)
 
 	// init Rules
-	rules := radicron.Rules{}
+	rules := radikron.Rules{}
 	cwd, _ := os.Getwd()
 
 	// check ${RADICRON_HOME}
@@ -63,7 +63,7 @@ func reload(ctx context.Context, filename string) (radicron.Rules, error) {
 	// set the default file-format as aac
 	viper.SetDefault("file-format", radigo.AudioFormatAAC)
 	// set the default minimum-output-size as 1MB
-	viper.SetDefault("minimum-output-size", radicron.DefaultMinimumOutputSize)
+	viper.SetDefault("minimum-output-size", radikron.DefaultMinimumOutputSize)
 
 	fileFormat := viper.GetString("file-format")
 
@@ -82,16 +82,16 @@ func reload(ctx context.Context, filename string) (radicron.Rules, error) {
 	minimumOutputSize := viper.GetInt64("minimum-output-size")
 
 	// save the asset in the current context
-	asset := radicron.GetAsset(ctx)
+	asset := radikron.GetAsset(ctx)
 	asset.OutputFormat = fileFormat
-	asset.MinimumOutputSize = minimumOutputSize * radicron.Kilobytes * radicron.Kilobytes
+	asset.MinimumOutputSize = minimumOutputSize * radikron.Kilobytes * radikron.Kilobytes
 	asset.LoadAvailableStations(areaID)
 	asset.AddExtraStations(extraStations)
 	asset.RemoveIgnoreStations(ignoreStations)
 
 	// load rules from the file
 	for name := range viper.GetStringMap("rules") {
-		rule := &radicron.Rule{}
+		rule := &radikron.Rule{}
 		err := viper.UnmarshalKey(fmt.Sprintf("rules.%s", name), rule)
 		if err != nil {
 			return rules, fmt.Errorf("error reading the rule: %s", err)
@@ -121,10 +121,10 @@ func run(wg *sync.WaitGroup, configFileName string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ck := radicron.ContextKey("asset")
+	ck := radikron.ContextKey("asset")
 	for {
 		// replenish asset
-		asset, err := radicron.NewAsset(client)
+		asset, err := radikron.NewAsset(client)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -144,7 +144,7 @@ func run(wg *sync.WaitGroup, configFileName string) {
 			}
 
 			// fetch the weekly program
-			weeklyPrograms, err := radicron.FetchWeeklyPrograms(stationID)
+			weeklyPrograms, err := radikron.FetchWeeklyPrograms(stationID)
 			if err != nil {
 				log.Printf("failed to fetch the %s program: %v", stationID, err)
 				continue
@@ -154,7 +154,7 @@ func run(wg *sync.WaitGroup, configFileName string) {
 			// check each program
 			for _, p := range weeklyPrograms {
 				if rules.HasMatch(stationID, p) {
-					err = radicron.Download(ctx, wg, p)
+					err = radikron.Download(ctx, wg, p)
 					if err != nil {
 						log.Printf("downlod faild: %s", err)
 					}
@@ -168,7 +168,7 @@ func run(wg *sync.WaitGroup, configFileName string) {
 
 		// if the next program is not found, check again 24 hours later
 		if asset.NextFetchTime == nil {
-			oneDayLater := radicron.CurrentTime.Add(radicron.OneDay * time.Hour)
+			oneDayLater := radikron.CurrentTime.Add(radikron.OneDay * time.Hour)
 			asset.NextFetchTime = &oneDayLater
 		}
 		// sleep
@@ -198,7 +198,7 @@ func main() {
 		log.SetFlags(log.LstdFlags | log.Lshortfile)
 	}
 
-	log.Println("starting radicron")
+	log.Println("starting radikron")
 	wg := sync.WaitGroup{}
 	run(&wg, *conf)
 
@@ -209,5 +209,5 @@ func main() {
 	// finish the downloading in progress
 	log.Println("exit once all the downloads complete")
 	wg.Wait()
-	log.Println("exiting radicron")
+	log.Println("exiting radikron")
 }
