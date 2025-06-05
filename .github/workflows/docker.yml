@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       dockerfile: Dockerfile
-      image_name: iomz/radicron
+      image_name: iomz/radikron
       platforms: linux/amd64,linux/arm64
       registry: ghcr.io
     steps:

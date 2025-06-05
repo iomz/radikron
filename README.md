@@ -1,12 +1,12 @@
-![radicron](https://i.imgur.com/yVc93uh.png)
+![radikron](https://i.imgur.com/Nnby5YQ.png)
 
-[![build status](https://github.com/iomz/radicron/workflows/build/badge.svg)](https://github.com/iomz/radicron/actions?query=workflow%3Abuild)
-[![docker status](https://github.com/iomz/radicron/actions/workflows/docker.yml/badge.svg)](https://github.com/iomz/radicron/actions/workflows/docker.yml)
+[![build status](https://github.com/iomz/radikron/workflows/build/badge.svg)](https://github.com/iomz/radikron/actions?query=workflow%3Abuild)
+[![docker status](https://github.com/iomz/radikron/actions/workflows/docker.yml/badge.svg)](https://github.com/iomz/radikron/actions/workflows/docker.yml)
 
-[![docker image size](https://ghcr-badge.egpl.dev/iomz/radicron/size)](https://github.com/iomz/radicron/pkgs/container/radicron)
-[![godoc](https://godoc.org/github.com/iomz/radicron?status.svg)](https://godoc.org/github.com/iomz/radicron)
-[![codecov](https://codecov.io/gh/iomz/radicron/branch/main/graph/badge.svg?token=fjhUp7BLPB)](https://codecov.io/gh/iomz/radicron)
-[![go report](https://goreportcard.com/badge/github.com/iomz/radicron)](https://goreportcard.com/report/github.com/iomz/radicron)
+[![docker image size](https://ghcr-badge.egpl.dev/iomz/radikron/size)](https://github.com/iomz/radikron/pkgs/container/radikron)
+[![godoc](https://godoc.org/github.com/iomz/radikron?status.svg)](https://godoc.org/github.com/iomz/radikron)
+[![codecov](https://codecov.io/gh/iomz/radikron/branch/main/graph/badge.svg?token=fjhUp7BLPB)](https://codecov.io/gh/iomz/radikron)
+[![go report](https://goreportcard.com/badge/github.com/iomz/radikron)](https://goreportcard.com/report/github.com/iomz/radikron)
 [![license: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Sometimes we miss our favorite shows on [radiko](https://radiko.jp/) and they get vanished from http://radiko.jp/#!/timeshift – let's just keep them automatically saved locally, from AoE.
@@ -31,7 +31,7 @@ Sometimes we miss our favorite shows on [radiko](https://radiko.jp/) and they ge
 
 ## Requirements
 
-radicron requires [FFmpeg](https://ffmpeg.org/download.html) to combine m3u8 chunks to a single aac file (or convert to mp3).
+radikron requires [FFmpeg](https://ffmpeg.org/download.html) to combine m3u8 chunks to a single aac file (or convert to mp3).
 
 Make sure `ffmpeg` exists in your `$PATH`.
 
@@ -40,7 +40,7 @@ The [docker image](#try-with-docker) already contains all the requirements inclu
 ## Installation
 
 ```bash
-go install github.com/iomz/radicron/cmd/radicron@latest
+go install github.com/iomz/radikron/cmd/radikron@latest
 ```
 
 ## Configuration
@@ -76,7 +76,7 @@ In addition, set `${RADICRON_HOME}` to set the download directory.
 ## Usage
 
 ```bash
-mkdir -p ./radiko/{downloads,tmp} && RADICRON_HOME=./radiko radicron -c config.yml
+mkdir -p ./radiko/{downloads,tmp} && RADICRON_HOME=./radiko radikron -c config.yml
 ```
 
 ### Try with Docker
@@ -89,7 +89,7 @@ docker compose up
 
 ## Build the image yourself
 
-In case the [image](https://github.com/iomz/radicron/pkgs/container/radicron) is not available for your platform:
+In case the [image](https://github.com/iomz/radikron/pkgs/container/radikron) is not available for your platform:
 
 ```console
 docker compose build

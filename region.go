@@ -1,4 +1,4 @@
-package radicron
+package radikron
 
 import (
 	"encoding/xml"

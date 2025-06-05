@@ -5,8 +5,8 @@ before:
   hooks:
     - go mod tidy
 builds:
-  - binary: radicron
-    main: ./cmd/radicron
+  - binary: radikron
+    main: ./cmd/radikron
     flags:
       - -trimpath
     goos:

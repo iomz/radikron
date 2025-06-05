@@ -1,4 +1,4 @@
-module github.com/iomz/radicron
+module github.com/iomz/radikron
 
 go 1.20
 
