@@ -1,4 +1,5 @@
 area-id: JP13
+file-format: aac
 rules:
     airship:
         station-id: FMT

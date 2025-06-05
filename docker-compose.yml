@@ -1,8 +1,8 @@
-version: "3.9"
+---
 services:
   radikron:
     build: .
-    image: ghcr.io/iomz/radikron:latest
+    image: ghcr.io/iomz/radikron:0.4.0
     container_name: radikron
     restart: unless-stopped
     user: 1000:1000
