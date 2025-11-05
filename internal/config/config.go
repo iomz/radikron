@@ -13,12 +13,12 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	AreaID             string
-	ExtraStations      []string
-	IgnoreStations     []string
-	FileFormat         string
-	MinimumOutputSize  int64
-	Rules              radikron.Rules
+	AreaID            string
+	ExtraStations     []string
+	IgnoreStations    []string
+	FileFormat        string
+	MinimumOutputSize int64
+	Rules             radikron.Rules
 }
 
 // LoadConfig loads and validates configuration from the specified file
