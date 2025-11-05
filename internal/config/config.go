@@ -23,7 +23,10 @@ type Config struct {
 
 // LoadConfig loads and validates configuration from the specified file
 func LoadConfig(filename string) (*Config, error) {
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %w", err)
+	}
 
 	// Set up RADICRON_HOME if not set
 	if os.Getenv(radikron.EnvRadicronHome) == "" {
