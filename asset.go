@@ -286,7 +286,7 @@ func (d *Device) Auth(a *Asset, areaID string) error {
 	if err != nil {
 		return err
 	}
-	length, err := strconv.ParseInt(resp.Header.Get(RadikoKeyLentghHeader), 10, 64)
+	length, err := strconv.ParseInt(resp.Header.Get(RadikoKeyLengthHeader), 10, 64)
 	if err != nil {
 		return err
 	}
