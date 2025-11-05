@@ -27,7 +27,7 @@ func TestConfig(t *testing.T) {
 		log.Fatal(err)
 	}
 	ctx := context.WithValue(context.Background(), ck, asset)
-	rules, err := reload(ctx, "test/config-test.yml")
+	cfg, err := reloadConfig(ctx, "test/config-test.yml")
 	if err != nil {
 		t.Error(err)
 	}
@@ -36,7 +36,7 @@ func TestConfig(t *testing.T) {
 		t.Errorf("%v => want %v", asset.OutputFormat, radigo.AudioFormatAAC)
 	}
 
-	if len(rules) != 4 {
+	if len(cfg.Rules) != 4 {
 		t.Error("error parsing the rules")
 	}
 
