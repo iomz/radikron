@@ -363,8 +363,7 @@ func timeshiftProgM3U8(
 	}
 
 	uri := buildM3U8RequestURI(prog)
-	req, _ = http.NewRequest("POST", uri, http.NoBody)
-	req = req.WithContext(ctx)
+	req, _ = http.NewRequestWithContext(ctx, "POST", uri, http.NoBody)
 	headers := map[string]string{
 		UserAgentHeader:       device.UserAgent,
 		RadikoAreaIDHeader:    areaID,
