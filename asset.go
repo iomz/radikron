@@ -263,7 +263,10 @@ type Device struct {
 func (d *Device) Auth(a *Asset, areaID string) error {
 	client := a.DefaultClient
 	// auth1
-	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://radiko.jp/v2/api/auth1", http.NoBody)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://radiko.jp/v2/api/auth1", http.NoBody)
+	if err != nil {
+		return err
+	}
 	headers := map[string]string{
 		UserAgentHeader:        d.UserAgent,
 		RadikoAppHeader:        d.AppName,
@@ -294,7 +297,10 @@ func (d *Device) Auth(a *Asset, areaID string) error {
 		return err
 	}
 	location := a.GenerateGPSForAreaID(areaID)
-	req, _ = http.NewRequestWithContext(context.Background(), "GET", "https://radiko.jp/v2/api/auth2", http.NoBody)
+	req, err = http.NewRequestWithContext(context.Background(), "GET", "https://radiko.jp/v2/api/auth2", http.NoBody)
+	if err != nil {
+		return err
+	}
 	headers = map[string]string{
 		UserAgentHeader:        d.UserAgent,
 		RadikoAppHeader:        d.AppName,
