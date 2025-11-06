@@ -63,18 +63,18 @@ func (c *Config) ApplyToAsset(asset *radikron.Asset) error {
 	asset.AddExtraStations(c.ExtraStations)
 	asset.RemoveIgnoreStations(c.IgnoreStations)
 
+	// Build a set of existing stations for faster lookup
+	existingStations := make(map[string]bool)
+	for _, as := range asset.AvailableStations {
+		existingStations[as] = true
+	}
+
 	// Add station IDs from rules that aren't already in available stations
 	for _, rule := range c.Rules {
 		if rule.HasStationID() {
-			isNewStation := true
-			for _, as := range asset.AvailableStations {
-				if as == rule.StationID {
-					isNewStation = false
-					break
-				}
-			}
-			if isNewStation {
+			if !existingStations[rule.StationID] {
 				asset.AddExtraStations([]string{rule.StationID})
+				existingStations[rule.StationID] = true
 			}
 		}
 	}

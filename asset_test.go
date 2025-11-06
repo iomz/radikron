@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -245,5 +246,256 @@ func TestSchedules(t *testing.T) {
 	}
 	if !ss.HasDuplicate(p) {
 		t.Errorf("hasDuplicate: %v", p)
+	}
+}
+
+func TestSchedulesHasDuplicateFalse(t *testing.T) {
+	ss := Schedules{
+		&Prog{
+			ID: "12345",
+		},
+	}
+	p := &Prog{
+		ID: "67890",
+	}
+	if ss.HasDuplicate(p) {
+		t.Errorf("hasDuplicate: %v should be false", p)
+	}
+}
+
+func TestSchedulesHasDuplicateEmpty(t *testing.T) {
+	ss := Schedules{}
+	p := &Prog{
+		ID: "12345",
+	}
+	if ss.HasDuplicate(p) {
+		t.Errorf("hasDuplicate: %v should be false for empty schedule", p)
+	}
+}
+
+func TestAddExtraStations(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	asset.AvailableStations = []string{"TBS", "MBS"}
+
+	// Test adding new stations
+	asset.AddExtraStations([]string{"FMT", "FMJ"})
+	if len(asset.AvailableStations) != 4 {
+		t.Errorf("expected 4 stations, got %d", len(asset.AvailableStations))
+	}
+
+	// Test adding duplicate stations (should not add)
+	asset.AddExtraStations([]string{"TBS", "NEW"})
+	if len(asset.AvailableStations) != 5 {
+		t.Errorf("expected 5 stations, got %d", len(asset.AvailableStations))
+	}
+
+	// Test adding empty list
+	asset.AddExtraStations([]string{})
+	if len(asset.AvailableStations) != 5 {
+		t.Errorf("expected 5 stations after empty add, got %d", len(asset.AvailableStations))
+	}
+}
+
+func TestRemoveIgnoreStations(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	asset.AvailableStations = []string{"TBS", "MBS", "FMT", "FMJ"}
+
+	// Test removing existing stations
+	asset.RemoveIgnoreStations([]string{"TBS", "MBS"})
+	if len(asset.AvailableStations) != 2 {
+		t.Errorf("expected 2 stations, got %d", len(asset.AvailableStations))
+	}
+	if asset.AvailableStations[0] != "FMT" || asset.AvailableStations[1] != "FMJ" {
+		t.Errorf("unexpected stations: %v", asset.AvailableStations)
+	}
+
+	// Test removing non-existent stations
+	asset.RemoveIgnoreStations([]string{"NONEXISTENT"})
+	if len(asset.AvailableStations) != 2 {
+		t.Errorf("expected 2 stations after removing non-existent, got %d", len(asset.AvailableStations))
+	}
+
+	// Test removing empty list
+	asset.RemoveIgnoreStations([]string{})
+	if len(asset.AvailableStations) != 2 {
+		t.Errorf("expected 2 stations after empty remove, got %d", len(asset.AvailableStations))
+	}
+}
+
+func TestLoadAvailableStations(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	asset.LoadAvailableStations("JP13")
+
+	expectedStations := []string{
+		"FMJ", "FMT", "INT", "JOAK", "JOAK-FM", "JORF", "LFR", "QRR", "RN1", "RN2", "TBS",
+	}
+	less := func(a, b string) bool { return a < b }
+	if !cmp.Equal(asset.AvailableStations, expectedStations, cmpopts.SortSlices(less)) {
+		t.Errorf("expected stations %v, got %v", expectedStations, asset.AvailableStations)
+	}
+
+	// Test with non-existent area
+	asset.LoadAvailableStations("NONEXISTENT")
+	if len(asset.AvailableStations) != 0 {
+		t.Errorf("expected 0 stations for non-existent area, got %d", len(asset.AvailableStations))
+	}
+}
+
+func TestGetAsset(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+
+	// Test getting asset from context
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+	got := GetAsset(ctx)
+	if got != asset {
+		t.Errorf("expected asset from context, got %v", got)
+	}
+
+	// Test getting asset when not in context
+	ctx2 := context.Background()
+	got2 := GetAsset(ctx2)
+	if got2 != nil {
+		t.Errorf("expected nil when asset not in context, got %v", got2)
+	}
+
+	// Test getting asset when wrong type in context
+	ctx3 := context.WithValue(context.Background(), ContextKey("asset"), "not an asset")
+	got3 := GetAsset(ctx3)
+	if got3 != nil {
+		t.Errorf("expected nil when wrong type in context, got %v", got3)
+	}
+}
+
+func TestGetPartialKeyError(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	// Corrupt the base64 key
+	asset.Base64Key = "invalid base64!!!"
+
+	_, err = asset.GetPartialKey(0, 16)
+	if err == nil {
+		t.Error("expected error for invalid base64 key")
+	}
+}
+
+func TestGetPartialKeyDifferentOffset(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	// Test with a different valid offset
+	partialKey, err := asset.GetPartialKey(0, 16)
+	if err != nil {
+		t.Error(err)
+	}
+	if partialKey == "" {
+		t.Error("expected non-empty partial key")
+	}
+}
+
+func TestAuthContextCancellation(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	device := &Device{
+		AppName:    "aSmartPhone7a",
+		AppVersion: "7.2.0",
+		Name:       "02.SM-A515F",
+		UserAgent:  "Dalvik/2.1.0 (Linux; U; Android 11; SM-A515F/RZ8A210801M)",
+		UserID:     "0123456789abcdef0123456789abcdef",
+		Connection: "wifi",
+	}
+
+	// Test with cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err = device.Auth(ctx, asset, "JP13")
+	if err == nil {
+		t.Error("expected error for cancelled context")
+	}
+}
+
+func TestAuthWithTimeout(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	device := &Device{
+		AppName:    "aSmartPhone7a",
+		AppVersion: "7.2.0",
+		Name:       "02.SM-A515F",
+		UserAgent:  "Dalvik/2.1.0 (Linux; U; Android 11; SM-A515F/RZ8A210801M)",
+		UserID:     "0123456789abcdef0123456789abcdef",
+		Connection: "wifi",
+	}
+
+	// Test with very short timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond) // Ensure timeout has passed
+
+	err = device.Auth(ctx, asset, "JP13")
+	if err == nil {
+		t.Error("expected error for timed out context")
+	}
+}
+
+func TestUnmarshalJSONError(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	// Test with invalid JSON
+	err = asset.UnmarshalJSON([]byte("invalid json"))
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestUnmarshalJSONInvalidFormat(t *testing.T) {
+	client, err := radiko.New("")
+	if err != nil {
+		t.Error(err)
+	}
+
+	asset, _ := NewAsset(client)
+	// Test with JSON that doesn't match expected format
+	err = asset.UnmarshalJSON([]byte(`{"not": "a map of arrays"}`))
+	if err == nil {
+		t.Error("expected error for invalid JSON format")
 	}
 }
