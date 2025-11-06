@@ -10,6 +10,22 @@ import (
 	"github.com/yyoshiki41/radigo"
 )
 
+func withCwd(t *testing.T, dir string) {
+	t.Helper()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(old); err != nil {
+			t.Fatalf("failed to restore cwd: %v", err)
+		}
+	})
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Test loading config from test file
 	configPath := filepath.Join("..", "..", "cmd", "radikron", "test", "config-test.yml")
@@ -41,21 +57,9 @@ func TestLoadConfigWithDefaults(t *testing.T) {
 	}
 
 	// Change to temp directory to test default config loading
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current directory: %v", err)
-	}
-	defer func() {
-		if err := os.Chdir(oldCwd); err != nil {
-			t.Fatalf("failed to restore directory: %v", err)
-		}
-	}()
+	withCwd(t, tmpDir)
 
-	err = os.Chdir(tmpDir)
-	if err != nil {
-		t.Fatalf("failed to change directory: %v", err)
-	}
-
+	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)
@@ -87,21 +91,9 @@ func TestLoadConfigInvalidFormat(t *testing.T) {
 		t.Fatalf("failed to create test config: %v", err)
 	}
 
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current directory: %v", err)
-	}
-	defer func() {
-		if err := os.Chdir(oldCwd); err != nil {
-			t.Fatalf("failed to restore directory: %v", err)
-		}
-	}()
+	withCwd(t, tmpDir)
 
-	err = os.Chdir(tmpDir)
-	if err != nil {
-		t.Fatalf("failed to change directory: %v", err)
-	}
-
+	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	_, err = LoadConfig("config.yml")
 	if err == nil {
 		t.Error("expected error for unsupported audio format")
@@ -139,14 +131,14 @@ func TestApplyToAsset(t *testing.T) {
 	}
 
 	// Check that extra stations from rules are added
-	hasFMJ := false
+	hasFMT := false
 	for _, station := range asset.AvailableStations {
 		if station == "FMT" {
-			hasFMJ = true
+			hasFMT = true
 			break
 		}
 	}
-	if !hasFMJ {
+	if !hasFMT {
 		t.Error("expected FMT station to be in available stations")
 	}
 }
@@ -166,21 +158,9 @@ extra-stations:
 		t.Fatalf("failed to create test config: %v", err)
 	}
 
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current directory: %v", err)
-	}
-	defer func() {
-		if err := os.Chdir(oldCwd); err != nil {
-			t.Fatalf("failed to restore directory: %v", err)
-		}
-	}()
+	withCwd(t, tmpDir)
 
-	err = os.Chdir(tmpDir)
-	if err != nil {
-		t.Fatalf("failed to change directory: %v", err)
-	}
-
+	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)
@@ -226,28 +206,19 @@ ignore-stations:
 		t.Fatalf("failed to create test config: %v", err)
 	}
 
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current directory: %v", err)
-	}
-	defer func() {
-		if err := os.Chdir(oldCwd); err != nil {
-			t.Fatalf("failed to restore directory: %v", err)
-		}
-	}()
+	withCwd(t, tmpDir)
 
-	err = os.Chdir(tmpDir)
-	if err != nil {
-		t.Fatalf("failed to change directory: %v", err)
-	}
-
+	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)
 	}
 
 	// Create a properly initialized asset with stations
-	// We need to load an actual asset since LoadAvailableStations requires it
+	// Tip: this path depends on network/remote data. Gate to avoid flakes.
+	if os.Getenv("RADIKRON_NETWORK_TESTS") != "1" || testing.Short() {
+		t.Skip("skipping network-dependent test; set RADIKRON_NETWORK_TESTS=1 to run")
+	}
 	client, err := radiko.New("")
 	if err != nil {
 		t.Fatalf("failed to create radiko client: %v", err)
@@ -296,21 +267,9 @@ func TestLoadConfigMP3Format(t *testing.T) {
 		t.Fatalf("failed to create test config: %v", err)
 	}
 
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get current directory: %v", err)
-	}
-	defer func() {
-		if err := os.Chdir(oldCwd); err != nil {
-			t.Fatalf("failed to restore directory: %v", err)
-		}
-	}()
+	withCwd(t, tmpDir)
 
-	err = os.Chdir(tmpDir)
-	if err != nil {
-		t.Fatalf("failed to change directory: %v", err)
-	}
-
+	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)
