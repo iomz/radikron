@@ -8,6 +8,7 @@ COPY go.mod /build/
 COPY go.sum /build/
 COPY *.go /build/
 COPY assets/ /build/assets/
+COPY internal/ /build/internal/
 COPY cmd/radikron/ /build/cmd/radikron/
 WORKDIR /build
 RUN go mod vendor
