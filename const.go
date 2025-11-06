@@ -50,7 +50,7 @@ const (
 	RadikoUserHeader       = "X-Radiko-User"
 	// auth1 res
 	RadikoAuthTokenHeader = "X-Radiko-AuthToken" //nolint:gosec
-	RadikoKeyLentghHeader = "X-Radiko-KeyLength"
+	RadikoKeyLengthHeader = "X-Radiko-KeyLength"
 	RadikoKeyOffsetHeader = "X-Radiko-KeyOffset"
 	// auth2 req
 	RadikoConnectionHeader = "X-Radiko-Connection"

@@ -356,15 +356,17 @@ func timeshiftProgM3U8(
 
 	device, ok := asset.AreaDevices[areaID]
 	if !ok {
-		device, err = asset.NewDevice(areaID)
+		device, err = asset.NewDevice(ctx, areaID)
 		if err != nil {
 			return "", err
 		}
 	}
 
 	uri := buildM3U8RequestURI(prog)
-	req, _ = http.NewRequest("POST", uri, http.NoBody)
-	req = req.WithContext(ctx)
+	req, err = http.NewRequestWithContext(ctx, "POST", uri, http.NoBody)
+	if err != nil {
+		return "", err
+	}
 	headers := map[string]string{
 		UserAgentHeader:       device.UserAgent,
 		RadikoAreaIDHeader:    areaID,
