@@ -129,7 +129,7 @@ func (a *Asset) LoadAvailableStations(areaID string) {
 }
 
 // NewDevice returns a pointer to a new authorized Device
-func (a *Asset) NewDevice(areaID string) (*Device, error) {
+func (a *Asset) NewDevice(ctx context.Context, areaID string) (*Device, error) {
 	// generate userID
 	blob := make([]byte, UserIDLength)
 	if _, err := cr.Read(blob); err != nil {
@@ -190,7 +190,7 @@ func (a *Asset) NewDevice(areaID string) (*Device, error) {
 	device.Name = fmt.Sprintf("%s.%s", sdk.ID, model)
 
 	// get token
-	err := device.Auth(a, areaID)
+	err := device.Auth(ctx, a, areaID)
 	if err != nil {
 		return device, err
 	}
@@ -260,10 +260,10 @@ type Device struct {
 	UserID     string
 }
 
-func (d *Device) Auth(a *Asset, areaID string) error {
+func (d *Device) Auth(ctx context.Context, a *Asset, areaID string) error {
 	client := a.DefaultClient
 	// auth1
-	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://radiko.jp/v2/api/auth1", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://radiko.jp/v2/api/auth1", http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -297,7 +297,7 @@ func (d *Device) Auth(a *Asset, areaID string) error {
 		return err
 	}
 	location := a.GenerateGPSForAreaID(areaID)
-	req, err = http.NewRequestWithContext(context.Background(), "GET", "https://radiko.jp/v2/api/auth2", http.NoBody)
+	req, err = http.NewRequestWithContext(ctx, "GET", "https://radiko.jp/v2/api/auth2", http.NoBody)
 	if err != nil {
 		return err
 	}

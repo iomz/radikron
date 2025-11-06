@@ -1,6 +1,7 @@
 package radikron
 
 import (
+	"context"
 	"math"
 	"regexp"
 	"strconv"
@@ -198,7 +199,7 @@ func TestNewDevice(t *testing.T) {
 	}
 
 	a, _ := NewAsset(client)
-	device, err := a.NewDevice("JP13")
+	device, err := a.NewDevice(context.Background(), "JP13")
 
 	if err != nil {
 		t.Error(err)

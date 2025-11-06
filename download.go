@@ -356,7 +356,7 @@ func timeshiftProgM3U8(
 
 	device, ok := asset.AreaDevices[areaID]
 	if !ok {
-		device, err = asset.NewDevice(areaID)
+		device, err = asset.NewDevice(ctx, areaID)
 		if err != nil {
 			return "", err
 		}
