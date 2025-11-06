@@ -35,7 +35,7 @@ func TestLoadConfigWithDefaults(t *testing.T) {
 	// Create a temporary config file
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.yml")
-	err := os.WriteFile(configFile, []byte("file-format: aac\n"), 0644)
+	err := os.WriteFile(configFile, []byte("file-format: aac\n"), 0600)
 	if err != nil {
 		t.Fatalf("failed to create test config: %v", err)
 	}
@@ -45,7 +45,11 @@ func TestLoadConfigWithDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get current directory: %v", err)
 	}
-	defer os.Chdir(oldCwd)
+	defer func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("failed to restore directory: %v", err)
+		}
+	}()
 
 	err = os.Chdir(tmpDir)
 	if err != nil {
@@ -78,7 +82,7 @@ func TestLoadConfigInvalidFormat(t *testing.T) {
 	// Create a temporary config file with invalid format
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.yml")
-	err := os.WriteFile(configFile, []byte("file-format: invalid\n"), 0644)
+	err := os.WriteFile(configFile, []byte("file-format: invalid\n"), 0600)
 	if err != nil {
 		t.Fatalf("failed to create test config: %v", err)
 	}
@@ -87,7 +91,11 @@ func TestLoadConfigInvalidFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get current directory: %v", err)
 	}
-	defer os.Chdir(oldCwd)
+	defer func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("failed to restore directory: %v", err)
+		}
+	}()
 
 	err = os.Chdir(tmpDir)
 	if err != nil {
@@ -153,7 +161,7 @@ extra-stations:
   - EXTRA1
   - EXTRA2
 `
-	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
 	if err != nil {
 		t.Fatalf("failed to create test config: %v", err)
 	}
@@ -162,7 +170,11 @@ extra-stations:
 	if err != nil {
 		t.Fatalf("failed to get current directory: %v", err)
 	}
-	defer os.Chdir(oldCwd)
+	defer func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("failed to restore directory: %v", err)
+		}
+	}()
 
 	err = os.Chdir(tmpDir)
 	if err != nil {
@@ -209,7 +221,7 @@ ignore-stations:
   - TBS
   - MBS
 `
-	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
 	if err != nil {
 		t.Fatalf("failed to create test config: %v", err)
 	}
@@ -218,7 +230,11 @@ ignore-stations:
 	if err != nil {
 		t.Fatalf("failed to get current directory: %v", err)
 	}
-	defer os.Chdir(oldCwd)
+	defer func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("failed to restore directory: %v", err)
+		}
+	}()
 
 	err = os.Chdir(tmpDir)
 	if err != nil {
@@ -275,7 +291,7 @@ func TestLoadConfigMP3Format(t *testing.T) {
 	// Create a temporary config file with MP3 format
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.yml")
-	err := os.WriteFile(configFile, []byte("file-format: mp3\n"), 0644)
+	err := os.WriteFile(configFile, []byte("file-format: mp3\n"), 0600)
 	if err != nil {
 		t.Fatalf("failed to create test config: %v", err)
 	}
@@ -284,7 +300,11 @@ func TestLoadConfigMP3Format(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get current directory: %v", err)
 	}
-	defer os.Chdir(oldCwd)
+	defer func() {
+		if err := os.Chdir(oldCwd); err != nil {
+			t.Fatalf("failed to restore directory: %v", err)
+		}
+	}()
 
 	err = os.Chdir(tmpDir)
 	if err != nil {

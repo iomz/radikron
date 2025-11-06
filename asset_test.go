@@ -435,13 +435,13 @@ func TestAuthContextCancellation(t *testing.T) {
 		Connection: "wifi",
 	}
 
-	// Test with cancelled context
+	// Test with canceled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
 	err = device.Auth(ctx, asset, "JP13")
 	if err == nil {
-		t.Error("expected error for cancelled context")
+		t.Error("expected error for canceled context")
 	}
 }
 
