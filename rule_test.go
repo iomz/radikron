@@ -26,6 +26,7 @@ var matchtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
 		},
 		true,
 	},
@@ -44,6 +45,7 @@ var matchtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
 		},
 		false,
 	},
@@ -61,6 +63,7 @@ var matchtests = []struct {
 			"Pfm", // Pfm doesn't match
 			[]string{},
 			ProgGenre{},
+			"",
 			"",
 		},
 		false,
@@ -126,6 +129,7 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
 		},
 		true,
 	},
@@ -142,6 +146,7 @@ var keywordtests = []struct {
 			"Pfm",
 			[]string{},
 			ProgGenre{},
+			"",
 			"",
 		},
 		true,
@@ -160,6 +165,7 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
 		},
 		true,
 	},
@@ -177,6 +183,7 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
 		},
 		true,
 	},
@@ -193,6 +200,7 @@ var keywordtests = []struct {
 			"Keyword", // match
 			[]string{},
 			ProgGenre{},
+			"",
 			"",
 		},
 		true,
@@ -211,6 +219,7 @@ var keywordtests = []struct {
 			[]string{"Keyword"}, // match
 			ProgGenre{},
 			"test",
+			"",
 		},
 		true,
 	},
@@ -227,6 +236,7 @@ var keywordtests = []struct {
 			"Pfm",
 			[]string{},
 			ProgGenre{},
+			"",
 			"",
 		},
 		false,
@@ -494,6 +504,100 @@ func TestHasRuleWithoutStationID(t *testing.T) {
 		res := tt.in.HasRuleWithoutStationID()
 		if tt.out != res {
 			t.Errorf("(%v).HasRuleWithoutStationID() => %v, want %v", tt.in, res, tt.out)
+		}
+	}
+}
+
+func TestFindMatch(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
+	var findmatchtests = []struct {
+		rules     Rules
+		stationID string
+		prog      *Prog
+		expected  *Rule
+	}{
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+			},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+			},
+			&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
+		},
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+			},
+			"TBS",
+			&Prog{
+				"ID",
+				"TBS",
+				"20230625050000",
+				"20230625060000",
+				"OtherTitle",
+				"OtherKeyword",
+				"",
+				"OtherPfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+			},
+			&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+		},
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+			},
+			"MBS",
+			&Prog{
+				"ID",
+				"MBS",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+			},
+			nil,
+		},
+	}
+
+	for _, tt := range findmatchtests {
+		got := tt.rules.FindMatch(tt.stationID, tt.prog)
+		if tt.expected == nil {
+			if got != nil {
+				t.Errorf("Rules.FindMatch(%s, %v) => %v, want nil", tt.stationID, tt.prog, got)
+			}
+		} else {
+			if got == nil {
+				t.Errorf("Rules.FindMatch(%s, %v) => nil, want %v", tt.stationID, tt.prog, tt.expected)
+			} else if got.Name != tt.expected.Name {
+				t.Errorf("Rules.FindMatch(%s, %v) => rule with name %s, want %s", tt.stationID, tt.prog, got.Name, tt.expected.Name)
+			}
 		}
 	}
 }
