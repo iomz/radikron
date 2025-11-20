@@ -58,7 +58,8 @@ func processStation(ctx context.Context, wg *sync.WaitGroup, stationID string, r
 
 	// Process each program
 	for _, p := range weeklyPrograms {
-		if rules.HasMatch(stationID, p) {
+		if matchedRule := rules.FindMatch(stationID, p); matchedRule != nil {
+			p.RuleName = matchedRule.Name
 			if err := radikron.Download(ctx, wg, p); err != nil {
 				log.Printf("download failed: %s", err)
 			}

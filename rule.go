@@ -17,6 +17,16 @@ func (rs Rules) HasMatch(stationID string, p *Prog) bool {
 	return false
 }
 
+// FindMatch returns the first matching rule for the given station and program
+func (rs Rules) FindMatch(stationID string, p *Prog) *Rule {
+	for _, r := range rs {
+		if r.Match(stationID, p) {
+			return r
+		}
+	}
+	return nil
+}
+
 func (rs Rules) HasRuleWithoutStationID() bool {
 	for _, r := range rs {
 		if !r.HasStationID() {

@@ -396,11 +396,18 @@ func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 	tag.SetArtist(prog.Pfm)
 	tag.SetAlbum(prog.Title)
 	tag.SetYear(prog.Ft[:4])
+
+	// Add comment with program info
 	tag.AddCommentFrame(id3v2.CommentFrame{
 		Encoding:    id3v2.EncodingUTF8,
 		Language:    ID3v2LangJPN,
 		Description: prog.Info,
 	})
+
+	// Set rule name as Album Artist if available
+	if prog.RuleName != "" {
+		tag.AddTextFrame(tag.CommonID("Band/Orchestra/Accompaniment"), id3v2.EncodingUTF8, prog.RuleName)
+	}
 
 	// write tag to the aac
 	if err = tag.Save(); err != nil {

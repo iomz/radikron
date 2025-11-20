@@ -20,6 +20,7 @@ type Prog struct {
 	Tags      []string
 	Genre     ProgGenre
 	M3U8      string
+	RuleName  string // name of the rule that matched this program
 }
 
 type ProgGenre struct {
