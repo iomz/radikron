@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/yyoshiki41/go-radiko"
 	"github.com/yyoshiki41/radigo"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the application configuration
@@ -64,6 +65,7 @@ func (c *Config) ApplyToAsset(asset *radikron.Asset) error {
 	asset.LoadAvailableStations(c.AreaID)
 	asset.AddExtraStations(c.ExtraStations)
 	asset.RemoveIgnoreStations(c.IgnoreStations)
+	asset.Rules = c.Rules
 
 	// Build a set of existing stations for faster lookup
 	existingStations := make(map[string]bool)
@@ -140,8 +142,68 @@ func (c *Config) buildConfig() error {
 	return nil
 }
 
-// loadRules loads rules from the configuration
+// loadRules loads rules from the configuration, preserving the order from the config file
 func loadRules() (radikron.Rules, error) {
+	rules := radikron.Rules{}
+
+	// Get the config file path
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		// Fallback to viper's method if config file path is not available
+		return loadRulesFromViper()
+	}
+
+	// Read the YAML file directly to preserve order
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Parse YAML to yaml.Node to preserve order
+	var rootNode yaml.Node
+	if err := yaml.Unmarshal(data, &rootNode); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Find the rules section in the YAML node
+	var rulesNode *yaml.Node
+	if rootNode.Kind == yaml.DocumentNode && len(rootNode.Content) > 0 {
+		root := rootNode.Content[0]
+		if root.Kind == yaml.MappingNode {
+			for i := 0; i < len(root.Content); i += 2 {
+				keyNode := root.Content[i]
+				if keyNode.Value == "rules" && i+1 < len(root.Content) {
+					rulesNode = root.Content[i+1]
+					break
+				}
+			}
+		}
+	}
+
+	if rulesNode == nil || rulesNode.Kind != yaml.MappingNode {
+		return rules, nil
+	}
+
+	// Iterate through rules in order (yaml.Node.Content preserves order)
+	for i := 0; i < len(rulesNode.Content); i += 2 {
+		nameNode := rulesNode.Content[i]
+		ruleNode := rulesNode.Content[i+1]
+		name := nameNode.Value
+
+		rule := &radikron.Rule{}
+		// Unmarshal the rule node directly
+		if err := ruleNode.Decode(rule); err != nil {
+			return nil, fmt.Errorf("error reading the rule '%s': %w", name, err)
+		}
+		rule.SetName(name)
+		rules = append(rules, rule)
+	}
+
+	return rules, nil
+}
+
+// loadRulesFromViper is a fallback method when config file path is not available
+func loadRulesFromViper() (radikron.Rules, error) {
 	rules := radikron.Rules{}
 	ruleMap := viper.GetStringMap("rules")
 

@@ -262,7 +262,7 @@ func TestHandleDuplicate_NonexistentFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
-	err = handleDuplicate("nonexistent-file", radigo.AudioFormatAAC, "downloads", "", output)
+	err = handleDuplicate("nonexistent-file", radigo.AudioFormatAAC, "downloads", "", output, Rules{})
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for non-existent file: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestHandleDuplicate_ExistingInDefaultFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
-	err = handleDuplicate("test-file", radigo.AudioFormatAAC, "downloads", "", output)
+	err = handleDuplicate("test-file", radigo.AudioFormatAAC, "downloads", "", output, Rules{})
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for existing file in default folder: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestHandleDuplicate_MoveToConfiguredFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
-	err = handleDuplicate("move-test", radigo.AudioFormatAAC, "downloads", "citypop", output)
+	err = handleDuplicate("move-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{})
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error when moving file: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestHandleDuplicate_ExistingInConfiguredFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
-	err = handleDuplicate("move-test", radigo.AudioFormatAAC, "downloads", "citypop", output)
+	err = handleDuplicate("move-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{})
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for existing file in configured folder: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestHandleDuplicate_ConflictBothLocations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
-	err = handleDuplicate("conflict-test", radigo.AudioFormatAAC, "downloads", "citypop", output)
+	err = handleDuplicate("conflict-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{})
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error when file exists in both locations: %v", err)
 	}
@@ -391,6 +391,51 @@ func TestHandleDuplicate_ConflictBothLocations(t *testing.T) {
 	}
 	if _, err := os.Stat(defaultFile); os.IsNotExist(err) {
 		t.Error("File should still exist in default folder when file also exists in configured folder")
+	}
+}
+
+func TestHandleDuplicate_ChecksAllConfiguredFolders(t *testing.T) {
+	downloadsDir, cleanup := setupHandleDuplicateTest(t)
+	defer cleanup()
+
+	// Create multiple configured folders
+	jazzDir := filepath.Join(downloadsDir, "jazz")
+	if err := os.MkdirAll(jazzDir, DirPermissions); err != nil {
+		t.Fatalf("Failed to create jazz directory: %v", err)
+	}
+
+	rockDir := filepath.Join(downloadsDir, "rock")
+	if err := os.MkdirAll(rockDir, DirPermissions); err != nil {
+		t.Fatalf("Failed to create rock directory: %v", err)
+	}
+
+	// Create a file in the jazz folder (different from the current configured folder)
+	jazzFile := filepath.Join(jazzDir, "test-file.aac")
+	file, err := os.Create(jazzFile)
+	if err != nil {
+		t.Fatalf("Failed to create file in jazz folder: %v", err)
+	}
+	file.Close()
+
+	// Create rules with different folders
+	rules := Rules{
+		{Folder: "jazz"},
+		{Folder: "rock"},
+		{Folder: "citypop"}, // current configured folder
+	}
+
+	// Try to handle duplicate with citypop as configured folder, but file exists in jazz
+	output, err := newOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "citypop")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	err = handleDuplicate("test-file", radigo.AudioFormatAAC, "downloads", "citypop", output, rules)
+	if err != nil {
+		t.Errorf("handleDuplicate should not return error: %v", err)
+	}
+	// Should skip because file exists in jazz folder (one of the configured folders)
+	if _, err := os.Stat(jazzFile); os.IsNotExist(err) {
+		t.Error("File should still exist in jazz folder")
 	}
 }
 
