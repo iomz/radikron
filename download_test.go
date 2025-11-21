@@ -119,10 +119,10 @@ func TestNewOutputConfig(t *testing.T) {
 	// Test without folder
 	output, err := newOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
 	if err != nil {
-		t.Errorf("newOutputConfig failed: %v", err)
+		t.Fatalf("newOutputConfig failed: %v", err)
 	}
 	if output == nil {
-		t.Error("newOutputConfig returned nil")
+		t.Fatal("newOutputConfig returned nil")
 	}
 	if output.FileBaseName != "test-file" {
 		t.Errorf("newOutputConfig FileBaseName => %v, want test-file", output.FileBaseName)
@@ -134,10 +134,10 @@ func TestNewOutputConfig(t *testing.T) {
 	// Test with folder
 	output, err = newOutputConfig("test-file", radigo.AudioFormatMP3, "downloads", "citypop")
 	if err != nil {
-		t.Errorf("newOutputConfig with folder failed: %v", err)
+		t.Fatalf("newOutputConfig with folder failed: %v", err)
 	}
 	if output == nil {
-		t.Error("newOutputConfig with folder returned nil")
+		t.Fatal("newOutputConfig with folder returned nil")
 	}
 	if output.FileFormat != radigo.AudioFormatMP3 {
 		t.Errorf("newOutputConfig FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatMP3)
@@ -254,6 +254,9 @@ func TestGetChunklist(t *testing.T) {
 		t.Errorf("getChunklist should return nil chunklist for master playlist, got %v", chunklist)
 	}
 	// Error may or may not be nil depending on decode behavior, but chunklist must be nil
+	if err != nil {
+		t.Logf("expected non-media playlist decode error: %v", err)
+	}
 }
 
 func TestGetURIErrorCases(t *testing.T) {

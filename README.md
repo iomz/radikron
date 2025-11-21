@@ -1,3 +1,5 @@
+# radikron
+
 ![radikron](https://i.imgur.com/Nnby5YQ.png)
 
 [![build status](https://github.com/iomz/radikron/workflows/build/badge.svg)](https://github.com/iomz/radikron/actions?query=workflow%3Abuild)
@@ -9,7 +11,7 @@
 [![go report](https://goreportcard.com/badge/github.com/iomz/radikron)](https://goreportcard.com/report/github.com/iomz/radikron)
 [![license: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-Sometimes we miss our favorite shows on [radiko](https://radiko.jp/) and they get vanished from http://radiko.jp/#!/timeshift – let's just keep them automatically saved locally, from AoE.
+Sometimes we miss our favorite shows on [radiko](https://radiko.jp/) and they get vanished from <http://radiko.jp/#!/timeshift> – let's just keep them automatically saved locally, from AoE.
 
 **Disclaimer**:
 
