@@ -158,7 +158,7 @@ rules:
     title: "THE TRAD"
 ```
 
-In addition, set `${RADICRON_HOME}` to set the base directory for downloads and temporary files. The actual download location will be `${RADICRON_HOME}/{downloads}` (or the value specified in the `downloads` config option).
+The base directory for downloads and temporary files is determined by the `RADICRON_HOME` environment variable. If not set, it defaults to `./radiko` in the current working directory. The actual download location will be `${RADICRON_HOME}/{downloads}` (or the value specified in the `downloads` config option).
 
 ### ID3 Tags
 
@@ -177,17 +177,19 @@ These tags are embedded in both AAC and MP3 files, making it easy to organize an
 
 ### Basic Usage
 
-1. Create the necessary directories:
+Simply run radikron with your configuration file:
 
-   ```bash
-   mkdir -p ./radiko/{downloads,tmp}
-   ```
+```bash
+radikron -c config.yml
+```
 
-2. Set the `RADICRON_HOME` environment variable and run radikron:
+By default, radikron will use `./radiko` as the base directory (containing `downloads` and `tmp` subdirectories). To use a different location, set the `RADICRON_HOME` environment variable:
 
-   ```bash
-   RADICRON_HOME=./radiko radikron -c config.yml
-   ```
+```bash
+RADICRON_HOME=/path/to/your/directory radikron -c config.yml
+```
+
+**Note**: radikron automatically creates all necessary directories (download directories, subfolders, and temporary directories) when needed. You don't need to create them manually.
 
 The application will:
 

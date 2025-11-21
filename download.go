@@ -386,6 +386,11 @@ func tempAACDir() (string, error) {
 		return "", err
 	}
 
+	// Ensure the tmp directory exists
+	if err := os.MkdirAll(fullPath, 0755); err != nil {
+		return "", err
+	}
+
 	aacDir, err := os.MkdirTemp(fullPath, "aac")
 	if err != nil {
 		return "", err
