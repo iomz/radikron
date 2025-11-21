@@ -919,39 +919,42 @@ func TestMoveFile_CopyFallbackErrorPaths(t *testing.T) {
 	}
 
 	// Test 2: Destination directory is non-writable (fails at Create in copy fallback)
-	// Create a read-only directory
-	readOnlyDir := filepath.Join(tmpDir, "readonly")
-	err = os.MkdirAll(readOnlyDir, 0500) // Read-only, no write permission
-	if err != nil {
-		t.Fatalf("Failed to create read-only directory: %v", err)
-	}
-	defer func() {
-		// Restore permissions for cleanup
-		_ = os.Chmod(readOnlyDir, 0700)
-	}()
+	// Skip on Windows as file permissions work differently (ACLs vs Unix permissions)
+	if runtime.GOOS != "windows" {
+		// Create a read-only directory
+		readOnlyDir := filepath.Join(tmpDir, "readonly")
+		err = os.MkdirAll(readOnlyDir, 0500) // Read-only, no write permission
+		if err != nil {
+			t.Fatalf("Failed to create read-only directory: %v", err)
+		}
+		defer func() {
+			// Restore permissions for cleanup
+			_ = os.Chmod(readOnlyDir, 0700)
+		}()
 
-	sourceFile2 := filepath.Join(tmpDir, "source2.txt")
-	err = os.WriteFile(sourceFile2, []byte("test content 2"), 0600)
-	if err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
-	}
+		sourceFile2 := filepath.Join(tmpDir, "source2.txt")
+		err = os.WriteFile(sourceFile2, []byte("test content 2"), 0600)
+		if err != nil {
+			t.Fatalf("Failed to create source file: %v", err)
+		}
 
-	readOnlyDest := filepath.Join(readOnlyDir, "dest.txt")
-	err = moveFile(sourceFile2, readOnlyDest)
-	if err == nil {
-		t.Error("moveFile should return error when destination directory is not writable")
-	}
-	if err != nil && !strings.Contains(err.Error(), "failed to create destination file") {
-		t.Errorf("Expected error about creating destination file, got: %v", err)
-	}
-	// Source file should still exist after failed move
-	if _, err := os.Stat(sourceFile2); os.IsNotExist(err) {
-		t.Error("Source file should still exist after failed move")
-	}
-	// Destination should not exist (or should be cleaned up if partially created)
-	if _, err := os.Stat(readOnlyDest); err == nil {
-		// If file was created, it should be cleaned up
-		t.Error("Destination file should not exist or should be cleaned up after failed move")
+		readOnlyDest := filepath.Join(readOnlyDir, "dest.txt")
+		err = moveFile(sourceFile2, readOnlyDest)
+		if err == nil {
+			t.Error("moveFile should return error when destination directory is not writable")
+		}
+		if err != nil && !strings.Contains(err.Error(), "failed to create destination file") {
+			t.Errorf("Expected error about creating destination file, got: %v", err)
+		}
+		// Source file should still exist after failed move
+		if _, err := os.Stat(sourceFile2); os.IsNotExist(err) {
+			t.Error("Source file should still exist after failed move")
+		}
+		// Destination should not exist (or should be cleaned up if partially created)
+		if _, err := os.Stat(readOnlyDest); err == nil {
+			// If file was created, it should be cleaned up
+			t.Error("Destination file should not exist or should be cleaned up after failed move")
+		}
 	}
 }
 
@@ -1039,22 +1042,25 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	// On Windows, ensure the directory is removed before TempDir cleanup
 	// This prevents "file in use" errors during cleanup.
 	// Windows may keep the directory locked briefly after id3v2.Open() fails,
-	// so we use defer with retries to ensure cleanup.
-	defer func() {
+	// so we use t.Cleanup() which runs before t.TempDir() cleanup.
+	t.Cleanup(func() {
 		if runtime.GOOS == "windows" {
 			// Give Windows time to release the directory handle
-			time.Sleep(100 * time.Millisecond)
-			// Retry removal with exponential backoff
-			for i := 0; i < 5; i++ {
+			time.Sleep(200 * time.Millisecond)
+			// Retry removal with exponential backoff, more aggressively
+			for i := 0; i < 10; i++ {
 				if err := os.Remove(dirPath); err == nil {
 					return
 				}
-				time.Sleep(time.Duration(i+1) * 50 * time.Millisecond)
+				// Longer delays for Windows
+				time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
 			}
+			// Final attempt with RemoveAll in case there are nested items
+			_ = os.RemoveAll(dirPath)
 		} else {
 			_ = os.Remove(dirPath)
 		}
-	}()
+	})
 
 	output2 := newOutputConfigFromPath(tmpDir, "dir", radigo.AudioFormatAAC)
 	err = writeID3Tag(output2, prog)
