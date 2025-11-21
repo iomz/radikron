@@ -1,0 +1,42 @@
+# Cursor AI Preferences for this Project
+
+## Commit Message Format
+
+All Git commit messages must follow the [Conventional Changelog](https://github.com/conventional-changelog/conventional-changelog) format:
+
+```text
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+Where:
+
+- **type**: The type of change (feat, fix, docs, style, refactor, perf, test, chore, etc.)
+- **scope**: Optional - the area of the codebase affected (e.g., ui, core, handlers)
+- **subject**: Short description in imperative mood (e.g., "add feature" not "added feature")
+- **body**: Optional - detailed explanation of the change
+- **footer**: Optional - references to issues, breaking changes, etc.
+
+Example:
+
+```text
+feat(ui): add dark mode toggle
+
+Implement dark mode support with toggle in settings panel.
+Uses system preferences as default.
+
+Closes #123
+```
+
+## Commit Behavior
+
+- **DO NOT** automatically commit changes
+- Always let the user review changes first before committing
+- Only commit when explicitly requested by the user
+- When committing, use the Conventional Changelog format described above
+- **ALWAYS** run gofmt whenever making changes to a Go file
+- **ALWAYS** check golangci-lint before committing a change
+
