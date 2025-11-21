@@ -3,7 +3,7 @@ name: codecov
 on:
   pull_request:
     branches:
-      - main
+      - dev
 jobs:
   codecov:
     runs-on: ubuntu-latest

@@ -9,17 +9,19 @@ import (
 
 // Prog contains the solicited program metadata
 type Prog struct {
-	ID        string
-	StationID string
-	Ft        string
-	To        string
-	Title     string
-	Desc      string
-	Info      string
-	Pfm       string
-	Tags      []string
-	Genre     ProgGenre
-	M3U8      string
+	ID         string
+	StationID  string
+	Ft         string
+	To         string
+	Title      string
+	Desc       string
+	Info       string
+	Pfm        string
+	Tags       []string
+	Genre      ProgGenre
+	M3U8       string
+	RuleName   string // name of the rule that matched this program
+	RuleFolder string // folder from the rule that matched this program
 }
 
 type ProgGenre struct {

@@ -17,7 +17,7 @@ import (
 func TestNewAsset(t *testing.T) {
 	const nAreas = 47
 	const nRegions = 7
-	const nStations = 109
+	const nStations = 110
 	client, err := radiko.New("")
 	if err != nil {
 		t.Error(err)
@@ -156,6 +156,7 @@ func TestGetStationIDsByAreaID(t *testing.T) {
 				"JOAK-FM",
 				"JORF",
 				"LFR",
+				"OC1",
 				"QRR",
 				"RN1",
 				"RN2",
@@ -342,7 +343,7 @@ func TestLoadAvailableStations(t *testing.T) {
 	asset.LoadAvailableStations("JP13")
 
 	expectedStations := []string{
-		"FMJ", "FMT", "INT", "JOAK", "JOAK-FM", "JORF", "LFR", "QRR", "RN1", "RN2", "TBS",
+		"FMJ", "FMT", "INT", "JOAK", "JOAK-FM", "JORF", "LFR", "OC1", "QRR", "RN1", "RN2", "TBS",
 	}
 	less := func(a, b string) bool { return a < b }
 	if !cmp.Equal(asset.AvailableStations, expectedStations, cmpopts.SortSlices(less)) {

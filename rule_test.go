@@ -12,7 +12,7 @@ var matchtests = []struct {
 	out       bool
 }{
 	{
-		&Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
+		&Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
 		"FMT",
 		&Prog{
 			"ID",
@@ -26,11 +26,13 @@ var matchtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"matchtests", "RadioProgram", []string{}, "Keyword", "Pfm", "FMT", ""},
+		&Rule{"matchtests", "RadioProgram", []string{}, "Keyword", "Pfm", "FMT", "", ""},
 		"FMT",
 		&Prog{
 			"ID",
@@ -44,11 +46,13 @@ var matchtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		false,
 	},
 	{
-		&Rule{"matchtests", "RadioProgram", []string{}, "", "Someone", "FMT", ""},
+		&Rule{"matchtests", "RadioProgram", []string{}, "", "Someone", "FMT", "", ""},
 		"FMT",
 		&Prog{
 			"ID",
@@ -62,17 +66,70 @@ var matchtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		false,
 	},
 }
 
 func TestMatch(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
 	for _, tt := range matchtests {
 		got := tt.in.Match(tt.stationID, tt.p)
 		if got != tt.out {
 			t.Errorf("(%v).Match => %v, want %v", tt.in, got, tt.out)
 		}
+	}
+
+	// Test Match with window exclusion
+	r := &Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "1h", ""}
+	p := &Prog{
+		"ID",
+		"FMT",
+		time.Now().Add(-2 * time.Hour).Format("20060102150405"),
+		"20230625060000",
+		"Title",
+		"Keyword",
+		"",
+		"Pfm",
+		[]string{},
+		ProgGenre{},
+		"",
+		"",
+		"",
+	}
+	if r.Match("FMT", p) {
+		t.Error("Match should return false when window excludes the program")
+	}
+
+	// Test Match with DoW exclusion
+	r2 := &Rule{"matchtests", "Title", []string{"mon"}, "Keyword", "Pfm", "FMT", "", ""}
+	p2 := &Prog{
+		"ID",
+		"FMT",
+		"20230625050000", // Sunday
+		"20230625060000",
+		"Title",
+		"Keyword",
+		"",
+		"Pfm",
+		[]string{},
+		ProgGenre{},
+		"",
+		"",
+		"",
+	}
+	if r2.Match("FMT", p2) {
+		t.Error("Match should return false when DoW doesn't match")
+	}
+
+	// Test Match with station ID exclusion
+	r3 := &Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "TBS", "", ""}
+	if r3.Match("FMT", p2) {
+		t.Error("Match should return false when station ID doesn't match")
 	}
 }
 
@@ -82,17 +139,17 @@ var dowtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"dowtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"dowtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		"20230625050000", // sun
 		true,
 	},
 	{
-		&Rule{"dowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"dowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window", ""},
 		"20230625050000", // sun
 		true,
 	},
 	{
-		&Rule{"dowtests", "Title", []string{"mon", "tue"}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"dowtests", "Title", []string{"mon", "tue"}, "Keyword", "Pfm", "StationID", "Window", ""},
 		"20230625050000", // sun
 		false,
 	},
@@ -113,7 +170,7 @@ var keywordtests = []struct {
 	out  bool
 }{
 	{
-		&Rule{"keywordtests", "Title", []string{}, "", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -126,11 +183,13 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -143,11 +202,13 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -160,11 +221,13 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -177,11 +240,13 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"test",
 			"test",
@@ -194,11 +259,13 @@ var keywordtests = []struct {
 			[]string{},
 			ProgGenre{},
 			"",
+			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"test",
 			"test",
@@ -211,11 +278,13 @@ var keywordtests = []struct {
 			[]string{"Keyword"}, // match
 			ProgGenre{},
 			"test",
+			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -227,6 +296,8 @@ var keywordtests = []struct {
 			"Pfm",
 			[]string{},
 			ProgGenre{},
+			"",
+			"",
 			"",
 		},
 		false,
@@ -248,17 +319,17 @@ var pfmtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"pfmtests", "Title", []string{"sun"}, "Keyword", "", "StationID", "Window"},
+		&Rule{"pfmtests", "Title", []string{"sun"}, "Keyword", "", "StationID", "Window", ""},
 		"Pfm",
 		true,
 	},
 	{
-		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", ""},
+		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", "", ""},
 		"Pfm",
 		true,
 	},
 	{
-		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", ""},
+		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", "", ""},
 		"Someone",
 		false,
 	},
@@ -279,17 +350,17 @@ var stationtests = []struct {
 	out       bool
 }{
 	{
-		&Rule{"stationtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window"},
+		&Rule{"stationtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window", ""},
 		"FMT",
 		true,
 	},
 	{
-		&Rule{"stationtests", "", []string{}, "", "", "", ""},
+		&Rule{"stationtests", "", []string{}, "", "", "", "", ""},
 		"FMT",
 		true,
 	},
 	{
-		&Rule{"stationtests", "", []string{}, "", "", "FMT", ""},
+		&Rule{"stationtests", "", []string{}, "", "", "FMT", "", ""},
 		"TBS",
 		false,
 	},
@@ -310,17 +381,17 @@ var titletests = []struct {
 	out   bool
 }{
 	{
-		&Rule{"titletests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window"},
+		&Rule{"titletests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window", ""},
 		"Title",
 		true,
 	},
 	{
-		&Rule{"titletests", "", []string{}, "", "", "", ""},
+		&Rule{"titletests", "", []string{}, "", "", "", "", ""},
 		"Title",
 		true,
 	},
 	{
-		&Rule{"titletests", "Title", []string{}, "", "", "FMT", ""},
+		&Rule{"titletests", "Title", []string{}, "", "", "FMT", "", ""},
 		"Radio",
 		false,
 	},
@@ -341,17 +412,17 @@ var windowtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"windowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", ""},
+		&Rule{"windowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "", ""},
 		"20230625050000",
 		true,
 	},
 	{
-		&Rule{"windowtests", "", []string{}, "", "", "", "24h"},
+		&Rule{"windowtests", "", []string{}, "", "", "", "24h", ""},
 		time.Now().Add(-1 * time.Hour).Format("20060102150405"),
 		true,
 	},
 	{
-		&Rule{"windowtests", "", []string{}, "", "", "", "24h"},
+		&Rule{"windowtests", "", []string{}, "", "", "", "24h", ""},
 		time.Now().Add(time.Duration(-48) * time.Hour).Format("20060102150405"),
 		false,
 	},
@@ -367,6 +438,20 @@ func TestMatchWindow(t *testing.T) {
 			t.Errorf("(%v).MatchWindow => %v, want %v", tt.in, got, tt.out)
 		}
 	}
+
+	// Test with invalid time format
+	r := &Rule{"windowtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "24h", ""}
+	got := r.MatchWindow("invalid-time")
+	if got {
+		t.Error("MatchWindow should return false for invalid time format")
+	}
+
+	// Test with invalid window duration
+	r2 := &Rule{"windowtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "invalid", ""}
+	got = r2.MatchWindow(time.Now().Add(-1 * time.Hour).Format("20060102150405"))
+	if !got {
+		t.Error("MatchWindow should handle invalid window duration gracefully")
+	}
 }
 
 var ruletests = []struct {
@@ -374,11 +459,11 @@ var ruletests = []struct {
 	out bool
 }{
 	{
-		&Rule{"ruletests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"ruletests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window", ""},
 		true,
 	},
 	{
-		&Rule{"ruletests", "", []string{}, "", "", "", ""},
+		&Rule{"ruletests", "", []string{}, "", "", "", "", ""},
 		false,
 	},
 }
@@ -447,16 +532,16 @@ func TestHasRuleFor(t *testing.T) {
 	}{
 		{
 			Rules{
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window"},
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			"FMT",
 			true,
 		},
 		{
 			Rules{
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window"},
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			"MBS",
 			false,
@@ -477,15 +562,15 @@ func TestHasRuleWithoutStationID(t *testing.T) {
 	}{
 		{
 			Rules{
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "", "Window"},
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "", "Window", ""},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			true,
 		},
 		{
 			Rules{
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window"},
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			false,
 		},
@@ -494,6 +579,189 @@ func TestHasRuleWithoutStationID(t *testing.T) {
 		res := tt.in.HasRuleWithoutStationID()
 		if tt.out != res {
 			t.Errorf("(%v).HasRuleWithoutStationID() => %v, want %v", tt.in, res, tt.out)
+		}
+	}
+}
+
+func TestHasMatch(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
+	var hasmatchtests = []struct {
+		rules     Rules
+		stationID string
+		prog      *Prog
+		expected  bool
+	}{
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			true,
+		},
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"MBS",
+			&Prog{
+				"ID",
+				"MBS",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			false,
+		},
+		{
+			Rules{},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			false,
+		},
+	}
+
+	for _, tt := range hasmatchtests {
+		got := tt.rules.HasMatch(tt.stationID, tt.prog)
+		if got != tt.expected {
+			t.Errorf("Rules.HasMatch(%s, %v) => %v, want %v", tt.stationID, tt.prog, got, tt.expected)
+		}
+	}
+}
+
+func TestFindMatch(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
+	var findmatchtests = []struct {
+		rules     Rules
+		stationID string
+		prog      *Prog
+		expected  *Rule
+	}{
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+		},
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"TBS",
+			&Prog{
+				"ID",
+				"TBS",
+				"20230625050000",
+				"20230625060000",
+				"OtherTitle",
+				"OtherKeyword",
+				"",
+				"OtherPfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+		},
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"MBS",
+			&Prog{
+				"ID",
+				"MBS",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			nil,
+		},
+	}
+
+	for _, tt := range findmatchtests {
+		got := tt.rules.FindMatch(tt.stationID, tt.prog)
+		if tt.expected == nil {
+			if got != nil {
+				t.Errorf("Rules.FindMatch(%s, %v) => %v, want nil", tt.stationID, tt.prog, got)
+			}
+		} else {
+			if got == nil {
+				t.Errorf("Rules.FindMatch(%s, %v) => nil, want %v", tt.stationID, tt.prog, tt.expected)
+			} else if got.Name != tt.expected.Name {
+				t.Errorf("Rules.FindMatch(%s, %v) => rule with name %s, want %s", tt.stationID, tt.prog, got.Name, tt.expected.Name)
+			}
 		}
 	}
 }

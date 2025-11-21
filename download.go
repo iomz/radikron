@@ -57,14 +57,17 @@ func Download(
 	asset.Schedules = append(asset.Schedules, prog)
 
 	// the output config
+	fileBaseName := fmt.Sprintf(
+		"%s_%s_%s",
+		startTime.In(Location).Format(OutputDatetimeLayout),
+		prog.StationID,
+		title,
+	)
 	output, err := newOutputConfig(
-		fmt.Sprintf(
-			"%s_%s_%s",
-			startTime.In(Location).Format(OutputDatetimeLayout),
-			prog.StationID,
-			title,
-		),
+		fileBaseName,
 		asset.OutputFormat,
+		asset.DownloadDir,
+		prog.RuleFolder,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to configure output: %s", err)
@@ -72,8 +75,10 @@ func Download(
 	if err = output.SetupDir(); err != nil {
 		return fmt.Errorf("failed to setup the output dir: %s", err)
 	}
-	if output.IsExist() {
-		log.Printf("-skip already exists: %s", output.AbsPath())
+
+	// Check for duplicates in both default folder and configured folder
+	if exists, existingPath := checkDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder); exists {
+		log.Printf("-skip already exists: %s", existingPath)
 		return nil
 	}
 
@@ -117,7 +122,10 @@ func buildM3U8RequestURI(prog *Prog) string {
 }
 
 func bulkDownload(list []string, output string) error {
-	var errFlag bool
+	var (
+		errFlag bool
+		mu      sync.Mutex
+	)
 	var wg sync.WaitGroup
 
 	for _, v := range list {
@@ -136,13 +144,19 @@ func bulkDownload(list []string, output string) error {
 			}
 			if err != nil {
 				log.Printf("failed to download: %s", err)
+				mu.Lock()
 				errFlag = true
+				mu.Unlock()
 			}
 		}(v)
 	}
 	wg.Wait()
 
-	if errFlag {
+	mu.Lock()
+	hasError := errFlag
+	mu.Unlock()
+
+	if hasError {
 		return errors.New("lack of aac files")
 	}
 	return nil
@@ -313,9 +327,47 @@ func getURI(input io.Reader) (string, error) {
 	return p.Variants[0].URI, nil
 }
 
+// checkDuplicate checks if a file exists in either the default download directory
+// or in the configured folder. Returns true and the path if found, false otherwise.
+func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string) (exists bool, existingPath string) {
+	// Check in default download directory
+	defaultPath, err := getRadicronPath(downloadDir)
+	if err == nil {
+		defaultOutput := &radigo.OutputConfig{
+			DirFullPath:  defaultPath,
+			FileBaseName: fileBaseName,
+			FileFormat:   fileFormat,
+		}
+		if defaultOutput.IsExist() {
+			return true, defaultOutput.AbsPath()
+		}
+	}
+
+	// Check in configured folder if different from default
+	if configuredFolder != "" {
+		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, configuredFolder))
+		if err == nil {
+			configuredOutput := &radigo.OutputConfig{
+				DirFullPath:  configuredPath,
+				FileBaseName: fileBaseName,
+				FileFormat:   fileFormat,
+			}
+			if configuredOutput.IsExist() {
+				return true, configuredOutput.AbsPath()
+			}
+		}
+	}
+
+	return false, ""
+}
+
 // newOutputConfig prepares the outputdir
-func newOutputConfig(fileBaseName, fileFormat string) (*radigo.OutputConfig, error) {
-	fullPath, err := getRadicronPath("downloads")
+func newOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*radigo.OutputConfig, error) {
+	basePath := downloadDir
+	if folder != "" {
+		basePath = filepath.Join(downloadDir, folder)
+	}
+	fullPath, err := getRadicronPath(basePath)
 	if err != nil {
 		return nil, err
 	}
@@ -396,11 +448,18 @@ func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 	tag.SetArtist(prog.Pfm)
 	tag.SetAlbum(prog.Title)
 	tag.SetYear(prog.Ft[:4])
+
+	// Add comment with program info
 	tag.AddCommentFrame(id3v2.CommentFrame{
 		Encoding:    id3v2.EncodingUTF8,
 		Language:    ID3v2LangJPN,
 		Description: prog.Info,
 	})
+
+	// Set rule name as Album Artist if available
+	if prog.RuleName != "" {
+		tag.AddTextFrame(tag.CommonID("Band/Orchestra/Accompaniment"), id3v2.EncodingUTF8, prog.RuleName)
+	}
 
 	// write tag to the aac
 	if err = tag.Save(); err != nil {
