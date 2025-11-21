@@ -190,9 +190,22 @@ func loadRules() (radikron.Rules, error) {
 		ruleNode := rulesNode.Content[i+1]
 		name := nameNode.Value
 
+		// Convert rule node to a map for viper to process
+		// Viper's UnmarshalKey respects mapstructure tags
+		var ruleMap map[string]interface{}
+		if err := ruleNode.Decode(&ruleMap); err != nil {
+			return nil, fmt.Errorf("failed to decode rule '%s': %w", name, err)
+		}
+
+		// Set the rule data in viper temporarily
+		ruleKey := fmt.Sprintf("rules.%s", name)
+		for k, v := range ruleMap {
+			viper.Set(fmt.Sprintf("%s.%s", ruleKey, k), v)
+		}
+
+		// Use viper's UnmarshalKey which respects mapstructure tags
 		rule := &radikron.Rule{}
-		// Unmarshal the rule node directly
-		if err := ruleNode.Decode(rule); err != nil {
+		if err := viper.UnmarshalKey(ruleKey, rule); err != nil {
 			return nil, fmt.Errorf("error reading the rule '%s': %w", name, err)
 		}
 		rule.SetName(name)
