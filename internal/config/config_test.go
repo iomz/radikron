@@ -294,7 +294,7 @@ func TestParseRuleFromNode_DecodeError(t *testing.T) {
 		t.Error("parseRuleFromNode() expected error but got nil")
 	}
 	if err != nil && !containsSubstring(err.Error(), "failed to decode rule") {
-		t.Logf("error message '%s' does not contain 'failed to decode rule'", err.Error())
+		t.Errorf("error message '%s' does not contain 'failed to decode rule'", err.Error())
 	}
 }
 

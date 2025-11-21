@@ -20,6 +20,10 @@ import (
 
 var sem = make(chan struct{}, MaxConcurrency)
 
+// errSkipAfterMove is a sentinel error indicating the file was moved and exists at target,
+// so download should be skipped without logging "skip already exists"
+var errSkipAfterMove = errors.New("skip after move")
+
 func Download(
 	ctx context.Context,
 	wg *sync.WaitGroup,
@@ -77,11 +81,18 @@ func Download(
 	}
 
 	// Check for duplicates and move from default folder to configured folder if needed
+	// handleDuplicate checks the target location first and handles skip cases
 	if err := handleDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output, asset.Rules); err != nil {
+		// If errSkipAfterMove, file was moved and exists at target - skip without logging again
+		if errors.Is(err, errSkipAfterMove) {
+			return nil
+		}
 		return fmt.Errorf("failed to handle duplicate: %w", err)
 	}
 
-	// After handleDuplicate, check if the output file already exists (duplicate found)
+	// Final check: verify target location doesn't exist before proceeding with download
+	// This is necessary because handleDuplicate may find duplicates in other folders and return early,
+	// so we need to verify the target location specifically to prevent downloading when it already exists.
 	if output.IsExist() {
 		log.Printf("-skip already exists: %s", output.AbsPath())
 		return nil
@@ -411,9 +422,8 @@ func moveFile(source, dest string) error {
 	return nil
 }
 
-// handleDuplicate checks for duplicates in all configured folders and moves files from default folder to configured folder if needed
-func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig, rules Rules) error {
-	// Collect all unique configured folders from all rules
+// collectConfiguredFolders collects all unique configured folders from rules and the current configured folder
+func collectConfiguredFolders(configuredFolder string, rules Rules) map[string]bool {
 	configuredFolders := make(map[string]bool)
 	if configuredFolder != "" {
 		configuredFolders[configuredFolder] = true
@@ -423,59 +433,100 @@ func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder str
 			configuredFolders[rule.Folder] = true
 		}
 	}
+	return configuredFolders
+}
 
-	// Check in all configured folders first (takes precedence over default)
+// checkConfiguredFoldersForDuplicate checks if file exists in any configured folder (excluding target)
+func checkConfiguredFoldersForDuplicate(
+	configuredFolders map[string]bool,
+	downloadDir, fileBaseName, fileFormat, targetPath string,
+) (exists bool, existingPath string) {
 	for folder := range configuredFolders {
 		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, folder))
-		if err == nil {
-			configuredOutput := newOutputConfigFromPath(configuredPath, fileBaseName, fileFormat)
-			if configuredOutput.IsExist() {
-				// File already exists in a configured folder - skip
-				log.Printf("-skip already exists: %s", configuredOutput.AbsPath())
-				return nil
-			}
+		if err != nil {
+			continue
 		}
+		configuredOutput := newOutputConfigFromPath(configuredPath, fileBaseName, fileFormat)
+		// Skip if this is the target location (already checked above)
+		if configuredOutput.AbsPath() == targetPath {
+			continue
+		}
+		if configuredOutput.IsExist() {
+			return true, configuredOutput.AbsPath()
+		}
+	}
+	return false, ""
+}
+
+// handleMoveFromDefaultFolder handles moving a file from default folder to configured folder
+func handleMoveFromDefaultFolder(source, targetPath string, output *radigo.OutputConfig) error {
+	// Check if target already exists (edge case: file appeared between checks or race condition)
+	if output.IsExist() {
+		log.Printf("-skip target already exists, removing source: %s (target: %s)", source, targetPath)
+		// Target exists, remove source file to avoid duplicates
+		if err := os.Remove(source); err != nil {
+			log.Printf("warning: failed to remove source file %s after target exists: %v", source, err)
+		}
+		return nil
+	}
+
+	if err := moveFile(source, targetPath); err != nil {
+		// Check if error is due to target existing (race condition during move)
+		if _, statErr := os.Stat(targetPath); statErr == nil {
+			log.Printf("warning: target file appeared during move, removing source: %s (target: %s)", source, targetPath)
+			_ = os.Remove(source)
+			return nil
+		}
+		return fmt.Errorf("failed to move file from default to configured folder (%s -> %s): %w", source, targetPath, err)
+	}
+
+	log.Printf("moved file: %s -> %s", source, targetPath)
+	// After successful move, file exists at target - skip download
+	// Return sentinel error to signal skip without logging "skip already exists"
+	if output.IsExist() {
+		return errSkipAfterMove
+	}
+	return nil
+}
+
+// handleDuplicate checks for duplicates in all configured folders and moves files from default folder to configured folder if needed
+func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig, rules Rules) error {
+	// Check target location first - if file already exists at target, skip immediately
+	if output.IsExist() {
+		log.Printf("-skip already exists: %s", output.AbsPath())
+		return nil
+	}
+
+	// Collect all unique configured folders from all rules
+	configuredFolders := collectConfiguredFolders(configuredFolder, rules)
+
+	// Check in all configured folders (excluding target, which we already checked)
+	// This takes precedence over default folder
+	targetPath := output.AbsPath()
+	exists, existingPath := checkConfiguredFoldersForDuplicate(
+		configuredFolders, downloadDir, fileBaseName, fileFormat, targetPath)
+	if exists {
+		log.Printf("-skip already exists: %s", existingPath)
+		return nil
 	}
 
 	// Check in default download directory
 	defaultPath, err := getRadicronPath(downloadDir)
-	if err == nil {
-		defaultOutput := newOutputConfigFromPath(defaultPath, fileBaseName, fileFormat)
-		if defaultOutput.IsExist() {
-			// If file exists in default folder and there's a configured folder, move it
-			if configuredFolder != "" {
-				source := defaultOutput.AbsPath()
-				targetPath := output.AbsPath()
-
-				// Check if target already exists (edge case: file appeared between checks or race condition)
-				if output.IsExist() {
-					log.Printf("-skip target already exists, removing source: %s (target: %s)", source, targetPath)
-					// Target exists, remove source file to avoid duplicates
-					if err := os.Remove(source); err != nil {
-						log.Printf("warning: failed to remove source file %s after target exists: %v", source, err)
-					}
-					return nil
-				}
-
-				if err := moveFile(source, targetPath); err != nil {
-					// Check if error is due to target existing (race condition during move)
-					if _, statErr := os.Stat(targetPath); statErr == nil {
-						log.Printf("warning: target file appeared during move, removing source: %s (target: %s)", source, targetPath)
-						_ = os.Remove(source)
-						return nil
-					}
-					return fmt.Errorf("failed to move file from default to configured folder (%s -> %s): %w", source, targetPath, err)
-				}
-				log.Printf("moved file: %s -> %s", source, targetPath)
-				return nil
-			}
-			// File exists in default folder, no configured folder - skip
-			log.Printf("-skip already exists: %s", defaultOutput.AbsPath())
-			return nil
-		}
+	if err != nil {
+		return nil
+	}
+	defaultOutput := newOutputConfigFromPath(defaultPath, fileBaseName, fileFormat)
+	if !defaultOutput.IsExist() {
+		return nil
 	}
 
-	// No duplicate found, proceed with download
+	// If file exists in default folder and there's a configured folder, move it
+	if configuredFolder != "" {
+		return handleMoveFromDefaultFolder(defaultOutput.AbsPath(), output.AbsPath(), output)
+	}
+
+	// File exists in default folder, no configured folder - skip
+	log.Printf("-skip already exists: %s", defaultOutput.AbsPath())
 	return nil
 }
 

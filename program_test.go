@@ -81,14 +81,20 @@ func TestDecodeWeeklyProgram_ErrorCases(t *testing.T) {
 	// Test with invalid XML
 	invalidXML := strings.NewReader("<?xml version=\"1.0\"?><invalid></invalid>")
 	progs, err := decodeWeeklyProgram(io.NopCloser(invalidXML))
-	if err == nil && len(progs) > 0 {
-		t.Error("decodeWeeklyProgram should return error or empty progs for invalid XML")
+	if err == nil {
+		t.Errorf("expected error for invalid XML")
+	}
+	if len(progs) != 0 {
+		t.Errorf("expected no programs on error")
 	}
 
 	// Test with empty input
 	emptyReader := strings.NewReader("")
 	progs, err = decodeWeeklyProgram(io.NopCloser(emptyReader))
-	if err == nil && len(progs) > 0 {
-		t.Error("decodeWeeklyProgram should return error or empty progs for empty input")
+	if err == nil {
+		t.Errorf("expected error for empty input")
+	}
+	if len(progs) != 0 {
+		t.Errorf("expected no programs on error")
 	}
 }
