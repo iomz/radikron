@@ -2,10 +2,13 @@ package radikron
 
 import (
 	"embed"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bogem/id3v2"
 	"github.com/yyoshiki41/radigo"
@@ -372,7 +375,8 @@ func TestHandleDuplicate_MoveToConfiguredFolder(t *testing.T) {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
 	err = handleDuplicate("move-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{})
-	if err != nil {
+	// errSkipAfterMove is a sentinel error indicating successful move, not a real error
+	if err != nil && !errors.Is(err, errSkipAfterMove) {
 		t.Errorf("handleDuplicate should not return error when moving file: %v", err)
 	}
 
@@ -888,26 +892,66 @@ func TestMoveFile_CopyFallback(t *testing.T) {
 func TestMoveFile_CopyFallbackErrorPaths(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Test: Error when closing destination file after copy
-	// This is hard to test directly, but we can test the error handling structure
+	// Test 1: Destination directory doesn't exist (fails at Create in copy fallback)
+	// This forces the copy fallback path since os.Rename will fail across directories
 	sourceFile := filepath.Join(tmpDir, "source.txt")
-	destFile := filepath.Join(tmpDir, "dest.txt")
-
-	// Create source file
-	err := os.WriteFile(sourceFile, []byte("test"), 0600)
+	err := os.WriteFile(sourceFile, []byte("test content"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
 
-	// Normal move should work
-	err = moveFile(sourceFile, destFile)
-	if err != nil {
-		t.Errorf("moveFile failed: %v", err)
+	// Create a non-existent nested directory path
+	nonExistentDest := filepath.Join(tmpDir, "nonexistent", "subdir", "dest.txt")
+	err = moveFile(sourceFile, nonExistentDest)
+	if err == nil {
+		t.Error("moveFile should return error when destination directory doesn't exist")
+	}
+	if err != nil && !strings.Contains(err.Error(), "failed to create destination file") {
+		t.Errorf("Expected error about creating destination file, got: %v", err)
+	}
+	// Source file should still exist after failed move
+	if _, err := os.Stat(sourceFile); os.IsNotExist(err) {
+		t.Error("Source file should still exist after failed move")
+	}
+	// Destination should not exist
+	if _, err := os.Stat(nonExistentDest); err == nil {
+		t.Error("Destination file should not exist after failed move")
 	}
 
-	// Verify it worked
-	if _, err := os.Stat(destFile); os.IsNotExist(err) {
-		t.Error("Destination file should exist after move")
+	// Test 2: Destination directory is non-writable (fails at Create in copy fallback)
+	// Create a read-only directory
+	readOnlyDir := filepath.Join(tmpDir, "readonly")
+	err = os.MkdirAll(readOnlyDir, 0500) // Read-only, no write permission
+	if err != nil {
+		t.Fatalf("Failed to create read-only directory: %v", err)
+	}
+	defer func() {
+		// Restore permissions for cleanup
+		_ = os.Chmod(readOnlyDir, 0700)
+	}()
+
+	sourceFile2 := filepath.Join(tmpDir, "source2.txt")
+	err = os.WriteFile(sourceFile2, []byte("test content 2"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	readOnlyDest := filepath.Join(readOnlyDir, "dest.txt")
+	err = moveFile(sourceFile2, readOnlyDest)
+	if err == nil {
+		t.Error("moveFile should return error when destination directory is not writable")
+	}
+	if err != nil && !strings.Contains(err.Error(), "failed to create destination file") {
+		t.Errorf("Expected error about creating destination file, got: %v", err)
+	}
+	// Source file should still exist after failed move
+	if _, err := os.Stat(sourceFile2); os.IsNotExist(err) {
+		t.Error("Source file should still exist after failed move")
+	}
+	// Destination should not exist (or should be cleaned up if partially created)
+	if _, err := os.Stat(readOnlyDest); err == nil {
+		// If file was created, it should be cleaned up
+		t.Error("Destination file should not exist or should be cleaned up after failed move")
 	}
 }
 
@@ -991,13 +1035,30 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test directory: %v", err)
 	}
+
+	// On Windows, ensure the directory is removed before TempDir cleanup
+	// This prevents "file in use" errors during cleanup.
+	// Windows may keep the directory locked briefly after id3v2.Open() fails,
+	// so we use defer with retries to ensure cleanup.
+	defer func() {
+		if runtime.GOOS == "windows" {
+			// Give Windows time to release the directory handle
+			time.Sleep(100 * time.Millisecond)
+			// Retry removal with exponential backoff
+			for i := 0; i < 5; i++ {
+				if err := os.Remove(dirPath); err == nil {
+					return
+				}
+				time.Sleep(time.Duration(i+1) * 50 * time.Millisecond)
+			}
+		} else {
+			_ = os.Remove(dirPath)
+		}
+	}()
+
 	output2 := newOutputConfigFromPath(tmpDir, "dir", radigo.AudioFormatAAC)
 	err = writeID3Tag(output2, prog)
 	if err == nil {
 		t.Error("writeID3Tag should return error when path is a directory")
 	}
-
-	// On Windows, ensure the directory is removed before TempDir cleanup
-	// This prevents "file in use" errors during cleanup
-	_ = os.Remove(dirPath)
 }
