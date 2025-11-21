@@ -142,6 +142,80 @@ func (c *Config) buildConfig() error {
 	return nil
 }
 
+// findRulesNode finds the "rules" mapping node in the YAML document.
+// It handles DocumentNode -> root mapping and iterates mapping pairs to find the "rules" key.
+// Returns the rules node if found, or nil if not found or invalid.
+func findRulesNode(root *yaml.Node) *yaml.Node {
+	if root == nil {
+		return nil
+	}
+
+	// Handle DocumentNode -> get the root mapping
+	var rootMapping *yaml.Node
+	if root.Kind == yaml.DocumentNode {
+		if len(root.Content) == 0 {
+			return nil
+		}
+		rootMapping = root.Content[0]
+	} else {
+		rootMapping = root
+	}
+
+	// Must be a mapping node
+	if rootMapping.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	// Iterate through key-value pairs to find "rules"
+	for i := 0; i < len(rootMapping.Content); i += 2 {
+		if i+1 >= len(rootMapping.Content) {
+			continue
+		}
+		keyNode := rootMapping.Content[i]
+		if keyNode.Value == "rules" {
+			return rootMapping.Content[i+1]
+		}
+	}
+
+	return nil
+}
+
+// parseRuleFromNode decodes a rule node into a radikron.Rule.
+// It decodes the ruleNode into a map, sets temporary viper keys for that rule,
+// unmarshals into a radikron.Rule, sets its name from nameNode, and returns it.
+func parseRuleFromNode(nameNode, ruleNode *yaml.Node) (*radikron.Rule, error) {
+	if nameNode == nil || ruleNode == nil {
+		return nil, fmt.Errorf("nameNode and ruleNode must not be nil")
+	}
+
+	name := nameNode.Value
+	if name == "" {
+		return nil, fmt.Errorf("rule name cannot be empty")
+	}
+
+	// Convert rule node to a map for viper to process
+	// Viper's UnmarshalKey respects mapstructure tags
+	var ruleMap map[string]interface{}
+	if err := ruleNode.Decode(&ruleMap); err != nil {
+		return nil, fmt.Errorf("failed to decode rule '%s': %w", name, err)
+	}
+
+	// Set the rule data in viper temporarily
+	ruleKey := fmt.Sprintf("rules.%s", name)
+	for k, v := range ruleMap {
+		viper.Set(fmt.Sprintf("%s.%s", ruleKey, k), v)
+	}
+
+	// Use viper's UnmarshalKey which respects mapstructure tags
+	rule := &radikron.Rule{}
+	if err := viper.UnmarshalKey(ruleKey, rule); err != nil {
+		return nil, fmt.Errorf("error reading the rule '%s': %w", name, err)
+	}
+	rule.SetName(name)
+
+	return rule, nil
+}
+
 // loadRules loads rules from the configuration, preserving the order from the config file
 func loadRules() (radikron.Rules, error) {
 	rules := radikron.Rules{}
@@ -151,6 +225,14 @@ func loadRules() (radikron.Rules, error) {
 	if configFile == "" {
 		// Fallback to viper's method if config file path is not available
 		return loadRulesFromViper()
+	}
+
+	// Validate config file exists before attempting to read
+	if _, err := os.Stat(configFile); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("config file does not exist: %s", configFile)
+		}
+		return nil, fmt.Errorf("failed to access config file: %w", err)
 	}
 
 	// Read the YAML file directly to preserve order
@@ -166,19 +248,7 @@ func loadRules() (radikron.Rules, error) {
 	}
 
 	// Find the rules section in the YAML node
-	var rulesNode *yaml.Node
-	if rootNode.Kind == yaml.DocumentNode && len(rootNode.Content) > 0 {
-		root := rootNode.Content[0]
-		if root.Kind == yaml.MappingNode {
-			for i := 0; i < len(root.Content); i += 2 {
-				keyNode := root.Content[i]
-				if keyNode.Value == "rules" && i+1 < len(root.Content) {
-					rulesNode = root.Content[i+1]
-					break
-				}
-			}
-		}
-	}
+	rulesNode := findRulesNode(&rootNode)
 
 	if rulesNode == nil || rulesNode.Kind != yaml.MappingNode {
 		return rules, nil
@@ -186,29 +256,16 @@ func loadRules() (radikron.Rules, error) {
 
 	// Iterate through rules in order (yaml.Node.Content preserves order)
 	for i := 0; i < len(rulesNode.Content); i += 2 {
+		if i+1 >= len(rulesNode.Content) {
+			continue
+		}
 		nameNode := rulesNode.Content[i]
 		ruleNode := rulesNode.Content[i+1]
-		name := nameNode.Value
 
-		// Convert rule node to a map for viper to process
-		// Viper's UnmarshalKey respects mapstructure tags
-		var ruleMap map[string]interface{}
-		if err := ruleNode.Decode(&ruleMap); err != nil {
-			return nil, fmt.Errorf("failed to decode rule '%s': %w", name, err)
+		rule, err := parseRuleFromNode(nameNode, ruleNode)
+		if err != nil {
+			return nil, err
 		}
-
-		// Set the rule data in viper temporarily
-		ruleKey := fmt.Sprintf("rules.%s", name)
-		for k, v := range ruleMap {
-			viper.Set(fmt.Sprintf("%s.%s", ruleKey, k), v)
-		}
-
-		// Use viper's UnmarshalKey which respects mapstructure tags
-		rule := &radikron.Rule{}
-		if err := viper.UnmarshalKey(ruleKey, rule); err != nil {
-			return nil, fmt.Errorf("error reading the rule '%s': %w", name, err)
-		}
-		rule.SetName(name)
 		rules = append(rules, rule)
 	}
 

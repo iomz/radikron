@@ -2,6 +2,7 @@ package radikron
 
 import (
 	"embed"
+	"io"
 	"strings"
 	"testing"
 )
@@ -73,5 +74,21 @@ func TestWeeklyProgramUnmarshal(t *testing.T) {
 	want = "山崎怜奈,音楽との出会いが楽しめる,作業がはかどる,気分転換におすすめ,学生におすすめ"
 	if got != want {
 		t.Errorf("p.Tags => %v, want %v", got, want)
+	}
+}
+
+func TestDecodeWeeklyProgram_ErrorCases(t *testing.T) {
+	// Test with invalid XML
+	invalidXML := strings.NewReader("<?xml version=\"1.0\"?><invalid></invalid>")
+	progs, err := decodeWeeklyProgram(io.NopCloser(invalidXML))
+	if err == nil && len(progs) > 0 {
+		t.Error("decodeWeeklyProgram should return error or empty progs for invalid XML")
+	}
+
+	// Test with empty input
+	emptyReader := strings.NewReader("")
+	progs, err = decodeWeeklyProgram(io.NopCloser(emptyReader))
+	if err == nil && len(progs) > 0 {
+		t.Error("decodeWeeklyProgram should return error or empty progs for empty input")
 	}
 }

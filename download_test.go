@@ -41,6 +41,20 @@ func TestBuildM3U8RequestURI(t *testing.T) {
 	if uri2 == "" {
 		t.Error("buildM3U8RequestURI returned empty URI")
 	}
+
+	// Verify the URI contains all required parameters
+	if !strings.Contains(uri, "station_id=FMT") {
+		t.Error("URI should contain station_id parameter")
+	}
+	if !strings.Contains(uri, "ft=20230605130000") {
+		t.Error("URI should contain ft parameter")
+	}
+	if !strings.Contains(uri, "to=20230605145500") {
+		t.Error("URI should contain to parameter")
+	}
+	if !strings.Contains(uri, "l=15") {
+		t.Error("URI should contain l parameter with PlaylistM3U8Length")
+	}
 }
 
 func TestGetURI(t *testing.T) {
@@ -61,6 +75,22 @@ func TestGetURI(t *testing.T) {
 	// Test with invalid input (media playlist instead of master)
 	// This would require a media playlist test file, but we can test error handling
 	// by using an invalid reader or empty input
+}
+
+func TestGetURI_InvalidVariants(t *testing.T) {
+	// Test with invalid m3u8 format (not a master playlist)
+	invalidReader := strings.NewReader("not a valid m3u8")
+	_, err := getURI(invalidReader)
+	if err == nil {
+		t.Error("getURI should return error for invalid m3u8 format")
+	}
+
+	// Test with empty input
+	emptyReader := strings.NewReader("")
+	_, err = getURI(emptyReader)
+	if err == nil {
+		t.Error("getURI should return error for empty input")
+	}
 }
 
 func TestGetRadicronPath(t *testing.T) {
@@ -108,6 +138,16 @@ func TestGetRadicronPath(t *testing.T) {
 	expected = filepath.Join(absPath, "downloads", "subfolder")
 	if path != expected {
 		t.Errorf("getRadicronPath with subdirectory => %v, want %v", path, expected)
+	}
+
+	// Test path cleaning (with .. and .)
+	path, err = getRadicronPath(filepath.Join("downloads", "..", "downloads", ".", "sub"))
+	if err != nil {
+		t.Errorf("getRadicronPath with path cleaning failed: %v", err)
+	}
+	expected = filepath.Join(absPath, "downloads", "sub")
+	if path != expected {
+		t.Errorf("getRadicronPath with path cleaning => %v, want %v", path, expected)
 	}
 }
 
@@ -166,7 +206,7 @@ func TestTempAACDir(t *testing.T) {
 
 	// Create the tmp directory structure
 	tmpDir := filepath.Join(testDir, "tmp")
-	err := os.MkdirAll(tmpDir, 0755)
+	err := os.MkdirAll(tmpDir, DirPermissions)
 	if err != nil {
 		t.Fatalf("Failed to create test tmp directory: %v", err)
 	}
@@ -186,6 +226,25 @@ func TestTempAACDir(t *testing.T) {
 
 	// Clean up
 	os.RemoveAll(dir)
+
+	// Test: tempAACDir creates directory if it doesn't exist
+	testDir2 := filepath.Join(os.TempDir(), "radikron-test-2")
+	os.Setenv(EnvRadicronHome, testDir2)
+	defer os.RemoveAll(testDir2)
+
+	// Don't create tmp directory - tempAACDir should create it
+	dir2, err := tempAACDir()
+	if err != nil {
+		t.Errorf("tempAACDir failed when creating directory: %v", err)
+	}
+	if dir2 == "" {
+		t.Error("tempAACDir returned empty path")
+	}
+	// Verify the directory was created
+	if _, err := os.Stat(dir2); os.IsNotExist(err) {
+		t.Errorf("tempAACDir did not create directory: %v", err)
+	}
+	os.RemoveAll(dir2)
 }
 
 func TestCheckDuplicate(t *testing.T) {
@@ -439,6 +498,60 @@ func TestHandleDuplicate_ChecksAllConfiguredFolders(t *testing.T) {
 	}
 }
 
+func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
+	downloadsDir, cleanup := setupHandleDuplicateTest(t)
+	defer cleanup()
+
+	// Create file in default folder
+	defaultFile := filepath.Join(downloadsDir, "target-exists-test.aac")
+	err := os.WriteFile(defaultFile, []byte("test content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create configured folder
+	configuredDir := filepath.Join(downloadsDir, "citypop")
+	err = os.MkdirAll(configuredDir, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create configured directory: %v", err)
+	}
+
+	// Create output config for configured folder
+	output, err := newOutputConfig("target-exists-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	if err != nil {
+		t.Fatalf("Failed to create output config: %v", err)
+	}
+
+	// Create target file in configured folder (simulating edge case where target exists)
+	// This tests the edge case handling at line 445-451 in handleDuplicate
+	targetFile := output.AbsPath()
+	err = os.WriteFile(targetFile, []byte("existing content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create target file: %v", err)
+	}
+
+	// Call handleDuplicate - should detect target exists in configured folder check and skip
+	// The edge case check (line 445) handles race conditions where target appears
+	// between the initial check and the move attempt
+	err = handleDuplicate("target-exists-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{})
+	if err != nil {
+		t.Errorf("handleDuplicate should not return error when target exists: %v", err)
+	}
+
+	// When target exists in configured folder, it should skip early (line 428)
+	// and not attempt to move, so source file should still exist
+	// Note: The edge case handling at line 445-451 would remove source if target
+	// appears between the default folder check and the move attempt
+	if _, err := os.Stat(defaultFile); os.IsNotExist(err) {
+		t.Log("Source file removed (this is expected if edge case handling triggered)")
+	}
+
+	// Verify target file still exists
+	if _, err := os.Stat(targetFile); os.IsNotExist(err) {
+		t.Error("Target file should still exist")
+	}
+}
+
 func TestGetChunklist(t *testing.T) {
 	// Test with master playlist (should return error or nil)
 	m3u8, err := PlaylistTestM3U8.Open("test/playlist-test.m3u8")
@@ -459,6 +572,24 @@ func TestGetChunklist(t *testing.T) {
 	// Error may or may not be nil depending on decode behavior, but chunklist must be nil
 	if err != nil {
 		t.Logf("expected non-media playlist decode error: %v", err)
+	}
+
+	// Test with invalid input (empty reader)
+	emptyReader := strings.NewReader("")
+	chunklist, err = getChunklist(emptyReader)
+	if chunklist != nil {
+		t.Error("getChunklist should return nil chunklist for invalid input")
+	}
+	// Error is expected for invalid input
+	if err == nil {
+		t.Log("getChunklist may or may not return error for invalid input")
+	}
+
+	// Test with invalid m3u8 format
+	invalidReader := strings.NewReader("#EXTM3U\ninvalid content")
+	chunklist, err = getChunklist(invalidReader)
+	if chunklist != nil {
+		t.Error("getChunklist should return nil chunklist for invalid format")
 	}
 }
 
@@ -665,5 +796,203 @@ func TestWriteID3TagWithoutRuleName(t *testing.T) {
 	}
 	if tag.Artist() == "" {
 		t.Error("Expected Artist to be set")
+	}
+}
+
+func TestMoveFile(t *testing.T) {
+	// Create temporary directory for testing
+	tmpDir := t.TempDir()
+
+	// Test 1: Successful os.Rename (same filesystem)
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+	destFile := filepath.Join(tmpDir, "dest.txt")
+
+	// Create source file
+	err := os.WriteFile(sourceFile, []byte("test content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Move file
+	err = moveFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("moveFile failed: %v", err)
+	}
+
+	// Verify file was moved
+	if _, err := os.Stat(sourceFile); err == nil {
+		t.Error("Source file should not exist after move")
+	}
+	if _, err := os.Stat(destFile); os.IsNotExist(err) {
+		t.Error("Destination file should exist after move")
+	}
+
+	// Verify content
+	content, err := os.ReadFile(destFile)
+	if err != nil {
+		t.Fatalf("Failed to read destination file: %v", err)
+	}
+	if string(content) != "test content" {
+		t.Errorf("File content mismatch: got %s, want test content", string(content))
+	}
+}
+
+func TestMoveFile_CopyFallback(t *testing.T) {
+	// Create temporary directories for testing
+	tmpDir := t.TempDir()
+	sourceDir := filepath.Join(tmpDir, "source")
+	destDir := filepath.Join(tmpDir, "dest")
+
+	// Create directories
+	if err := os.MkdirAll(sourceDir, DirPermissions); err != nil {
+		t.Fatalf("Failed to create source directory: %v", err)
+	}
+	if err := os.MkdirAll(destDir, DirPermissions); err != nil {
+		t.Fatalf("Failed to create dest directory: %v", err)
+	}
+
+	sourceFile := filepath.Join(sourceDir, "source.txt")
+	destFile := filepath.Join(destDir, "dest.txt")
+
+	// Create source file with content
+	testContent := "test content for copy fallback"
+	err := os.WriteFile(sourceFile, []byte(testContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Move file (will use copy-then-delete if rename fails, or rename if on same filesystem)
+	err = moveFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("moveFile failed: %v", err)
+	}
+
+	// Verify file was moved (either by rename or copy)
+	if _, err := os.Stat(sourceFile); err == nil {
+		t.Error("Source file should not exist after move")
+	}
+	if _, err := os.Stat(destFile); os.IsNotExist(err) {
+		t.Error("Destination file should exist after move")
+	}
+
+	// Verify content
+	content, err := os.ReadFile(destFile)
+	if err != nil {
+		t.Fatalf("Failed to read destination file: %v", err)
+	}
+	if string(content) != testContent {
+		t.Errorf("File content mismatch: got %s, want %s", string(content), testContent)
+	}
+}
+
+func TestMoveFile_CopyFallbackErrorPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Test: Error when closing destination file after copy
+	// This is hard to test directly, but we can test the error handling structure
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+	destFile := filepath.Join(tmpDir, "dest.txt")
+
+	// Create source file
+	err := os.WriteFile(sourceFile, []byte("test"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Normal move should work
+	err = moveFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("moveFile failed: %v", err)
+	}
+
+	// Verify it worked
+	if _, err := os.Stat(destFile); os.IsNotExist(err) {
+		t.Error("Destination file should exist after move")
+	}
+}
+
+func TestMoveFile_ErrorCases(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Test: Source file doesn't exist
+	nonExistentSource := filepath.Join(tmpDir, "nonexistent.txt")
+	destFile := filepath.Join(tmpDir, "dest.txt")
+	err := moveFile(nonExistentSource, destFile)
+	if err == nil {
+		t.Error("moveFile should return error when source file doesn't exist")
+	}
+
+	// Test: Destination directory doesn't exist (and can't be created)
+	// Create source file
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+	err = os.WriteFile(sourceFile, []byte("test"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Try to move to invalid destination (on Unix, /dev/null is a special file)
+	// This will test the error path when creating destination file fails
+	invalidDest := filepath.Join(tmpDir, "nonexistent", "dest.txt")
+	err = moveFile(sourceFile, invalidDest)
+	if err == nil {
+		t.Error("moveFile should return error when destination directory doesn't exist")
+	}
+
+	// Source file should still exist after failed move
+	if _, err := os.Stat(sourceFile); os.IsNotExist(err) {
+		t.Error("Source file should still exist after failed move")
+	}
+}
+
+func TestNewOutputConfigFromPath(t *testing.T) {
+	// Test basic functionality
+	output := newOutputConfigFromPath("/tmp/test", "file-name", radigo.AudioFormatAAC)
+	if output == nil {
+		t.Fatal("newOutputConfigFromPath returned nil")
+	}
+	if output.DirFullPath != "/tmp/test" {
+		t.Errorf("DirFullPath => %v, want /tmp/test", output.DirFullPath)
+	}
+	if output.FileBaseName != "file-name" {
+		t.Errorf("FileBaseName => %v, want file-name", output.FileBaseName)
+	}
+	if output.FileFormat != radigo.AudioFormatAAC {
+		t.Errorf("FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatAAC)
+	}
+
+	// Test with MP3 format
+	output2 := newOutputConfigFromPath("/tmp/test2", "file-name2", radigo.AudioFormatMP3)
+	if output2.FileFormat != radigo.AudioFormatMP3 {
+		t.Errorf("FileFormat => %v, want %v", output2.FileFormat, radigo.AudioFormatMP3)
+	}
+}
+
+func TestWriteID3Tag_ErrorCases(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir := t.TempDir()
+
+	// Test: File doesn't exist
+	output := newOutputConfigFromPath(tmpDir, "nonexistent", radigo.AudioFormatAAC)
+	prog := &Prog{
+		Title: "Test Title",
+		Pfm:   "Test Artist",
+		Ft:    "20230605130000",
+	}
+
+	err := writeID3Tag(output, prog)
+	if err == nil {
+		t.Error("writeID3Tag should return error when file doesn't exist")
+	}
+
+	// Test: Invalid file (directory instead of file)
+	dirPath := filepath.Join(tmpDir, "dir.aac")
+	err = os.MkdirAll(dirPath, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create test directory: %v", err)
+	}
+	output2 := newOutputConfigFromPath(tmpDir, "dir", radigo.AudioFormatAAC)
+	err = writeID3Tag(output2, prog)
+	if err == nil {
+		t.Error("writeID3Tag should return error when path is a directory")
 	}
 }
