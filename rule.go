@@ -53,6 +53,7 @@ type Rule struct {
 	Pfm       string   `mapstructure:"pfm"`        // optional
 	StationID string   `mapstructure:"station-id"` // optional
 	Window    string   `mapstructure:"window"`     // optional
+	Folder    string   `mapstructure:"folder"`     // optional
 }
 
 // Match returns true if the rule matches the program

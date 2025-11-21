@@ -49,6 +49,7 @@ type Asset struct {
 	MinimumOutputSize int64
 	NextFetchTime     *time.Time
 	OutputFormat      string
+	DownloadDir       string // directory name for downloads (default: "downloads")
 	Regions           Regions
 	Rules             Rules
 	Schedules         Schedules
@@ -380,6 +381,8 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 	asset.DefaultClient = client
 	// empty FileFormat
 	asset.OutputFormat = radigo.AudioFormatAAC
+	// default DownloadDir
+	asset.DownloadDir = "downloads"
 	// nil *time.Time
 	asset.NextFetchTime = nil
 	// empty Schedules

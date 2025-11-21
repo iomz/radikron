@@ -18,6 +18,7 @@ type Config struct {
 	IgnoreStations    []string
 	FileFormat        string
 	MinimumOutputSize int64
+	DownloadDir       string
 	Rules             radikron.Rules
 }
 
@@ -59,6 +60,7 @@ func LoadConfig(filename string) (*Config, error) {
 func (c *Config) ApplyToAsset(asset *radikron.Asset) error {
 	asset.OutputFormat = c.FileFormat
 	asset.MinimumOutputSize = c.MinimumOutputSize
+	asset.DownloadDir = c.DownloadDir
 	asset.LoadAvailableStations(c.AreaID)
 	asset.AddExtraStations(c.ExtraStations)
 	asset.RemoveIgnoreStations(c.IgnoreStations)
@@ -110,6 +112,7 @@ func setDefaults() {
 	viper.SetDefault("ignore-stations", []string{})
 	viper.SetDefault("file-format", radigo.AudioFormatAAC)
 	viper.SetDefault("minimum-output-size", radikron.DefaultMinimumOutputSize)
+	viper.SetDefault("downloads", "downloads")
 }
 
 // buildConfig builds the Config struct from viper values
@@ -125,6 +128,7 @@ func (c *Config) buildConfig() error {
 	c.ExtraStations = viper.GetStringSlice("extra-stations")
 	c.IgnoreStations = viper.GetStringSlice("ignore-stations")
 	c.MinimumOutputSize = viper.GetInt64("minimum-output-size") * radikron.Kilobytes * radikron.Kilobytes
+	c.DownloadDir = viper.GetString("downloads")
 
 	// Load rules
 	rules, err := loadRules()

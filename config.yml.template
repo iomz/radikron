@@ -1,10 +1,10 @@
 area-id: JP13
 file-format: aac
+downloads: downloads
 rules:
     airship:
+        folder: citypop
         station-id: FMT
         title: "GOODYEAR MUSIC AIRSHIP～シティポップ レイディオ～"
     citypop:
         keyword: "シティポップ"
-    hiccorohee:
-        pfm: "ヒコロヒー"

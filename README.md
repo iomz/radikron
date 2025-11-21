@@ -49,6 +49,8 @@ Create a configuration file (`config.yml`) to define rules for recording:
 
 ```yaml
 area-id: JP13 # if unset, default to "your" region
+file-format: aac # audio format: aac or mp3, default is aac
+downloads: downloads # download directory name, default is "downloads"
 extra-stations:
   - ALPHA-STATION # include stations not in your region
 ignore-stations:
@@ -56,7 +58,8 @@ ignore-stations:
 minimum-output-size: 2 # do not save an audio below this size (in MB), default is 1 (MB)
 rules:
   airship: # name your rule as you like
-    station-id: FMT # (optional) the staion_id, if not available by default, automatically add this station to the watch list
+    folder: citypop # (optional) organize downloads into subfolders
+    station-id: FMT # (optional) the station_id, if not available by default, automatically add this station to the watch list
     title: "GOODYEAR MUSIC AIRSHIP～シティポップ レイディオ～" # this can be a partial match
   citypop:
     keyword: "シティポップ" # search by keyword (also a partial match)
@@ -71,7 +74,7 @@ rules:
     title: "THE TRAD"
 ```
 
-In addition, set `${RADICRON_HOME}` to set the download directory.
+In addition, set `${RADICRON_HOME}` to set the base directory for downloads and temporary files. The actual download location will be `${RADICRON_HOME}/{downloads}` (or the value specified in the `downloads` config option).
 
 ## Usage
 

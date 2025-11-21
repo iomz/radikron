@@ -57,14 +57,17 @@ func Download(
 	asset.Schedules = append(asset.Schedules, prog)
 
 	// the output config
+	fileBaseName := fmt.Sprintf(
+		"%s_%s_%s",
+		startTime.In(Location).Format(OutputDatetimeLayout),
+		prog.StationID,
+		title,
+	)
 	output, err := newOutputConfig(
-		fmt.Sprintf(
-			"%s_%s_%s",
-			startTime.In(Location).Format(OutputDatetimeLayout),
-			prog.StationID,
-			title,
-		),
+		fileBaseName,
 		asset.OutputFormat,
+		asset.DownloadDir,
+		prog.RuleFolder,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to configure output: %s", err)
@@ -72,8 +75,10 @@ func Download(
 	if err = output.SetupDir(); err != nil {
 		return fmt.Errorf("failed to setup the output dir: %s", err)
 	}
-	if output.IsExist() {
-		log.Printf("-skip already exists: %s", output.AbsPath())
+
+	// Check for duplicates in both default folder and configured folder
+	if exists, existingPath := checkDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder); exists {
+		log.Printf("-skip already exists: %s", existingPath)
 		return nil
 	}
 
@@ -313,9 +318,47 @@ func getURI(input io.Reader) (string, error) {
 	return p.Variants[0].URI, nil
 }
 
+// checkDuplicate checks if a file exists in either the default download directory
+// or in the configured folder. Returns true and the path if found, false otherwise.
+func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string) (bool, string) {
+	// Check in default download directory
+	defaultPath, err := getRadicronPath(downloadDir)
+	if err == nil {
+		defaultOutput := &radigo.OutputConfig{
+			DirFullPath:  defaultPath,
+			FileBaseName: fileBaseName,
+			FileFormat:   fileFormat,
+		}
+		if defaultOutput.IsExist() {
+			return true, defaultOutput.AbsPath()
+		}
+	}
+
+	// Check in configured folder if different from default
+	if configuredFolder != "" {
+		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, configuredFolder))
+		if err == nil {
+			configuredOutput := &radigo.OutputConfig{
+				DirFullPath:  configuredPath,
+				FileBaseName: fileBaseName,
+				FileFormat:   fileFormat,
+			}
+			if configuredOutput.IsExist() {
+				return true, configuredOutput.AbsPath()
+			}
+		}
+	}
+
+	return false, ""
+}
+
 // newOutputConfig prepares the outputdir
-func newOutputConfig(fileBaseName, fileFormat string) (*radigo.OutputConfig, error) {
-	fullPath, err := getRadicronPath("downloads")
+func newOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*radigo.OutputConfig, error) {
+	basePath := downloadDir
+	if folder != "" {
+		basePath = filepath.Join(downloadDir, folder)
+	}
+	fullPath, err := getRadicronPath(basePath)
 	if err != nil {
 		return nil, err
 	}

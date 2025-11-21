@@ -12,7 +12,7 @@ var matchtests = []struct {
 	out       bool
 }{
 	{
-		&Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
+		&Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
 		"FMT",
 		&Prog{
 			"ID",
@@ -27,11 +27,12 @@ var matchtests = []struct {
 			ProgGenre{},
 			"",
 			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"matchtests", "RadioProgram", []string{}, "Keyword", "Pfm", "FMT", ""},
+		&Rule{"matchtests", "RadioProgram", []string{}, "Keyword", "Pfm", "FMT", "", ""},
 		"FMT",
 		&Prog{
 			"ID",
@@ -46,11 +47,12 @@ var matchtests = []struct {
 			ProgGenre{},
 			"",
 			"",
+			"",
 		},
 		false,
 	},
 	{
-		&Rule{"matchtests", "RadioProgram", []string{}, "", "Someone", "FMT", ""},
+		&Rule{"matchtests", "RadioProgram", []string{}, "", "Someone", "FMT", "", ""},
 		"FMT",
 		&Prog{
 			"ID",
@@ -63,6 +65,7 @@ var matchtests = []struct {
 			"Pfm", // Pfm doesn't match
 			[]string{},
 			ProgGenre{},
+			"",
 			"",
 			"",
 		},
@@ -85,17 +88,17 @@ var dowtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"dowtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"dowtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		"20230625050000", // sun
 		true,
 	},
 	{
-		&Rule{"dowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"dowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window", ""},
 		"20230625050000", // sun
 		true,
 	},
 	{
-		&Rule{"dowtests", "Title", []string{"mon", "tue"}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"dowtests", "Title", []string{"mon", "tue"}, "Keyword", "Pfm", "StationID", "Window", ""},
 		"20230625050000", // sun
 		false,
 	},
@@ -116,7 +119,7 @@ var keywordtests = []struct {
 	out  bool
 }{
 	{
-		&Rule{"keywordtests", "Title", []string{}, "", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -130,11 +133,12 @@ var keywordtests = []struct {
 			ProgGenre{},
 			"",
 			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -148,11 +152,12 @@ var keywordtests = []struct {
 			ProgGenre{},
 			"",
 			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -166,11 +171,12 @@ var keywordtests = []struct {
 			ProgGenre{},
 			"",
 			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -184,11 +190,12 @@ var keywordtests = []struct {
 			ProgGenre{},
 			"",
 			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"test",
 			"test",
@@ -202,11 +209,12 @@ var keywordtests = []struct {
 			ProgGenre{},
 			"",
 			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"test",
 			"test",
@@ -220,11 +228,12 @@ var keywordtests = []struct {
 			ProgGenre{},
 			"test",
 			"",
+			"",
 		},
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
 		&Prog{
 			"ID",
 			"StationID",
@@ -236,6 +245,7 @@ var keywordtests = []struct {
 			"Pfm",
 			[]string{},
 			ProgGenre{},
+			"",
 			"",
 			"",
 		},
@@ -258,17 +268,17 @@ var pfmtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"pfmtests", "Title", []string{"sun"}, "Keyword", "", "StationID", "Window"},
+		&Rule{"pfmtests", "Title", []string{"sun"}, "Keyword", "", "StationID", "Window", ""},
 		"Pfm",
 		true,
 	},
 	{
-		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", ""},
+		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", "", ""},
 		"Pfm",
 		true,
 	},
 	{
-		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", ""},
+		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", "", ""},
 		"Someone",
 		false,
 	},
@@ -289,17 +299,17 @@ var stationtests = []struct {
 	out       bool
 }{
 	{
-		&Rule{"stationtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window"},
+		&Rule{"stationtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window", ""},
 		"FMT",
 		true,
 	},
 	{
-		&Rule{"stationtests", "", []string{}, "", "", "", ""},
+		&Rule{"stationtests", "", []string{}, "", "", "", "", ""},
 		"FMT",
 		true,
 	},
 	{
-		&Rule{"stationtests", "", []string{}, "", "", "FMT", ""},
+		&Rule{"stationtests", "", []string{}, "", "", "FMT", "", ""},
 		"TBS",
 		false,
 	},
@@ -320,17 +330,17 @@ var titletests = []struct {
 	out   bool
 }{
 	{
-		&Rule{"titletests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window"},
+		&Rule{"titletests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window", ""},
 		"Title",
 		true,
 	},
 	{
-		&Rule{"titletests", "", []string{}, "", "", "", ""},
+		&Rule{"titletests", "", []string{}, "", "", "", "", ""},
 		"Title",
 		true,
 	},
 	{
-		&Rule{"titletests", "Title", []string{}, "", "", "FMT", ""},
+		&Rule{"titletests", "Title", []string{}, "", "", "FMT", "", ""},
 		"Radio",
 		false,
 	},
@@ -351,17 +361,17 @@ var windowtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"windowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", ""},
+		&Rule{"windowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "", ""},
 		"20230625050000",
 		true,
 	},
 	{
-		&Rule{"windowtests", "", []string{}, "", "", "", "24h"},
+		&Rule{"windowtests", "", []string{}, "", "", "", "24h", ""},
 		time.Now().Add(-1 * time.Hour).Format("20060102150405"),
 		true,
 	},
 	{
-		&Rule{"windowtests", "", []string{}, "", "", "", "24h"},
+		&Rule{"windowtests", "", []string{}, "", "", "", "24h", ""},
 		time.Now().Add(time.Duration(-48) * time.Hour).Format("20060102150405"),
 		false,
 	},
@@ -384,11 +394,11 @@ var ruletests = []struct {
 	out bool
 }{
 	{
-		&Rule{"ruletests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window"},
+		&Rule{"ruletests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window", ""},
 		true,
 	},
 	{
-		&Rule{"ruletests", "", []string{}, "", "", "", ""},
+		&Rule{"ruletests", "", []string{}, "", "", "", "", ""},
 		false,
 	},
 }
@@ -457,16 +467,16 @@ func TestHasRuleFor(t *testing.T) {
 	}{
 		{
 			Rules{
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window"},
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			"FMT",
 			true,
 		},
 		{
 			Rules{
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window"},
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
+				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			"MBS",
 			false,
@@ -487,15 +497,15 @@ func TestHasRuleWithoutStationID(t *testing.T) {
 	}{
 		{
 			Rules{
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "", "Window"},
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "", "Window", ""},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			true,
 		},
 		{
 			Rules{
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window"},
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window"},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
+				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
 			},
 			false,
 		},
@@ -520,8 +530,8 @@ func TestFindMatch(t *testing.T) {
 	}{
 		{
 			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
 			},
 			"FMT",
 			&Prog{
@@ -537,13 +547,14 @@ func TestFindMatch(t *testing.T) {
 				ProgGenre{},
 				"",
 				"",
+				"",
 			},
-			&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
+			&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
 		},
 		{
 			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
 			},
 			"TBS",
 			&Prog{
@@ -559,13 +570,14 @@ func TestFindMatch(t *testing.T) {
 				ProgGenre{},
 				"",
 				"",
+				"",
 			},
-			&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+			&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
 		},
 		{
 			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", ""},
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
 			},
 			"MBS",
 			&Prog{
@@ -579,6 +591,7 @@ func TestFindMatch(t *testing.T) {
 				"Pfm",
 				[]string{},
 				ProgGenre{},
+				"",
 				"",
 				"",
 			},
