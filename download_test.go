@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bogem/id3v2"
 	"github.com/yyoshiki41/radigo"
 )
 
@@ -281,5 +282,186 @@ func TestGetURIErrorCases(t *testing.T) {
 	// However, if decode succeeds but listType is MEDIA, it returns empty string and error
 	if err == nil && uri != "" {
 		t.Error("getURI should return error or empty URI for media playlist (expects master)")
+	}
+}
+
+func TestWriteID3TagMP3(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "radikron-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Test MP3 format
+	testWriteID3Tag(t, tmpDir, radigo.AudioFormatMP3, "test-mp3")
+}
+
+func TestWriteID3TagAAC(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "radikron-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Test AAC format
+	testWriteID3Tag(t, tmpDir, radigo.AudioFormatAAC, "test-aac")
+}
+
+func testWriteID3Tag(t *testing.T, tmpDir, fileFormat, fileBaseName string) {
+	// Create output config
+	output := &radigo.OutputConfig{
+		DirFullPath:  tmpDir,
+		FileBaseName: fileBaseName,
+		FileFormat:   fileFormat,
+	}
+
+	// Create a minimal file (id3v2 can write tags to empty files)
+	testFile := output.AbsPath()
+	file, err := os.Create(testFile)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	file.Close()
+
+	// Create test program data
+	prog := &Prog{
+		Title:      "Test Program Title",
+		Pfm:        "Test Artist",
+		Ft:         "20230605130000",
+		Info:       "Test program information",
+		RuleName:   "test-rule",
+		RuleFolder: "",
+	}
+
+	// Write ID3 tags
+	err = writeID3Tag(output, prog)
+	if err != nil {
+		t.Fatalf("writeID3Tag failed: %v", err)
+	}
+
+	// Read back the tags to verify
+	tag, err := id3v2.Open(testFile, id3v2.Options{Parse: true})
+	if err != nil {
+		t.Fatalf("Failed to open file for reading tags: %v", err)
+	}
+	defer tag.Close()
+
+	// Verify Title
+	gotTitle := tag.Title()
+	wantTitle := fileBaseName
+	if gotTitle != wantTitle {
+		t.Errorf("Title => %v, want %v", gotTitle, wantTitle)
+	}
+
+	// Verify Artist
+	gotArtist := tag.Artist()
+	wantArtist := prog.Pfm
+	if gotArtist != wantArtist {
+		t.Errorf("Artist => %v, want %v", gotArtist, wantArtist)
+	}
+
+	// Verify Album
+	gotAlbum := tag.Album()
+	wantAlbum := prog.Title
+	if gotAlbum != wantAlbum {
+		t.Errorf("Album => %v, want %v", gotAlbum, wantAlbum)
+	}
+
+	// Verify Year
+	gotYear := tag.Year()
+	wantYear := prog.Ft[:4] // "2023"
+	if gotYear != wantYear {
+		t.Errorf("Year => %v, want %v", gotYear, wantYear)
+	}
+
+	// Verify Comment
+	commentFrames := tag.GetFrames(tag.CommonID("Comments"))
+	if len(commentFrames) == 0 {
+		t.Error("Expected at least one comment frame")
+	} else {
+		commentFrame, ok := commentFrames[0].(id3v2.CommentFrame)
+		if !ok {
+			t.Error("Expected comment frame to be CommentFrame type")
+		} else {
+			// Note: prog.Info is stored in Description field, not Text field
+			gotComment := commentFrame.Description
+			wantComment := prog.Info
+			if gotComment != wantComment {
+				t.Errorf("Comment Description => %v, want %v", gotComment, wantComment)
+			}
+		}
+	}
+
+	// Verify Album Artist (Rule Name)
+	albumArtistFrame := tag.GetTextFrame(tag.CommonID("Band/Orchestra/Accompaniment"))
+	if albumArtistFrame.Text == "" {
+		t.Error("Expected Album Artist (TPE2) frame to be present")
+	} else {
+		gotAlbumArtist := albumArtistFrame.Text
+		wantAlbumArtist := prog.RuleName
+		if gotAlbumArtist != wantAlbumArtist {
+			t.Errorf("Album Artist => %v, want %v", gotAlbumArtist, wantAlbumArtist)
+		}
+	}
+}
+
+func TestWriteID3TagWithoutRuleName(t *testing.T) {
+	// Test that writeID3Tag works even when RuleName is empty
+	tmpDir, err := os.MkdirTemp("", "radikron-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	output := &radigo.OutputConfig{
+		DirFullPath:  tmpDir,
+		FileBaseName: "test-no-rule",
+		FileFormat:   radigo.AudioFormatMP3,
+	}
+
+	// Create a minimal file
+	testFile := output.AbsPath()
+	file, err := os.Create(testFile)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	file.Close()
+
+	// Create test program data without RuleName
+	prog := &Prog{
+		Title: "Test Program Title",
+		Pfm:   "Test Artist",
+		Ft:    "20230605130000",
+		Info:  "Test program information",
+		// RuleName is empty
+	}
+
+	// Write ID3 tags
+	err = writeID3Tag(output, prog)
+	if err != nil {
+		t.Fatalf("writeID3Tag failed: %v", err)
+	}
+
+	// Read back the tags to verify
+	tag, err := id3v2.Open(testFile, id3v2.Options{Parse: true})
+	if err != nil {
+		t.Fatalf("Failed to open file for reading tags: %v", err)
+	}
+	defer tag.Close()
+
+	// Verify Album Artist is not set when RuleName is empty
+	albumArtistFrame := tag.GetTextFrame(tag.CommonID("Band/Orchestra/Accompaniment"))
+	if albumArtistFrame.Text != "" {
+		t.Errorf("Expected Album Artist (TPE2) frame to be absent when RuleName is empty, got: %v", albumArtistFrame.Text)
+	}
+
+	// Verify other tags are still present
+	if tag.Title() == "" {
+		t.Error("Expected Title to be set")
+	}
+	if tag.Artist() == "" {
+		t.Error("Expected Artist to be set")
 	}
 }
