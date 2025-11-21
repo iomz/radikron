@@ -32,14 +32,14 @@ func Download(
 
 	startTime, err = time.ParseInLocation(DatetimeLayout, start, Location)
 	if err != nil {
-		return fmt.Errorf("invalid start time format '%s': %s", start, err)
+		return fmt.Errorf("invalid start time format '%s': %w", start, err)
 	}
 
 	// the program is in the future
 	if startTime.After(CurrentTime) {
 		nextEndTime, err = time.ParseInLocation(DatetimeLayout, prog.To, Location)
 		if err != nil {
-			return fmt.Errorf("invalid end time format '%s': %s", start, err)
+			return fmt.Errorf("invalid end time format '%s': %w", prog.To, err)
 		}
 		// update the next fetching time
 		if asset.NextFetchTime == nil || asset.NextFetchTime.After(nextEndTime) {
@@ -70,15 +70,15 @@ func Download(
 		prog.RuleFolder,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to configure output: %s", err)
+		return fmt.Errorf("failed to configure output: %w", err)
 	}
 	if err = output.SetupDir(); err != nil {
-		return fmt.Errorf("failed to setup the output dir: %s", err)
+		return fmt.Errorf("failed to setup the output dir: %w", err)
 	}
 
 	// Check for duplicates and move from default folder to configured folder if needed
 	if err := handleDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output); err != nil {
-		return fmt.Errorf("failed to handle duplicate: %s", err)
+		return fmt.Errorf("failed to handle duplicate: %w", err)
 	}
 
 	// fetch the recording m3u8 uri
@@ -110,7 +110,7 @@ func buildM3U8RequestURI(prog *Prog) string {
 		"station_id": prog.StationID,
 		"ft":         prog.Ft,
 		"to":         prog.To,
-		"l":          "15", // required?
+		"l":          PlaylistM3U8Length, // required?
 	}
 	for k, v := range params {
 		urlQuery.Set(k, v)
@@ -295,18 +295,21 @@ func getRadicronPath(sub string) (string, error) {
 	fullPath := os.Getenv(EnvRadicronHome)
 	switch {
 	case fullPath != "" && !filepath.IsAbs(fullPath):
+		// Relative path - need working directory
 		wd, err := os.Getwd()
 		if err != nil {
 			return "", err
 		}
 		fullPath = filepath.Join(wd, fullPath, sub)
 	case fullPath == "":
+		// Default path - need working directory
 		wd, err := os.Getwd()
 		if err != nil {
 			return "", err
 		}
 		fullPath = filepath.Join(wd, "radiko", sub)
 	default:
+		// Absolute path - no need for working directory
 		fullPath = filepath.Join(fullPath, sub)
 	}
 	return filepath.Clean(fullPath), nil
@@ -326,17 +329,22 @@ func getURI(input io.Reader) (string, error) {
 	return p.Variants[0].URI, nil
 }
 
+// newOutputConfigFromPath creates an OutputConfig from a directory path, file base name, and format.
+func newOutputConfigFromPath(dirPath, fileBaseName, fileFormat string) *radigo.OutputConfig {
+	return &radigo.OutputConfig{
+		DirFullPath:  dirPath,
+		FileBaseName: fileBaseName,
+		FileFormat:   fileFormat,
+	}
+}
+
 // checkDuplicate checks if a file exists in either the default download directory
 // or in the configured folder. Returns true and the path if found, false otherwise.
 func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string) (exists bool, existingPath string) {
 	// Check in default download directory
 	defaultPath, err := getRadicronPath(downloadDir)
 	if err == nil {
-		defaultOutput := &radigo.OutputConfig{
-			DirFullPath:  defaultPath,
-			FileBaseName: fileBaseName,
-			FileFormat:   fileFormat,
-		}
+		defaultOutput := newOutputConfigFromPath(defaultPath, fileBaseName, fileFormat)
 		if defaultOutput.IsExist() {
 			return true, defaultOutput.AbsPath()
 		}
@@ -346,11 +354,7 @@ func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder stri
 	if configuredFolder != "" {
 		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, configuredFolder))
 		if err == nil {
-			configuredOutput := &radigo.OutputConfig{
-				DirFullPath:  configuredPath,
-				FileBaseName: fileBaseName,
-				FileFormat:   fileFormat,
-			}
+			configuredOutput := newOutputConfigFromPath(configuredPath, fileBaseName, fileFormat)
 			if configuredOutput.IsExist() {
 				return true, configuredOutput.AbsPath()
 			}
@@ -407,11 +411,7 @@ func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder str
 	if configuredFolder != "" {
 		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, configuredFolder))
 		if err == nil {
-			configuredOutput := &radigo.OutputConfig{
-				DirFullPath:  configuredPath,
-				FileBaseName: fileBaseName,
-				FileFormat:   fileFormat,
-			}
+			configuredOutput := newOutputConfigFromPath(configuredPath, fileBaseName, fileFormat)
 			if configuredOutput.IsExist() {
 				// File already exists in configured folder - skip
 				log.Printf("-skip already exists: %s", configuredOutput.AbsPath())
@@ -423,11 +423,7 @@ func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder str
 	// Check in default download directory
 	defaultPath, err := getRadicronPath(downloadDir)
 	if err == nil {
-		defaultOutput := &radigo.OutputConfig{
-			DirFullPath:  defaultPath,
-			FileBaseName: fileBaseName,
-			FileFormat:   fileFormat,
-		}
+		defaultOutput := newOutputConfigFromPath(defaultPath, fileBaseName, fileFormat)
 		if defaultOutput.IsExist() {
 			// If file exists in default folder and there's a configured folder, move it
 			if configuredFolder != "" {
@@ -475,7 +471,7 @@ func tempAACDir() (string, error) {
 	}
 
 	// Ensure the tmp directory exists
-	if err := os.MkdirAll(fullPath, 0755); err != nil {
+	if err := os.MkdirAll(fullPath, DirPermissions); err != nil {
 		return "", err
 	}
 
@@ -532,7 +528,7 @@ func timeshiftProgM3U8(
 func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 	tag, err := id3v2.Open(output.AbsPath(), id3v2.Options{Parse: true})
 	if err != nil {
-		return fmt.Errorf("error while opening the output file: %s", err)
+		return fmt.Errorf("error while opening the output file: %w", err)
 	}
 	defer tag.Close()
 
@@ -556,7 +552,7 @@ func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 
 	// write tag to the aac
 	if err = tag.Save(); err != nil {
-		return fmt.Errorf("error while saving a tag: %s", err)
+		return fmt.Errorf("error while saving a tag: %w", err)
 	}
 
 	return nil

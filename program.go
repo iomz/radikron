@@ -126,6 +126,6 @@ func decodeWeeklyProgram(iorc io.ReadCloser) (Progs, error) {
 		return progs, err
 	}
 
-	err = xml.Unmarshal([]byte(string(body)), &progs)
+	err = xml.Unmarshal(body, &progs)
 	return progs, err
 }
