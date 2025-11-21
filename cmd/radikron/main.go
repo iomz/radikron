@@ -17,10 +17,40 @@ import (
 	"github.com/yyoshiki41/go-radiko"
 )
 
+// ProgramFetcher is an interface for fetching weekly programs
+type ProgramFetcher interface {
+	FetchWeeklyPrograms(stationID string) (radikron.Progs, error)
+}
+
+// Downloader is an interface for downloading programs
+type Downloader interface {
+	Download(ctx context.Context, wg *sync.WaitGroup, prog *radikron.Prog) error
+}
+
+// AssetCreator is a function type for creating assets
+type AssetCreator func(client *radiko.Client) (*radikron.Asset, error)
+
+// TimeProvider provides the current time
+type TimeProvider func() time.Time
+
+// radikronProgramFetcher implements ProgramFetcher using radikron.FetchWeeklyPrograms
+type radikronProgramFetcher struct{}
+
+func (f *radikronProgramFetcher) FetchWeeklyPrograms(stationID string) (radikron.Progs, error) {
+	return radikron.FetchWeeklyPrograms(stationID)
+}
+
+// radikronDownloader implements Downloader using radikron.Download
+type radikronDownloader struct{}
+
+func (d *radikronDownloader) Download(ctx context.Context, wg *sync.WaitGroup, prog *radikron.Prog) error {
+	return radikron.Download(ctx, wg, prog)
+}
+
 // reloadConfig loads configuration and applies it to the asset in the context
-func reloadConfig(ctx context.Context, filename string) (*config.Config, error) {
-	// Update current time
-	radikron.CurrentTime = time.Now().In(radikron.Location)
+func reloadConfig(ctx context.Context, filename string, timeProvider TimeProvider) (*config.Config, error) {
+	// Update current time using time provider
+	radikron.CurrentTime = timeProvider().In(radikron.Location)
 
 	// Load configuration
 	cfg, err := config.LoadConfig(filename)
@@ -42,14 +72,21 @@ func reloadConfig(ctx context.Context, filename string) (*config.Config, error) 
 }
 
 // processStation checks and downloads programs for a station
-func processStation(ctx context.Context, wg *sync.WaitGroup, stationID string, rules radikron.Rules) {
+func processStation(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	stationID string,
+	rules radikron.Rules,
+	fetcher ProgramFetcher,
+	downloader Downloader,
+) {
 	// Skip if no rules match this station
 	if !rules.HasRuleWithoutStationID() && !rules.HasRuleForStationID(stationID) {
 		return
 	}
 
 	// Fetch weekly programs
-	weeklyPrograms, err := radikron.FetchWeeklyPrograms(stationID)
+	weeklyPrograms, err := fetcher.FetchWeeklyPrograms(stationID)
 	if err != nil {
 		log.Printf("failed to fetch the %s program: %v", stationID, err)
 		return
@@ -61,7 +98,7 @@ func processStation(ctx context.Context, wg *sync.WaitGroup, stationID string, r
 		if matchedRule := rules.FindMatch(stationID, p); matchedRule != nil {
 			p.RuleName = matchedRule.Name
 			p.RuleFolder = matchedRule.Folder
-			if err := radikron.Download(ctx, wg, p); err != nil {
+			if err := downloader.Download(ctx, wg, p); err != nil {
 				log.Printf("download failed: %s", err)
 			}
 		}
@@ -69,32 +106,83 @@ func processStation(ctx context.Context, wg *sync.WaitGroup, stationID string, r
 }
 
 // processStations processes all stations in the asset
-func processStations(ctx context.Context, wg *sync.WaitGroup, asset *radikron.Asset, rules radikron.Rules) {
+func processStations(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	asset *radikron.Asset,
+	rules radikron.Rules,
+	fetcher ProgramFetcher,
+	downloader Downloader,
+) {
 	for _, stationID := range asset.AvailableStations {
-		processStation(ctx, wg, stationID, rules)
+		processStation(ctx, wg, stationID, rules, fetcher, downloader)
 	}
 }
 
 // setNextFetchTime sets the next fetch time for the asset
-func setNextFetchTime(asset *radikron.Asset) {
+func setNextFetchTime(asset *radikron.Asset, currentTime time.Time) {
 	if asset.NextFetchTime == nil {
-		oneDayLater := radikron.CurrentTime.Add(radikron.OneDay * time.Hour)
+		oneDayLater := currentTime.Add(radikron.OneDay * time.Hour)
 		asset.NextFetchTime = &oneDayLater
 	}
 }
 
-// run is the main event loop
-func run(wg *sync.WaitGroup, configFileName string) {
-	client, err := radiko.New("")
+// runIteration runs a single iteration of the main loop
+func runIteration(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	configFileName string,
+	fetcher ProgramFetcher,
+	downloader Downloader,
+	timeProvider TimeProvider,
+) error {
+	// Load and apply configuration
+	cfg, err := reloadConfig(ctx, configFileName, timeProvider)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to reload config: %w", err)
 	}
 
+	// Get asset from context
+	asset := radikron.GetAsset(ctx)
+	if asset == nil {
+		return fmt.Errorf("asset not found in context")
+	}
+
+	// Process all stations
+	processStations(ctx, wg, asset, cfg.Rules, fetcher, downloader)
+
+	// Wait for all downloads to complete
+	log.Println("waiting for all the downloads to complete")
+	wg.Wait()
+
+	// Set next fetch time
+	setNextFetchTime(asset, timeProvider())
+
+	return nil
+}
+
+// run is the main event loop
+func run(
+	wg *sync.WaitGroup,
+	configFileName string,
+	client *radiko.Client,
+	assetCreator AssetCreator,
+	fetcher ProgramFetcher,
+	downloader Downloader,
+	timeProvider TimeProvider,
+	done <-chan struct{},
+) {
 	ck := radikron.ContextKey("asset")
 
 	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+
 		// Create new asset
-		asset, err := radikron.NewAsset(client)
+		asset, err := assetCreator(client)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -102,27 +190,38 @@ func run(wg *sync.WaitGroup, configFileName string) {
 		// Create context with asset
 		ctx := context.WithValue(context.Background(), ck, asset)
 
-		// Load and apply configuration
-		cfg, err := reloadConfig(ctx, configFileName)
-		if err != nil {
+		// Run single iteration
+		if err := runIteration(ctx, wg, configFileName, fetcher, downloader, timeProvider); err != nil {
 			log.Fatal(err)
 		}
 
-		// Process all stations
-		processStations(ctx, wg, asset, cfg.Rules)
-
-		// Wait for all downloads to complete
-		log.Println("waiting for all the downloads to complete")
-		wg.Wait()
-
-		// Set next fetch time
-		setNextFetchTime(asset)
-
 		// Sleep until next fetch time
-		log.Printf("fetching completed – sleeping until %v", asset.NextFetchTime)
-		fetchTimer := time.NewTimer(time.Until(*asset.NextFetchTime))
-		<-fetchTimer.C
+		asset = radikron.GetAsset(ctx)
+		if asset != nil && asset.NextFetchTime != nil {
+			log.Printf("fetching completed – sleeping until %v", asset.NextFetchTime)
+			fetchTimer := time.NewTimer(time.Until(*asset.NextFetchTime))
+			select {
+			case <-done:
+				fetchTimer.Stop()
+				return
+			case <-fetchTimer.C:
+			}
+		}
 	}
+}
+
+// runWithDefaults runs with default dependencies (for production use)
+func runWithDefaults(wg *sync.WaitGroup, configFileName string, done <-chan struct{}) {
+	client, err := radiko.New("")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fetcher := &radikronProgramFetcher{}
+	downloader := &radikronDownloader{}
+	timeProvider := time.Now
+
+	run(wg, configFileName, client, radikron.NewAsset, fetcher, downloader, timeProvider, done)
 }
 
 func main() {
@@ -150,12 +249,18 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	// Create done channel for graceful shutdown
+	done := make(chan struct{})
+
 	// Run main loop in goroutine
 	wg := sync.WaitGroup{}
-	go run(&wg, *conf)
+	go func() {
+		runWithDefaults(&wg, *conf, done)
+	}()
 
 	// Wait for signal
 	<-quit
+	close(done)
 
 	// Finish downloads in progress
 	log.Println("exit once all the downloads complete")

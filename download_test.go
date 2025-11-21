@@ -504,7 +504,7 @@ func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
 
 	// Create file in default folder
 	defaultFile := filepath.Join(downloadsDir, "target-exists-test.aac")
-	err := os.WriteFile(defaultFile, []byte("test content"), 0644)
+	err := os.WriteFile(defaultFile, []byte("test content"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
@@ -525,7 +525,7 @@ func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
 	// Create target file in configured folder (simulating edge case where target exists)
 	// This tests the edge case handling at line 445-451 in handleDuplicate
 	targetFile := output.AbsPath()
-	err = os.WriteFile(targetFile, []byte("existing content"), 0644)
+	err = os.WriteFile(targetFile, []byte("existing content"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create target file: %v", err)
 	}
@@ -587,7 +587,7 @@ func TestGetChunklist(t *testing.T) {
 
 	// Test with invalid m3u8 format
 	invalidReader := strings.NewReader("#EXTM3U\ninvalid content")
-	chunklist, err = getChunklist(invalidReader)
+	chunklist, _ = getChunklist(invalidReader)
 	if chunklist != nil {
 		t.Error("getChunklist should return nil chunklist for invalid format")
 	}
@@ -808,7 +808,7 @@ func TestMoveFile(t *testing.T) {
 	destFile := filepath.Join(tmpDir, "dest.txt")
 
 	// Create source file
-	err := os.WriteFile(sourceFile, []byte("test content"), 0644)
+	err := os.WriteFile(sourceFile, []byte("test content"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
@@ -856,7 +856,7 @@ func TestMoveFile_CopyFallback(t *testing.T) {
 
 	// Create source file with content
 	testContent := "test content for copy fallback"
-	err := os.WriteFile(sourceFile, []byte(testContent), 0644)
+	err := os.WriteFile(sourceFile, []byte(testContent), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
@@ -894,7 +894,7 @@ func TestMoveFile_CopyFallbackErrorPaths(t *testing.T) {
 	destFile := filepath.Join(tmpDir, "dest.txt")
 
 	// Create source file
-	err := os.WriteFile(sourceFile, []byte("test"), 0644)
+	err := os.WriteFile(sourceFile, []byte("test"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestMoveFile_ErrorCases(t *testing.T) {
 	// Test: Destination directory doesn't exist (and can't be created)
 	// Create source file
 	sourceFile := filepath.Join(tmpDir, "source.txt")
-	err = os.WriteFile(sourceFile, []byte("test"), 0644)
+	err = os.WriteFile(sourceFile, []byte("test"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create source file: %v", err)
 	}

@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Compiled binary
+radikron
+
 # Test binary, built with `go test -c`
 *.test
 

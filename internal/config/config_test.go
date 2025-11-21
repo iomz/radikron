@@ -233,29 +233,14 @@ rules:
 	}
 }
 
-func TestParseRuleFromNode(t *testing.T) {
-	// Setup viper for testing
-	viper.Reset()
-	viper.SetConfigType("yaml")
-
-	tests := []struct {
-		name     string
-		ruleYAML string
-		ruleName string
-		wantErr  bool
-		errMsg   string
-	}{
-		{
-			name: "normal case",
-			ruleYAML: `station-id: FMT
+func TestParseRuleFromNode_NormalCase(t *testing.T) {
+	testParseRuleFromNodeSuccess(t, `station-id: FMT
 title: "Test Title"
-`,
-			ruleName: "test-rule",
-			wantErr:  false,
-		},
-		{
-			name: "rule with all fields",
-			ruleYAML: `station-id: TBS
+`, "test-rule", "test-rule")
+}
+
+func TestParseRuleFromNode_AllFields(t *testing.T) {
+	testParseRuleFromNodeSuccess(t, `station-id: TBS
 title: "Test Title"
 pfm: "Test Person"
 keyword: "test"
@@ -264,110 +249,89 @@ dow:
   - tue
 window: 48h
 folder: "test-folder"
-`,
-			ruleName: "full-rule",
-			wantErr:  false,
-		},
-		{
-			name:     "decode error - invalid YAML structure",
-			ruleYAML: `invalid: [unclosed`,
-			ruleName: "invalid-rule",
-			wantErr:  true,
-			errMsg:   "failed to decode rule",
-		},
+`, "full-rule", "full-rule")
+}
+
+// testParseRuleFromNodeSuccess is a helper to test successful rule parsing
+func testParseRuleFromNodeSuccess(t *testing.T, ruleYAML, ruleName, expectedName string) {
+	t.Helper()
+	viper.Reset()
+	viper.SetConfigType("yaml")
+
+	var ruleNode yaml.Node
+	if err := yaml.Unmarshal([]byte(ruleYAML), &ruleNode); err != nil {
+		t.Fatalf("unexpected error unmarshaling rule YAML: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset viper for each test
-			viper.Reset()
+	actualRuleNode := extractRuleNode(&ruleNode)
+	nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: ruleName}
 
-			// Create YAML node for the rule
-			var ruleNode yaml.Node
-			err := yaml.Unmarshal([]byte(tt.ruleYAML), &ruleNode)
-			if err != nil && !tt.wantErr {
-				t.Fatalf("unexpected error unmarshaling rule YAML: %v", err)
-			}
-			if err != nil && tt.wantErr && tt.name == "decode error - invalid YAML structure" {
-				// For decode error case, create a node that will fail to decode to map
-				// Create a scalar node instead of mapping node - this will cause decode error
-				ruleNode = yaml.Node{
-					Kind:  yaml.ScalarNode,
-					Value: "not a mapping",
-				}
-			}
-
-			// Extract the actual rule node (first content element if it's a document)
-			var actualRuleNode *yaml.Node
-			if ruleNode.Kind == yaml.DocumentNode && len(ruleNode.Content) > 0 {
-				actualRuleNode = ruleNode.Content[0]
-			} else {
-				actualRuleNode = &ruleNode
-			}
-
-			// Create name node
-			nameNode := &yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Value: tt.ruleName,
-			}
-
-			rule, err := parseRuleFromNode(nameNode, actualRuleNode)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseRuleFromNode() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantErr {
-				if err == nil {
-					t.Error("parseRuleFromNode() expected error but got nil")
-				}
-				if tt.errMsg != "" && err != nil {
-					// Check if error message contains expected substring
-					if !containsSubstring(err.Error(), tt.errMsg) {
-						t.Logf("error message '%s' does not contain '%s'", err.Error(), tt.errMsg)
-					}
-				}
-				return
-			}
-
-			if rule == nil {
-				t.Fatal("parseRuleFromNode() returned nil rule")
-			}
-
-			if rule.Name != tt.ruleName {
-				t.Errorf("parseRuleFromNode() rule.Name = %v, want %v", rule.Name, tt.ruleName)
-			}
-		})
+	rule, err := parseRuleFromNode(nameNode, actualRuleNode)
+	if err != nil {
+		t.Errorf("parseRuleFromNode() error = %v, want nil", err)
 	}
+	if rule == nil {
+		t.Fatal("parseRuleFromNode() returned nil rule")
+	}
+	if rule.Name != expectedName {
+		t.Errorf("parseRuleFromNode() rule.Name = %v, want %v", rule.Name, expectedName)
+	}
+}
 
-	// Test error cases
-	t.Run("nil nameNode", func(t *testing.T) {
-		viper.Reset()
-		ruleNode := &yaml.Node{Kind: yaml.MappingNode}
-		_, err := parseRuleFromNode(nil, ruleNode)
-		if err == nil {
-			t.Error("parseRuleFromNode() with nil nameNode should return error")
-		}
-	})
+func TestParseRuleFromNode_DecodeError(t *testing.T) {
+	viper.Reset()
+	viper.SetConfigType("yaml")
 
-	t.Run("nil ruleNode", func(t *testing.T) {
-		viper.Reset()
-		nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "test"}
-		_, err := parseRuleFromNode(nameNode, nil)
-		if err == nil {
-			t.Error("parseRuleFromNode() with nil ruleNode should return error")
-		}
-	})
+	// Create a scalar node instead of mapping node - this will cause decode error
+	ruleNode := &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Value: "not a mapping",
+	}
+	nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "invalid-rule"}
 
-	t.Run("empty rule name", func(t *testing.T) {
-		viper.Reset()
-		nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: ""}
-		ruleNode := &yaml.Node{Kind: yaml.MappingNode}
-		_, err := parseRuleFromNode(nameNode, ruleNode)
-		if err == nil {
-			t.Error("parseRuleFromNode() with empty rule name should return error")
-		}
-	})
+	_, err := parseRuleFromNode(nameNode, ruleNode)
+	if err == nil {
+		t.Error("parseRuleFromNode() expected error but got nil")
+	}
+	if err != nil && !containsSubstring(err.Error(), "failed to decode rule") {
+		t.Logf("error message '%s' does not contain 'failed to decode rule'", err.Error())
+	}
+}
+
+func TestParseRuleFromNode_NilNameNode(t *testing.T) {
+	viper.Reset()
+	ruleNode := &yaml.Node{Kind: yaml.MappingNode}
+	_, err := parseRuleFromNode(nil, ruleNode)
+	if err == nil {
+		t.Error("parseRuleFromNode() with nil nameNode should return error")
+	}
+}
+
+func TestParseRuleFromNode_NilRuleNode(t *testing.T) {
+	viper.Reset()
+	nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "test"}
+	_, err := parseRuleFromNode(nameNode, nil)
+	if err == nil {
+		t.Error("parseRuleFromNode() with nil ruleNode should return error")
+	}
+}
+
+func TestParseRuleFromNode_EmptyRuleName(t *testing.T) {
+	viper.Reset()
+	nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: ""}
+	ruleNode := &yaml.Node{Kind: yaml.MappingNode}
+	_, err := parseRuleFromNode(nameNode, ruleNode)
+	if err == nil {
+		t.Error("parseRuleFromNode() with empty rule name should return error")
+	}
+}
+
+// extractRuleNode extracts the actual rule node from a YAML node
+func extractRuleNode(ruleNode *yaml.Node) *yaml.Node {
+	if ruleNode.Kind == yaml.DocumentNode && len(ruleNode.Content) > 0 {
+		return ruleNode.Content[0]
+	}
+	return ruleNode
 }
 
 // containsSubstring checks if a string contains a substring
