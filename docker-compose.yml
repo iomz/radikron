@@ -2,7 +2,7 @@
 services:
   radikron:
     build: .
-    image: ghcr.io/iomz/radikron:0.5
+    image: ghcr.io/iomz/radikron:latest
     container_name: radikron
     restart: unless-stopped
     user: 1000:1000
