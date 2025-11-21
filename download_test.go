@@ -237,6 +237,135 @@ func TestCheckDuplicate(t *testing.T) {
 	os.Remove(testFile)
 }
 
+func TestHandleDuplicate(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	// Set a test directory
+	testDir := filepath.Join(os.TempDir(), "radikron-test-handle-dup")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	// Create directory structure
+	downloadsDir := filepath.Join(testDir, "downloads")
+	err := os.MkdirAll(downloadsDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create test downloads directory: %v", err)
+	}
+
+	// Test 1: File doesn't exist anywhere - should proceed (no error)
+	output, err := newOutputConfig("nonexistent-file", radigo.AudioFormatAAC, "downloads", "")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	err = handleDuplicate("nonexistent-file", radigo.AudioFormatAAC, "downloads", "", output)
+	if err != nil {
+		t.Errorf("handleDuplicate should not return error for non-existent file: %v", err)
+	}
+
+	// Test 2: File exists in default folder, no configured folder - should skip
+	testFile := filepath.Join(downloadsDir, "test-file.aac")
+	file, err := os.Create(testFile)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	file.Close()
+
+	output, err = newOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	err = handleDuplicate("test-file", radigo.AudioFormatAAC, "downloads", "", output)
+	if err != nil {
+		t.Errorf("handleDuplicate should not return error for existing file in default folder: %v", err)
+	}
+	// File should still exist in default folder
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Error("File should still exist in default folder when no configured folder is specified")
+	}
+
+	// Test 3: File exists in default folder, configured folder specified - should move
+	citypopDir := filepath.Join(downloadsDir, "citypop")
+	err = os.MkdirAll(citypopDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create citypop directory: %v", err)
+	}
+
+	// Create a new file in default folder to move
+	moveFile := filepath.Join(downloadsDir, "move-test.aac")
+	file, err = os.Create(moveFile)
+	if err != nil {
+		t.Fatalf("Failed to create file to move: %v", err)
+	}
+	file.Close()
+
+	output, err = newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	err = handleDuplicate("move-test", radigo.AudioFormatAAC, "downloads", "citypop", output)
+	if err != nil {
+		t.Errorf("handleDuplicate should not return error when moving file: %v", err)
+	}
+
+	// Verify file was moved
+	expectedPath := filepath.Join(citypopDir, "move-test.aac")
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Error("File should have been moved to configured folder")
+	}
+	if _, err := os.Stat(moveFile); err == nil {
+		t.Error("File should no longer exist in default folder")
+	}
+
+	// Test 4: File already exists in configured folder - should skip
+	output, err = newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	err = handleDuplicate("move-test", radigo.AudioFormatAAC, "downloads", "citypop", output)
+	if err != nil {
+		t.Errorf("handleDuplicate should not return error for existing file in configured folder: %v", err)
+	}
+	// File should still exist in configured folder
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Error("File should still exist in configured folder")
+	}
+
+	// Test 5: File exists in default folder, but target already exists in configured folder - should skip
+	// Create file in default folder
+	defaultFile := filepath.Join(downloadsDir, "conflict-test.aac")
+	file, err = os.Create(defaultFile)
+	if err != nil {
+		t.Fatalf("Failed to create default file: %v", err)
+	}
+	file.Close()
+
+	// Create file in configured folder
+	configuredFile := filepath.Join(citypopDir, "conflict-test.aac")
+	file, err = os.Create(configuredFile)
+	if err != nil {
+		t.Fatalf("Failed to create configured file: %v", err)
+	}
+	file.Close()
+
+	output, err = newOutputConfig("conflict-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	err = handleDuplicate("conflict-test", radigo.AudioFormatAAC, "downloads", "citypop", output)
+	if err != nil {
+		t.Errorf("handleDuplicate should not return error when file exists in both locations: %v", err)
+	}
+	// Both files should still exist (configured folder takes precedence)
+	if _, err := os.Stat(configuredFile); os.IsNotExist(err) {
+		t.Error("File should still exist in configured folder")
+	}
+	if _, err := os.Stat(defaultFile); os.IsNotExist(err) {
+		t.Error("File should still exist in default folder when file also exists in configured folder")
+	}
+}
+
 func TestGetChunklist(t *testing.T) {
 	// Test with master playlist (should return error or nil)
 	m3u8, err := PlaylistTestM3U8.Open("test/playlist-test.m3u8")

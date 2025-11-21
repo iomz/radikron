@@ -76,10 +76,9 @@ func Download(
 		return fmt.Errorf("failed to setup the output dir: %s", err)
 	}
 
-	// Check for duplicates in both default folder and configured folder
-	if exists, existingPath := checkDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder); exists {
-		log.Printf("-skip already exists: %s", existingPath)
-		return nil
+	// Check for duplicates and move from default folder to configured folder if needed
+	if err := handleDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output); err != nil {
+		return fmt.Errorf("failed to handle duplicate: %s", err)
 	}
 
 	// fetch the recording m3u8 uri
@@ -359,6 +358,95 @@ func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder stri
 	}
 
 	return false, ""
+}
+
+// moveFile attempts to move a file using os.Rename, falling back to copy-then-delete
+// if the rename fails (e.g., across filesystems).
+func moveFile(source, dest string) error {
+	// First attempt: try os.Rename (atomic and fast on same filesystem)
+	err := os.Rename(source, dest)
+	if err == nil {
+		return nil
+	}
+
+	// Fallback: copy-then-delete (handles cross-filesystem moves)
+	srcFile, err := os.Open(source)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+
+	_, err = io.Copy(destFile, srcFile)
+	if closeErr := destFile.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		// Clean up destination file if copy failed
+		_ = os.Remove(dest)
+		return fmt.Errorf("failed to copy file: %w", err)
+	}
+
+	// Delete source file after successful copy
+	if err := os.Remove(source); err != nil {
+		// Clean up destination file if delete failed (atomic operation)
+		_ = os.Remove(dest)
+		return fmt.Errorf("failed to remove source file after copy: %w", err)
+	}
+
+	return nil
+}
+
+// handleDuplicate checks for duplicates and moves files from default folder to configured folder if needed
+func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig) error {
+	// Check in configured folder first (if specified) - takes precedence
+	if configuredFolder != "" {
+		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, configuredFolder))
+		if err == nil {
+			configuredOutput := &radigo.OutputConfig{
+				DirFullPath:  configuredPath,
+				FileBaseName: fileBaseName,
+				FileFormat:   fileFormat,
+			}
+			if configuredOutput.IsExist() {
+				// File already exists in configured folder - skip
+				log.Printf("-skip already exists: %s", configuredOutput.AbsPath())
+				return nil
+			}
+		}
+	}
+
+	// Check in default download directory
+	defaultPath, err := getRadicronPath(downloadDir)
+	if err == nil {
+		defaultOutput := &radigo.OutputConfig{
+			DirFullPath:  defaultPath,
+			FileBaseName: fileBaseName,
+			FileFormat:   fileFormat,
+		}
+		if defaultOutput.IsExist() {
+			// If file exists in default folder and there's a configured folder, move it
+			if configuredFolder != "" {
+				source := defaultOutput.AbsPath()
+				targetPath := output.AbsPath()
+				if err := moveFile(source, targetPath); err != nil {
+					return fmt.Errorf("failed to move file from default to configured folder: %w", err)
+				}
+				log.Printf("moved file: %s -> %s", source, targetPath)
+				return nil
+			}
+			// File exists in default folder, no configured folder - skip
+			log.Printf("-skip already exists: %s", defaultOutput.AbsPath())
+			return nil
+		}
+	}
+
+	// No duplicate found, proceed with download
+	return nil
 }
 
 // newOutputConfig prepares the outputdir
