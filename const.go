@@ -33,6 +33,10 @@ const (
 	TZTokyo = "Asia/Tokyo"
 	// UserIDLength for user-id
 	UserIDLength = 16
+	// PlaylistM3U8Length parameter for m3u8 playlist requests
+	PlaylistM3U8Length = "15"
+	// DirPermissions for directory creation (0755 = rwxr-xr-x)
+	DirPermissions = 0755
 
 	// API endpoints
 	// region full
