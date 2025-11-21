@@ -107,9 +107,10 @@ func TestApplyToAsset(t *testing.T) {
 		t.Fatalf("expected no error loading config, got: %v", err)
 	}
 
-	// Create a mock asset
+	// Create a mock asset with empty Stations map (LoadAvailableStations will return empty)
 	asset := &radikron.Asset{
 		AvailableStations: []string{},
+		Stations:          radikron.Stations{},
 	}
 
 	err = cfg.ApplyToAsset(asset)
@@ -125,12 +126,7 @@ func TestApplyToAsset(t *testing.T) {
 		t.Errorf("expected MinimumOutputSize to be %d, got %d", cfg.MinimumOutputSize, asset.MinimumOutputSize)
 	}
 
-	// Check that stations were loaded
-	if len(asset.AvailableStations) == 0 {
-		t.Error("expected stations to be loaded")
-	}
-
-	// Check that extra stations from rules are added
+	// Check that extra stations from rules are added (FMT should be added from the airship rule)
 	hasFMT := false
 	for _, station := range asset.AvailableStations {
 		if station == "FMT" {
@@ -139,7 +135,12 @@ func TestApplyToAsset(t *testing.T) {
 		}
 	}
 	if !hasFMT {
-		t.Error("expected FMT station to be in available stations")
+		t.Errorf("expected FMT station to be in available stations (from rules), got: %v", asset.AvailableStations)
+	}
+
+	// Verify that at least one station was added (from rules)
+	if len(asset.AvailableStations) == 0 {
+		t.Error("expected at least one station to be added from rules")
 	}
 }
 
