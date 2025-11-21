@@ -195,7 +195,7 @@ func parseRuleFromNode(nameNode, ruleNode *yaml.Node) (*radikron.Rule, error) {
 
 	// Convert rule node to a map for viper to process
 	// Viper's UnmarshalKey respects mapstructure tags
-	var ruleMap map[string]interface{}
+	var ruleMap map[string]any
 	if err := ruleNode.Decode(&ruleMap); err != nil {
 		return nil, fmt.Errorf("failed to decode rule '%s': %w", name, err)
 	}

@@ -81,6 +81,12 @@ func Download(
 		return fmt.Errorf("failed to handle duplicate: %w", err)
 	}
 
+	// After handleDuplicate, check if the output file already exists (duplicate found)
+	if output.IsExist() {
+		log.Printf("-skip already exists: %s", output.AbsPath())
+		return nil
+	}
+
 	// fetch the recording m3u8 uri
 	uri, err := timeshiftProgM3U8(ctx, prog)
 	if err != nil {

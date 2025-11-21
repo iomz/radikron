@@ -39,4 +39,3 @@ Closes #123
 - When committing, use the Conventional Changelog format described above
 - **ALWAYS** run gofmt whenever making changes to a Go file
 - **ALWAYS** check golangci-lint before committing a change and confirm there are no lint errors
-

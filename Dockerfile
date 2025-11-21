@@ -1,6 +1,6 @@
-FROM golang:1.20.4-alpine AS build
+FROM golang:1.25.4-alpine AS build
 
-LABEL maintainer="Iori Mizutani <iori.mizutani@gmail.com>"
+LABEL maintainer="Iori Mizutani <iomz@sazanka.io>"
 
 # build the app
 RUN mkdir -p /build
