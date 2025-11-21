@@ -18,7 +18,40 @@ import (
 	"github.com/yyoshiki41/radigo"
 )
 
-var sem = make(chan struct{}, MaxConcurrency)
+var (
+	downloadingSem = make(chan struct{}, MaxDownloadingConcurrency)
+	encodingSem    = make(chan struct{}, MaxEncodingConcurrency)
+	semMu          sync.Mutex // protects semaphore recreation
+)
+
+// InitSemaphores initializes or updates the semaphores based on the asset's concurrency settings.
+// This should be called when configuration is applied to ensure semaphores match the config.
+func InitSemaphores(asset *Asset) {
+	if asset == nil {
+		return
+	}
+
+	maxDownloadingConcurrency := asset.MaxDownloadingConcurrency
+	if maxDownloadingConcurrency <= 0 {
+		maxDownloadingConcurrency = MaxDownloadingConcurrency
+	}
+
+	maxEncodingConcurrency := asset.MaxEncodingConcurrency
+	if maxEncodingConcurrency <= 0 {
+		maxEncodingConcurrency = MaxEncodingConcurrency
+	}
+
+	semMu.Lock()
+	defer semMu.Unlock()
+
+	// Recreate semaphores if values changed
+	if cap(downloadingSem) != maxDownloadingConcurrency {
+		downloadingSem = make(chan struct{}, maxDownloadingConcurrency)
+	}
+	if cap(encodingSem) != maxEncodingConcurrency {
+		encodingSem = make(chan struct{}, maxEncodingConcurrency)
+	}
+}
 
 // errSkipAfterMove is a sentinel error indicating the file was moved and exists at target,
 // so download should be skipped without logging "skip already exists"
@@ -151,9 +184,9 @@ func bulkDownload(list []string, output string) error {
 
 			var err error
 			for i := 0; i < MaxRetryAttempts; i++ {
-				sem <- struct{}{}
+				downloadingSem <- struct{}{}
 				err = downloadLink(link, output)
-				<-sem
+				<-downloadingSem
 				if err == nil {
 					break
 				}
@@ -233,37 +266,12 @@ func downloadProgram(
 		return
 	}
 
-	switch output.AudioFormat() {
-	case radigo.AudioFormatAAC:
-		err = os.Rename(concatedFile, output.AbsPath())
-	case radigo.AudioFormatMP3:
-		err = radigo.ConvertAACtoMP3(ctx, concatedFile, output.AbsPath())
-	default:
-		err = fmt.Errorf("invalid file format")
-	}
-
-	if err != nil {
+	if err = writeOutputFile(ctx, concatedFile, output); err != nil {
 		log.Printf("failed to write the output file: %s", err)
 		return
 	}
 
-	info, err := os.Stat(output.AbsPath())
-	if err != nil {
-		log.Printf("failed to stat the output file: %s", err)
-		return
-	}
-
-	asset := GetAsset(ctx)
-	if info.Size() < asset.MinimumOutputSize {
-		log.Printf("the output file is too small: %v MB", float32(info.Size())/Kilobytes/Kilobytes)
-		err = os.Remove(output.AbsPath())
-		if err != nil {
-			log.Printf("failed to remove the file: %v", err)
-			return
-		}
-		next := time.Now().In(Location).Add(BufferMinutes * time.Minute)
-		asset.NextFetchTime = &next
-		log.Printf("removed the file, retry downloading at %v", next)
+	if shouldRetry := validateAndCleanupOutputFile(ctx, output); shouldRetry {
 		return
 	}
 
@@ -275,6 +283,48 @@ func downloadProgram(
 
 	// finish downloading the file
 	log.Printf("+file saved: %s", output.AbsPath())
+}
+
+// writeOutputFile writes the concatenated file to the output location,
+// handling format conversion (AAC to MP3) if needed.
+func writeOutputFile(ctx context.Context, concatedFile string, output *radigo.OutputConfig) error {
+	switch output.AudioFormat() {
+	case radigo.AudioFormatAAC:
+		return os.Rename(concatedFile, output.AbsPath())
+	case radigo.AudioFormatMP3:
+		// Limit concurrent encoding operations to prevent resource exhaustion
+		encodingSem <- struct{}{}
+		defer func() { <-encodingSem }()
+		log.Printf("start encoding to MP3: %s", output.AbsPath())
+		return radigo.ConvertAACtoMP3(ctx, concatedFile, output.AbsPath())
+	default:
+		return fmt.Errorf("invalid file format")
+	}
+}
+
+// validateAndCleanupOutputFile validates the output file size and removes it
+// if it's too small, scheduling a retry. Returns true if a retry was scheduled.
+func validateAndCleanupOutputFile(ctx context.Context, output *radigo.OutputConfig) bool {
+	info, err := os.Stat(output.AbsPath())
+	if err != nil {
+		log.Printf("failed to stat the output file: %s", err)
+		return false
+	}
+
+	asset := GetAsset(ctx)
+	if info.Size() < asset.MinimumOutputSize {
+		log.Printf("the output file is too small: %v MB", float32(info.Size())/Kilobytes/Kilobytes)
+		err = os.Remove(output.AbsPath())
+		if err != nil {
+			log.Printf("failed to remove the file: %v", err)
+			return false
+		}
+		next := time.Now().In(Location).Add(BufferMinutes * time.Minute)
+		asset.NextFetchTime = &next
+		log.Printf("removed the file, retry downloading at %v", next)
+		return true
+	}
+	return false
 }
 
 // getChunklist returns a slice of uri string.

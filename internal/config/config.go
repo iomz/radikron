@@ -14,13 +14,15 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	AreaID            string
-	ExtraStations     []string
-	IgnoreStations    []string
-	FileFormat        string
-	MinimumOutputSize int64
-	DownloadDir       string
-	Rules             radikron.Rules
+	AreaID                    string
+	ExtraStations             []string
+	IgnoreStations            []string
+	FileFormat                string
+	MinimumOutputSize         int64
+	DownloadDir               string
+	Rules                     radikron.Rules
+	MaxDownloadingConcurrency int
+	MaxEncodingConcurrency    int
 }
 
 // LoadConfig loads and validates configuration from the specified file
@@ -62,10 +64,15 @@ func (c *Config) ApplyToAsset(asset *radikron.Asset) error {
 	asset.OutputFormat = c.FileFormat
 	asset.MinimumOutputSize = c.MinimumOutputSize
 	asset.DownloadDir = c.DownloadDir
+	asset.MaxDownloadingConcurrency = c.MaxDownloadingConcurrency
+	asset.MaxEncodingConcurrency = c.MaxEncodingConcurrency
 	asset.LoadAvailableStations(c.AreaID)
 	asset.AddExtraStations(c.ExtraStations)
 	asset.RemoveIgnoreStations(c.IgnoreStations)
 	asset.Rules = c.Rules
+
+	// Initialize semaphores with the configured concurrency values
+	radikron.InitSemaphores(asset)
 
 	// Build a set of existing stations for faster lookup
 	existingStations := make(map[string]bool)
@@ -115,6 +122,8 @@ func setDefaults() {
 	viper.SetDefault("file-format", radigo.AudioFormatAAC)
 	viper.SetDefault("minimum-output-size", radikron.DefaultMinimumOutputSize)
 	viper.SetDefault("downloads", "downloads")
+	viper.SetDefault("max-downloading-concurrency", radikron.MaxDownloadingConcurrency)
+	viper.SetDefault("max-encoding-concurrency", radikron.MaxEncodingConcurrency)
 }
 
 // buildConfig builds the Config struct from viper values
@@ -131,6 +140,8 @@ func (c *Config) buildConfig() error {
 	c.IgnoreStations = viper.GetStringSlice("ignore-stations")
 	c.MinimumOutputSize = viper.GetInt64("minimum-output-size") * radikron.Kilobytes * radikron.Kilobytes
 	c.DownloadDir = viper.GetString("downloads")
+	c.MaxDownloadingConcurrency = viper.GetInt("max-downloading-concurrency")
+	c.MaxEncodingConcurrency = viper.GetInt("max-encoding-concurrency")
 
 	// Load rules
 	rules, err := loadRules()

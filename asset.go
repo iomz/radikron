@@ -55,6 +55,10 @@ type Asset struct {
 	Schedules         Schedules
 	Stations          Stations
 	Versions          Versions
+	// MaxDownloadingConcurrency limits concurrent download operations
+	MaxDownloadingConcurrency int
+	// MaxEncodingConcurrency limits concurrent encoding operations (MP3 conversion)
+	MaxEncodingConcurrency int
 }
 
 // AddExtraStations appends stations to AvailableStations
@@ -383,6 +387,9 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 	asset.OutputFormat = radigo.AudioFormatAAC
 	// default DownloadDir
 	asset.DownloadDir = "downloads"
+	// default concurrency values
+	asset.MaxDownloadingConcurrency = MaxDownloadingConcurrency
+	asset.MaxEncodingConcurrency = MaxEncodingConcurrency
 	// nil *time.Time
 	asset.NextFetchTime = nil
 	// empty Schedules

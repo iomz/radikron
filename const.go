@@ -21,8 +21,11 @@ const (
 	JapanLatLng = 40.0
 	// Kilobytes for the metric bytes
 	Kilobytes = 1024
-	// DefaultMaxConcurrents
-	MaxConcurrency = 64
+	// MaxDownloadingConcurrency limits concurrent download operations
+	MaxDownloadingConcurrency = 64
+	// MaxEncodingConcurrency limits concurrent encoding operations (MP3 conversion)
+	// Set lower than MaxDownloadingConcurrency since encoding is CPU-intensive
+	MaxEncodingConcurrency = 2
 	// MaxRetryAttempts for BackOffDelay
 	MaxRetryAttempts = 8
 	// OneDay is 24 hours
