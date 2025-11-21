@@ -74,11 +74,62 @@ var matchtests = []struct {
 }
 
 func TestMatch(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
 	for _, tt := range matchtests {
 		got := tt.in.Match(tt.stationID, tt.p)
 		if got != tt.out {
 			t.Errorf("(%v).Match => %v, want %v", tt.in, got, tt.out)
 		}
+	}
+
+	// Test Match with window exclusion
+	r := &Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "1h", ""}
+	p := &Prog{
+		"ID",
+		"FMT",
+		time.Now().Add(-2 * time.Hour).Format("20060102150405"),
+		"20230625060000",
+		"Title",
+		"Keyword",
+		"",
+		"Pfm",
+		[]string{},
+		ProgGenre{},
+		"",
+		"",
+		"",
+	}
+	if r.Match("FMT", p) {
+		t.Error("Match should return false when window excludes the program")
+	}
+
+	// Test Match with DoW exclusion
+	r2 := &Rule{"matchtests", "Title", []string{"mon"}, "Keyword", "Pfm", "FMT", "", ""}
+	p2 := &Prog{
+		"ID",
+		"FMT",
+		"20230625050000", // Sunday
+		"20230625060000",
+		"Title",
+		"Keyword",
+		"",
+		"Pfm",
+		[]string{},
+		ProgGenre{},
+		"",
+		"",
+		"",
+	}
+	if r2.Match("FMT", p2) {
+		t.Error("Match should return false when DoW doesn't match")
+	}
+
+	// Test Match with station ID exclusion
+	r3 := &Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "TBS", "", ""}
+	if r3.Match("FMT", p2) {
+		t.Error("Match should return false when station ID doesn't match")
 	}
 }
 
@@ -387,6 +438,20 @@ func TestMatchWindow(t *testing.T) {
 			t.Errorf("(%v).MatchWindow => %v, want %v", tt.in, got, tt.out)
 		}
 	}
+
+	// Test with invalid time format
+	r := &Rule{"windowtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "24h", ""}
+	got := r.MatchWindow("invalid-time")
+	if got {
+		t.Error("MatchWindow should return false for invalid time format")
+	}
+
+	// Test with invalid window duration
+	r2 := &Rule{"windowtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "invalid", ""}
+	got = r2.MatchWindow(time.Now().Add(-1 * time.Hour).Format("20060102150405"))
+	if !got {
+		t.Error("MatchWindow should handle invalid window duration gracefully")
+	}
 }
 
 var ruletests = []struct {
@@ -514,6 +579,92 @@ func TestHasRuleWithoutStationID(t *testing.T) {
 		res := tt.in.HasRuleWithoutStationID()
 		if tt.out != res {
 			t.Errorf("(%v).HasRuleWithoutStationID() => %v, want %v", tt.in, res, tt.out)
+		}
+	}
+}
+
+func TestHasMatch(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
+	var hasmatchtests = []struct {
+		rules     Rules
+		stationID string
+		prog      *Prog
+		expected  bool
+	}{
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			true,
+		},
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"MBS",
+			&Prog{
+				"ID",
+				"MBS",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			false,
+		},
+		{
+			Rules{},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			false,
+		},
+	}
+
+	for _, tt := range hasmatchtests {
+		got := tt.rules.HasMatch(tt.stationID, tt.prog)
+		if got != tt.expected {
+			t.Errorf("Rules.HasMatch(%s, %v) => %v, want %v", tt.stationID, tt.prog, got, tt.expected)
 		}
 	}
 }

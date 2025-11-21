@@ -122,7 +122,10 @@ func buildM3U8RequestURI(prog *Prog) string {
 }
 
 func bulkDownload(list []string, output string) error {
-	var errFlag bool
+	var (
+		errFlag bool
+		mu      sync.Mutex
+	)
 	var wg sync.WaitGroup
 
 	for _, v := range list {
@@ -141,13 +144,19 @@ func bulkDownload(list []string, output string) error {
 			}
 			if err != nil {
 				log.Printf("failed to download: %s", err)
+				mu.Lock()
 				errFlag = true
+				mu.Unlock()
 			}
 		}(v)
 	}
 	wg.Wait()
 
-	if errFlag {
+	mu.Lock()
+	hasError := errFlag
+	mu.Unlock()
+
+	if hasError {
 		return errors.New("lack of aac files")
 	}
 	return nil
@@ -320,7 +329,7 @@ func getURI(input io.Reader) (string, error) {
 
 // checkDuplicate checks if a file exists in either the default download directory
 // or in the configured folder. Returns true and the path if found, false otherwise.
-func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string) (bool, string) {
+func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string) (exists bool, existingPath string) {
 	// Check in default download directory
 	defaultPath, err := getRadicronPath(downloadDir)
 	if err == nil {
