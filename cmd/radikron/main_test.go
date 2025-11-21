@@ -88,7 +88,7 @@ func TestProcessStation_SkipWhenNoRules(t *testing.T) {
 	// Should skip early when no rules match
 	processStation(ctx, wg, stationID, rules, mockFetcher, mockDownloader)
 
-	if mockFetcher.called {
+	if mockFetcher.Called() {
 		t.Error("FetchWeeklyPrograms should not be called when no rules match")
 	}
 }
@@ -117,11 +117,11 @@ func TestProcessStation_WithMatchingRules(t *testing.T) {
 
 	processStation(ctx, wg, stationID, rules, mockFetcher, mockDownloader)
 
-	if !mockFetcher.called {
+	if !mockFetcher.Called() {
 		t.Error("FetchWeeklyPrograms should be called when rules match")
 	}
-	if mockFetcher.stationID != stationID {
-		t.Errorf("FetchWeeklyPrograms called with stationID = %v, want %v", mockFetcher.stationID, stationID)
+	if mockFetcher.StationID() != stationID {
+		t.Errorf("FetchWeeklyPrograms called with stationID = %v, want %v", mockFetcher.StationID(), stationID)
 	}
 }
 
@@ -150,8 +150,8 @@ func TestProcessStations(t *testing.T) {
 	processStations(ctx, wg, asset, rules, mockFetcher, mockDownloader)
 
 	// Should process both stations that have matching rules
-	if mockFetcher.callCount != 2 {
-		t.Errorf("processStations should process stations with matching rules, got %d calls, want 2", mockFetcher.callCount)
+	if mockFetcher.CallCount() != 2 {
+		t.Errorf("processStations should process stations with matching rules, got %d calls, want 2", mockFetcher.CallCount())
 	}
 }
 
@@ -170,8 +170,8 @@ func TestProcessStations_EmptyStations(t *testing.T) {
 	processStations(ctx, wg, asset, rules, mockFetcher, mockDownloader)
 
 	// Should not process any stations
-	if mockFetcher.callCount != 0 {
-		t.Errorf("processStations should not process any stations when list is empty, got %d calls", mockFetcher.callCount)
+	if mockFetcher.CallCount() != 0 {
+		t.Errorf("processStations should not process any stations when list is empty, got %d calls", mockFetcher.CallCount())
 	}
 }
 
@@ -230,6 +230,7 @@ func TestRunIteration_ErrorHandling(t *testing.T) {
 
 // Mock implementations for testing
 type mockProgramFetcher struct {
+	mu        sync.Mutex
 	called    bool
 	callCount int
 	stationID string
@@ -238,13 +239,35 @@ type mockProgramFetcher struct {
 }
 
 func (m *mockProgramFetcher) FetchWeeklyPrograms(stationID string) (radikron.Progs, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.called = true
 	m.callCount++
 	m.stationID = stationID
 	return m.progs, m.err
 }
 
+// Thread-safe getters
+func (m *mockProgramFetcher) Called() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.called
+}
+
+func (m *mockProgramFetcher) CallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callCount
+}
+
+func (m *mockProgramFetcher) StationID() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.stationID
+}
+
 type mockDownloader struct {
+	mu        sync.Mutex
 	called    bool
 	callCount int
 	prog      *radikron.Prog
@@ -252,8 +275,29 @@ type mockDownloader struct {
 }
 
 func (m *mockDownloader) Download(_ context.Context, _ *sync.WaitGroup, prog *radikron.Prog) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.called = true
 	m.callCount++
 	m.prog = prog
 	return m.err
+}
+
+// Thread-safe getters
+func (m *mockDownloader) Called() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.called
+}
+
+func (m *mockDownloader) CallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callCount
+}
+
+func (m *mockDownloader) Prog() *radikron.Prog {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.prog
 }

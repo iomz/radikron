@@ -985,6 +985,7 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	}
 
 	// Test: Invalid file (directory instead of file)
+	// On Windows, opening a directory can lock it, so we need to ensure cleanup
 	dirPath := filepath.Join(tmpDir, "dir.aac")
 	err = os.MkdirAll(dirPath, DirPermissions)
 	if err != nil {
@@ -995,4 +996,8 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	if err == nil {
 		t.Error("writeID3Tag should return error when path is a directory")
 	}
+
+	// On Windows, ensure the directory is removed before TempDir cleanup
+	// This prevents "file in use" errors during cleanup
+	_ = os.Remove(dirPath)
 }
