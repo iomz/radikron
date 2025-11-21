@@ -1,6 +1,7 @@
 package radikron
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -296,7 +298,7 @@ func writeOutputFile(ctx context.Context, concatedFile string, output *radigo.Ou
 		encodingSem <- struct{}{}
 		defer func() { <-encodingSem }()
 		log.Printf("start encoding to MP3: %s", output.AbsPath())
-		return radigo.ConvertAACtoMP3(ctx, concatedFile, output.AbsPath())
+		return convertAACtoMP3(ctx, concatedFile, output.AbsPath())
 	default:
 		return fmt.Errorf("invalid file format")
 	}
@@ -325,6 +327,42 @@ func validateAndCleanupOutputFile(ctx context.Context, output *radigo.OutputConf
 		return true
 	}
 	return false
+}
+
+// convertAACtoMP3 converts an AAC file to MP3 format using ffmpeg.
+func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
+	// Check if ffmpeg is available
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return fmt.Errorf("ffmpeg not found in PATH: %w", err)
+	}
+
+	// Build ffmpeg command:
+	// -i: input file
+	// -acodec libmp3lame: use MP3 codec
+	// -ab 192k: audio bitrate 192kbps
+	// -ar 44100: sample rate 44.1kHz
+	// -y: overwrite output file if it exists
+	// -loglevel error: only show errors
+	cmd := exec.CommandContext(ctx, ffmpegPath,
+		"-i", sourceFile,
+		"-acodec", "libmp3lame",
+		"-map_metadata", "0",
+		"-ar", "44100",
+		"-y",
+		"-loglevel", "error",
+		destFile,
+	)
+
+	// Capture stderr for error messages
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg conversion failed: %w (stderr: %s)", err, stderr.String())
+	}
+
+	return nil
 }
 
 // getChunklist returns a slice of uri string.
