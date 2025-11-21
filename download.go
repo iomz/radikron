@@ -77,7 +77,7 @@ func Download(
 	}
 
 	// Check for duplicates and move from default folder to configured folder if needed
-	if err := handleDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output); err != nil {
+	if err := handleDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output, asset.Rules); err != nil {
 		return fmt.Errorf("failed to handle duplicate: %w", err)
 	}
 
@@ -405,15 +405,26 @@ func moveFile(source, dest string) error {
 	return nil
 }
 
-// handleDuplicate checks for duplicates and moves files from default folder to configured folder if needed
-func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig) error {
-	// Check in configured folder first (if specified) - takes precedence
+// handleDuplicate checks for duplicates in all configured folders and moves files from default folder to configured folder if needed
+func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig, rules Rules) error {
+	// Collect all unique configured folders from all rules
+	configuredFolders := make(map[string]bool)
 	if configuredFolder != "" {
-		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, configuredFolder))
+		configuredFolders[configuredFolder] = true
+	}
+	for _, rule := range rules {
+		if rule.Folder != "" {
+			configuredFolders[rule.Folder] = true
+		}
+	}
+
+	// Check in all configured folders first (takes precedence over default)
+	for folder := range configuredFolders {
+		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, folder))
 		if err == nil {
 			configuredOutput := newOutputConfigFromPath(configuredPath, fileBaseName, fileFormat)
 			if configuredOutput.IsExist() {
-				// File already exists in configured folder - skip
+				// File already exists in a configured folder - skip
 				log.Printf("-skip already exists: %s", configuredOutput.AbsPath())
 				return nil
 			}
@@ -545,7 +556,8 @@ func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 		Description: prog.Info,
 	})
 
-	// Set rule name as Album Artist if available
+	// Set rule name as Band/Orchestra/Accompaniment (TPE2) if available
+	// Note: Many music players display TPE2 as "Album Artist"
 	if prog.RuleName != "" {
 		tag.AddTextFrame(tag.CommonID("Band/Orchestra/Accompaniment"), id3v2.EncodingUTF8, prog.RuleName)
 	}
