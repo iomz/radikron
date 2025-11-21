@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/iomz/radikron"
+	"github.com/spf13/viper"
 	"github.com/yyoshiki41/go-radiko"
 	"github.com/yyoshiki41/radigo"
+	"gopkg.in/yaml.v3"
 )
 
 func withCwd(t *testing.T, dir string) {
@@ -142,6 +144,240 @@ func TestApplyToAsset(t *testing.T) {
 	if len(asset.AvailableStations) == 0 {
 		t.Error("expected at least one station to be added from rules")
 	}
+}
+
+func TestFindRulesNode(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		wantNode bool
+		wantErr  bool
+	}{
+		{
+			name: "normal case with rules",
+			yaml: `area-id: JP13
+rules:
+  test:
+    station-id: FMT
+`,
+			wantNode: true,
+			wantErr:  false,
+		},
+		{
+			name: "missing rules section",
+			yaml: `area-id: JP13
+file-format: aac
+`,
+			wantNode: false,
+			wantErr:  false,
+		},
+		{
+			name:     "empty document",
+			yaml:     ``,
+			wantNode: false,
+			wantErr:  false,
+		},
+		{
+			name: "rules is not a mapping",
+			yaml: `area-id: JP13
+rules: "not a mapping"
+`,
+			wantNode: true, // node exists but wrong type
+			wantErr:  false,
+		},
+		{
+			name: "nested structure",
+			yaml: `area-id: JP13
+other:
+  nested: value
+rules:
+  test:
+    station-id: FMT
+`,
+			wantNode: true,
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var rootNode yaml.Node
+			err := yaml.Unmarshal([]byte(tt.yaml), &rootNode)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("unexpected error unmarshaling YAML: %v", err)
+				}
+				return
+			}
+
+			rulesNode := findRulesNode(&rootNode)
+
+			hasNode := rulesNode != nil
+			if hasNode != tt.wantNode {
+				t.Errorf("findRulesNode() returned node = %v, want %v", hasNode, tt.wantNode)
+			}
+
+			if tt.wantNode && rulesNode != nil {
+				// Verify it's actually the rules node
+				if rulesNode.Kind != yaml.MappingNode && tt.name != "rules is not a mapping" {
+					t.Errorf("findRulesNode() returned node with kind %v, want MappingNode", rulesNode.Kind)
+				}
+			}
+		})
+	}
+
+	// Test with nil root
+	rulesNode := findRulesNode(nil)
+	if rulesNode != nil {
+		t.Errorf("findRulesNode(nil) should return nil node, got: %v", rulesNode)
+	}
+}
+
+func TestParseRuleFromNode(t *testing.T) {
+	// Setup viper for testing
+	viper.Reset()
+	viper.SetConfigType("yaml")
+
+	tests := []struct {
+		name     string
+		ruleYAML string
+		ruleName string
+		wantErr  bool
+		errMsg   string
+	}{
+		{
+			name: "normal case",
+			ruleYAML: `station-id: FMT
+title: "Test Title"
+`,
+			ruleName: "test-rule",
+			wantErr:  false,
+		},
+		{
+			name: "rule with all fields",
+			ruleYAML: `station-id: TBS
+title: "Test Title"
+pfm: "Test Person"
+keyword: "test"
+dow:
+  - mon
+  - tue
+window: 48h
+folder: "test-folder"
+`,
+			ruleName: "full-rule",
+			wantErr:  false,
+		},
+		{
+			name:     "decode error - invalid YAML structure",
+			ruleYAML: `invalid: [unclosed`,
+			ruleName: "invalid-rule",
+			wantErr:  true,
+			errMsg:   "failed to decode rule",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset viper for each test
+			viper.Reset()
+
+			// Create YAML node for the rule
+			var ruleNode yaml.Node
+			err := yaml.Unmarshal([]byte(tt.ruleYAML), &ruleNode)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("unexpected error unmarshaling rule YAML: %v", err)
+			}
+			if err != nil && tt.wantErr && tt.name == "decode error - invalid YAML structure" {
+				// For decode error case, create a node that will fail to decode to map
+				// Create a scalar node instead of mapping node - this will cause decode error
+				ruleNode = yaml.Node{
+					Kind:  yaml.ScalarNode,
+					Value: "not a mapping",
+				}
+			}
+
+			// Extract the actual rule node (first content element if it's a document)
+			var actualRuleNode *yaml.Node
+			if ruleNode.Kind == yaml.DocumentNode && len(ruleNode.Content) > 0 {
+				actualRuleNode = ruleNode.Content[0]
+			} else {
+				actualRuleNode = &ruleNode
+			}
+
+			// Create name node
+			nameNode := &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Value: tt.ruleName,
+			}
+
+			rule, err := parseRuleFromNode(nameNode, actualRuleNode)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseRuleFromNode() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("parseRuleFromNode() expected error but got nil")
+				}
+				if tt.errMsg != "" && err != nil {
+					// Check if error message contains expected substring
+					if !containsSubstring(err.Error(), tt.errMsg) {
+						t.Logf("error message '%s' does not contain '%s'", err.Error(), tt.errMsg)
+					}
+				}
+				return
+			}
+
+			if rule == nil {
+				t.Fatal("parseRuleFromNode() returned nil rule")
+			}
+
+			if rule.Name != tt.ruleName {
+				t.Errorf("parseRuleFromNode() rule.Name = %v, want %v", rule.Name, tt.ruleName)
+			}
+		})
+	}
+
+	// Test error cases
+	t.Run("nil nameNode", func(t *testing.T) {
+		viper.Reset()
+		ruleNode := &yaml.Node{Kind: yaml.MappingNode}
+		_, err := parseRuleFromNode(nil, ruleNode)
+		if err == nil {
+			t.Error("parseRuleFromNode() with nil nameNode should return error")
+		}
+	})
+
+	t.Run("nil ruleNode", func(t *testing.T) {
+		viper.Reset()
+		nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "test"}
+		_, err := parseRuleFromNode(nameNode, nil)
+		if err == nil {
+			t.Error("parseRuleFromNode() with nil ruleNode should return error")
+		}
+	})
+
+	t.Run("empty rule name", func(t *testing.T) {
+		viper.Reset()
+		nameNode := &yaml.Node{Kind: yaml.ScalarNode, Value: ""}
+		ruleNode := &yaml.Node{Kind: yaml.MappingNode}
+		_, err := parseRuleFromNode(nameNode, ruleNode)
+		if err == nil {
+			t.Error("parseRuleFromNode() with empty rule name should return error")
+		}
+	})
+}
+
+// containsSubstring checks if a string contains a substring
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 func TestApplyToAssetWithExtraStations(t *testing.T) {

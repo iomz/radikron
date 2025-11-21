@@ -440,8 +440,25 @@ func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder str
 			if configuredFolder != "" {
 				source := defaultOutput.AbsPath()
 				targetPath := output.AbsPath()
+
+				// Check if target already exists (edge case: file appeared between checks or race condition)
+				if output.IsExist() {
+					log.Printf("-skip target already exists, removing source: %s (target: %s)", source, targetPath)
+					// Target exists, remove source file to avoid duplicates
+					if err := os.Remove(source); err != nil {
+						log.Printf("warning: failed to remove source file %s after target exists: %v", source, err)
+					}
+					return nil
+				}
+
 				if err := moveFile(source, targetPath); err != nil {
-					return fmt.Errorf("failed to move file from default to configured folder: %w", err)
+					// Check if error is due to target existing (race condition during move)
+					if _, statErr := os.Stat(targetPath); statErr == nil {
+						log.Printf("warning: target file appeared during move, removing source: %s (target: %s)", source, targetPath)
+						_ = os.Remove(source)
+						return nil
+					}
+					return fmt.Errorf("failed to move file from default to configured folder (%s -> %s): %w", source, targetPath, err)
 				}
 				log.Printf("moved file: %s -> %s", source, targetPath)
 				return nil
