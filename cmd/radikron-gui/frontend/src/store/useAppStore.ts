@@ -17,6 +17,7 @@ interface AppState {
   configFile: string;
   activityLogs: ActivityLogEntry[];
   loading: boolean;
+  isToggling: boolean;
 
   // Actions
   setMonitoring: (monitoring: boolean) => void;
@@ -44,6 +45,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   configFile: 'config.yml',
   activityLogs: [],
   loading: true,
+  isToggling: false,
 
   // Synchronous actions
   setMonitoring: (monitoring) => set({ monitoring }),
@@ -112,19 +114,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleMonitoring: async () => {
-    const { monitoring } = get();
+    const { monitoring, isToggling } = get();
+    
+    // Guard: return early if a toggle is already in progress
+    if (isToggling) {
+      return;
+    }
+    
+    // Set the guard flag before starting the async operation
+    set({ isToggling: true });
+    
     try {
+      // Call the backend to perform the requested action
       if (monitoring) {
         await App.StopMonitoring();
       } else {
         await App.StartMonitoring();
       }
-      // Reflect the new state in the store
-      set({ monitoring: !monitoring });
+      
+      // Verify the resulting state by querying the backend
+      const actualState = await App.GetMonitoringStatus();
+      
+      // Update state based on the verified backend state
+      set({ monitoring: actualState });
     } catch (error) {
       console.error('Failed to toggle monitoring:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       get().addActivityLog('error', `Failed to ${monitoring ? 'stop' : 'start'} monitoring: ${errorMessage}`);
+    } finally {
+      // Always clear the guard flag so future toggles can proceed
+      set({ isToggling: false });
     }
   },
 

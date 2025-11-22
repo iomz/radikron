@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -11,6 +10,13 @@ import (
 	"github.com/yyoshiki41/go-radiko"
 	"github.com/yyoshiki41/radigo"
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	// DirPermissions is the file system permissions for directories (rwxr-xr-x)
+	DirPermissions = 0755
+	// FilePermissions is the file system permissions for files (rw-------)
+	FilePermissions = 0600
 )
 
 // Config holds the application configuration
@@ -185,28 +191,28 @@ func convertRulesToYAML(rules radikron.Rules) map[string]*ruleYAML {
 	}
 	result := make(map[string]*ruleYAML)
 	for _, rule := range rules {
-		ruleYAML := &ruleYAML{
+		ruleYAMLObj := &ruleYAML{
 			Folder: rule.Folder,
 		}
 		if rule.HasStationID() {
-			ruleYAML.StationID = rule.StationID
+			ruleYAMLObj.StationID = rule.StationID
 		}
 		if rule.HasTitle() {
-			ruleYAML.Title = rule.Title
+			ruleYAMLObj.Title = rule.Title
 		}
 		if rule.HasDoW() {
-			ruleYAML.DoW = rule.DoW
+			ruleYAMLObj.DoW = rule.DoW
 		}
 		if rule.HasKeyword() {
-			ruleYAML.Keyword = rule.Keyword
+			ruleYAMLObj.Keyword = rule.Keyword
 		}
 		if rule.HasPfm() {
-			ruleYAML.Pfm = rule.Pfm
+			ruleYAMLObj.Pfm = rule.Pfm
 		}
 		if rule.HasWindow() {
-			ruleYAML.Window = rule.Window
+			ruleYAMLObj.Window = rule.Window
 		}
-		result[rule.Name] = ruleYAML
+		result[rule.Name] = ruleYAMLObj
 	}
 	return result
 }
@@ -221,7 +227,7 @@ func (c *Config) SaveConfig(filename string) error {
 
 	// Create directory if it doesn't exist
 	configDir := filepath.Dir(configPath)
-	if err := os.MkdirAll(configDir, fs.ModePerm); err != nil {
+	if err := os.MkdirAll(configDir, DirPermissions); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -254,13 +260,13 @@ func (c *Config) SaveConfig(filename string) error {
 
 	// Write atomically to file
 	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+	if err := os.WriteFile(tmpPath, data, FilePermissions); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	if err := os.Rename(tmpPath, configPath); err != nil {
+		os.Remove(tmpPath) // Clean up on failure
 		return fmt.Errorf("failed to rename config file: %w", err)
 	}
-
 	return nil
 }
 

@@ -9,6 +9,7 @@ export const ThemeToggle: React.FC = () => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -22,13 +23,10 @@ export const ThemeToggle: React.FC = () => {
 
     if (open) {
       document.addEventListener('mousedown', handleClickOutside);
-      if (containerRef.current && menuRef.current) {
-        const button = containerRef.current.querySelector('button');
-        if (button) {
-          const rect = button.getBoundingClientRect();
-          menuRef.current.style.top = `${rect.bottom + 4}px`;
-          menuRef.current.style.right = `${window.innerWidth - rect.right}px`;
-        }
+      if (buttonRef.current && menuRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        menuRef.current.style.top = `${rect.bottom + 4}px`;
+        menuRef.current.style.right = `${window.innerWidth - rect.right}px`;
       }
     }
 
@@ -45,6 +43,7 @@ export const ThemeToggle: React.FC = () => {
   return (
     <div ref={containerRef} className="relative">
       <Button
+        ref={buttonRef}
         variant="outline"
         size="icon"
         type="button"
@@ -65,33 +64,36 @@ export const ThemeToggle: React.FC = () => {
           style={{ position: 'fixed' }}
           role="menu"
         >
-          <div
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+          <button
+            type="button"
+            className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground w-full text-left"
             onClick={() => handleThemeSelect('light')}
             role="menuitem"
           >
             <Sun className="mr-2 h-4 w-4" />
             <span>Light</span>
             {theme === 'light' && <span className="ml-auto">✓</span>}
-          </div>
-          <div
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+          </button>
+          <button
+            type="button"
+            className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground w-full text-left"
             onClick={() => handleThemeSelect('dark')}
             role="menuitem"
           >
             <Moon className="mr-2 h-4 w-4" />
             <span>Dark</span>
             {theme === 'dark' && <span className="ml-auto">✓</span>}
-          </div>
-          <div
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+          </button>
+          <button
+            type="button"
+            className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground w-full text-left"
             onClick={() => handleThemeSelect('system')}
             role="menuitem"
           >
             <Monitor className="mr-2 h-4 w-4" />
             <span>System</span>
             {theme === 'system' && <span className="ml-auto">✓</span>}
-          </div>
+          </button>
         </div>
       )}
     </div>
