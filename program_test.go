@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+const testStationFMT = "FMT"
+
 var (
 	//go:embed test/weekly-program-test.xml
 	WeeklyProgramTestXML embed.FS
@@ -29,7 +31,7 @@ func TestWeeklyProgramUnmarshal(t *testing.T) {
 	var got, want string
 
 	got = p.StationID
-	want = "FMT"
+	want = testStationFMT
 	if got != want {
 		t.Errorf("p.StationID => %v, want %v", got, want)
 	}
