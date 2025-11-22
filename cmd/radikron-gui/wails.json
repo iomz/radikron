@@ -1,0 +1,27 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "radikron-gui",
+  "outputfilename": "radikron-gui",
+  "frontend": {
+    "dir": "./frontend",
+    "install": "pnpm install",
+    "build": "pnpm run build",
+    "dev": "pnpm run build:watch",
+    "bridge": "src/bridge",
+    "serve": "."
+  },
+  "author": {
+    "name": "Iori Mizutani",
+    "email": "iomz@sazanka.io"
+  },
+  "info": {
+    "productName": "Radikron",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2025",
+    "comments": "GUI for radikron - automated radio program downloader for radiko"
+  },
+  "nsisType": "multiple",
+  "obfuscated": false,
+  "garbleargs": ""
+}
+

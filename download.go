@@ -89,11 +89,17 @@ func Download(
 	}
 
 	// the program is already to be downloaded
+	// Note: Duplicate check and schedule addition is now done in the monitoring loop before calling Download()
+	// This check remains as a safety net in case Download() is called directly
 	if asset.Schedules.HasDuplicate(prog) {
 		log.Printf("-skip duplicate [%s]%s (%s)", prog.StationID, title, start)
 		return nil
 	}
-	asset.Schedules = append(asset.Schedules, prog)
+	// Add to schedules if not already added (safety net for direct calls)
+	// In the GUI monitoring loop, this is already done before calling Download()
+	if !asset.Schedules.HasDuplicate(prog) {
+		asset.Schedules = append(asset.Schedules, prog)
+	}
 
 	// the output config
 	fileBaseName := fmt.Sprintf(
@@ -143,6 +149,10 @@ func Download(
 			start,
 			err,
 		)
+	}
+	// Log rule match only when download actually starts (not skipped)
+	if prog.RuleName != "" {
+		log.Printf("rule[%s] matched: [%s]%s (%s)", prog.RuleName, prog.StationID, title, start)
 	}
 	log.Printf("start downloading [%s]%s (%s): %s", prog.StationID, title, start, uri)
 	prog.M3U8 = uri

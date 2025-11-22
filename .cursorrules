@@ -39,3 +39,9 @@ Closes #123
 - When committing, use the Conventional Changelog format described above
 - **ALWAYS** run gofmt whenever making changes to a Go file
 - **ALWAYS** check golangci-lint before committing a change and confirm there are no lint errors
+
+## Package Management
+
+- **ALWAYS** use `pnpm` instead of `npm` for Node.js package management
+- Use `pnpm install`, `pnpm run build`, `pnpm run dev`, etc.
+- Never use `npm` commands in this project
