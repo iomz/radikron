@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,7 +90,11 @@ func emitLogMessage(ctx context.Context, level, message string) {
 	if emitter := GetEventEmitter(ctx); emitter != nil {
 		emitter.EmitLogMessage(level, message)
 	} else {
-		log.Printf("%s", message)
+		// Use default level if empty or missing
+		if level == "" {
+			level = "INFO"
+		}
+		log.Printf("[%s] %s", strings.ToUpper(level), message)
 	}
 }
 
@@ -611,10 +616,16 @@ func checkConfiguredFoldersForDuplicate(
 }
 
 // handleMoveFromDefaultFolder handles moving a file from default folder to configured folder
-func handleMoveFromDefaultFolder(source, targetPath string, output *radigo.OutputConfig) error {
+func handleMoveFromDefaultFolder(
+	ctx context.Context,
+	source, targetPath string,
+	output *radigo.OutputConfig,
+	stationID, title, startTime string,
+) error {
 	// Check if target already exists (edge case: file appeared between checks or race condition)
 	if output.IsExist() {
-		log.Printf("-skip target already exists, keeping both files: %s (target: %s)", source, targetPath)
+		emitDownloadSkipped(ctx, "target already exists, keeping both files", stationID, title, startTime)
+		emitLogMessage(ctx, "info", fmt.Sprintf("target already exists, keeping both files: %s (target: %s)", source, targetPath))
 		// Target exists, keep both files and skip download
 		return nil
 	}
@@ -672,7 +683,7 @@ func handleDuplicate(
 
 	// If file exists in default folder and there's a configured folder, move it
 	if configuredFolder != "" {
-		return handleMoveFromDefaultFolder(defaultOutput.AbsPath(), output.AbsPath(), output)
+		return handleMoveFromDefaultFolder(ctx, defaultOutput.AbsPath(), output.AbsPath(), output, stationID, title, startTime)
 	}
 
 	// File exists in default folder, no configured folder - skip

@@ -16,11 +16,17 @@ export const Stations: React.FC = () => {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          {stations.map((station) => (
-            <Badge key={station} variant="outline">
-              {station}
+          {stations.length === 0 ? (
+            <Badge variant="outline" aria-label="No stations available">
+              No stations available
             </Badge>
-          ))}
+          ) : (
+            stations.map((station) => (
+              <Badge key={station} variant="outline">
+                {station}
+              </Badge>
+            ))
+          )}
         </div>
         <Button variant="outline" onClick={refreshStations} className="w-full">
           Refresh Stations

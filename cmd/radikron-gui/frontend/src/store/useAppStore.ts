@@ -97,6 +97,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ monitoring: status });
     } catch (error) {
       console.error('Failed to load monitoring status:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      get().addActivityLog('error', `Load monitoring status failed: ${errorMessage}`);
     }
   },
 

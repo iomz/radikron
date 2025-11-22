@@ -49,7 +49,7 @@ export function EventsOff(eventName, ...additionalEventNames) {
 }
 
 export function EventsOffAll() {
-    return window.runtime.EventsOffAll();
+  return window.runtime.EventsOffAll();
 }
 
 export function EventsOnce(eventName, callback) {
@@ -57,7 +57,7 @@ export function EventsOnce(eventName, callback) {
 }
 
 export function EventsEmit(eventName) {
-    let args = Array.prototype.slice.call(arguments);
+    let args = [eventName].slice.call(arguments);
     return window.runtime.EventsEmit.apply(null, args);
 }
 

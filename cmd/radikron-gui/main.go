@@ -43,6 +43,6 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatal("Error:", err)
+		log.Fatalf("failed to start Wails application: %v", err)
 	}
 }
