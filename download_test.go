@@ -1597,11 +1597,15 @@ func TestBulkDownload_WithErrors(t *testing.T) {
 	})
 
 	// Create a test HTTP server that fails for some requests
-	requestCount := 0
+	var requestCount int64
+	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		requestCount++
+		count := requestCount
+		mu.Unlock()
 		// Fail every other request
-		if requestCount%2 == 0 {
+		if count%2 == 0 {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
