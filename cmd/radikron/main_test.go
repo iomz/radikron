@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"testing"
@@ -12,7 +13,11 @@ import (
 	"github.com/yyoshiki41/radigo"
 )
 
-const testStationID = "FMT"
+const (
+	testStationID         = "FMT"
+	testConfigFile        = "test/config-test.yml"
+	nonexistentConfigFile = "nonexistent-config.yml"
+)
 
 func TestConfig(t *testing.T) {
 	var err error
@@ -24,13 +29,12 @@ func TestConfig(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ck := radikron.ContextKey("asset")
 	asset, err := radikron.NewAsset(client)
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx := context.WithValue(context.Background(), ck, asset)
-	cfg, err := reloadConfig(ctx, "test/config-test.yml", time.Now)
+	ctx := context.WithValue(context.Background(), contextKey, asset)
+	cfg, err := reloadConfig(ctx, testConfigFile, time.Now, defaultTimeSetter)
 	if err != nil {
 		t.Error(err)
 	}
@@ -192,18 +196,18 @@ func TestRunIteration(t *testing.T) {
 		t.Fatalf("Failed to create asset: %v", err)
 	}
 
-	ck := radikron.ContextKey("asset")
-	ctx := context.WithValue(context.Background(), ck, asset)
+	ctx := context.WithValue(context.Background(), contextKey, asset)
 
 	wg := &sync.WaitGroup{}
-	configFileName := "test/config-test.yml"
+	configFileName := testConfigFile
 
 	mockFetcher := &mockProgramFetcher{}
 	mockDownloader := &mockDownloader{}
 	fixedTime := time.Date(2023, 6, 5, 13, 0, 0, 0, time.UTC)
 	timeProvider := func() time.Time { return fixedTime }
+	timeSetter := defaultTimeSetter
 
-	err = runIteration(ctx, wg, configFileName, mockFetcher, mockDownloader, timeProvider)
+	err = runIteration(ctx, wg, configFileName, mockFetcher, mockDownloader, timeProvider, timeSetter)
 	if err != nil {
 		t.Errorf("runIteration should not return error: %v", err)
 	}
@@ -217,14 +221,320 @@ func TestRunIteration(t *testing.T) {
 func TestRunIteration_ErrorHandling(t *testing.T) {
 	ctx := context.Background()
 	wg := &sync.WaitGroup{}
-	configFileName := "nonexistent-config.yml"
+	configFileName := nonexistentConfigFile
 
 	mockFetcher := &mockProgramFetcher{}
 	mockDownloader := &mockDownloader{}
 
-	err := runIteration(ctx, wg, configFileName, mockFetcher, mockDownloader, time.Now)
+	err := runIteration(ctx, wg, configFileName, mockFetcher, mockDownloader, time.Now, defaultTimeSetter)
 	if err == nil {
 		t.Error("runIteration should return error for invalid config file")
+	}
+}
+
+func TestRunLoopIteration(t *testing.T) {
+	var err error
+	radikron.Location, err = time.LoadLocation(radikron.TZTokyo)
+	if err != nil {
+		t.Fatalf("Failed to load location: %v", err)
+	}
+
+	client, err := radiko.New("")
+	if err != nil {
+		t.Fatalf("Failed to create radiko client: %v", err)
+	}
+
+	wg := &sync.WaitGroup{}
+	configFileName := testConfigFile
+
+	mockFetcher := &mockProgramFetcher{}
+	mockDownloader := &mockDownloader{}
+	fixedTime := time.Date(2023, 6, 5, 13, 0, 0, 0, time.UTC)
+	timeProvider := func() time.Time { return fixedTime }
+	timeSetter := defaultTimeSetter
+
+	asset, err := runLoopIteration(wg, configFileName, client, radikron.NewAsset, mockFetcher, mockDownloader, timeProvider, timeSetter)
+	if err != nil {
+		t.Errorf("runLoopIteration should not return error: %v", err)
+	}
+
+	if asset == nil {
+		t.Fatal("runLoopIteration should return an asset")
+	}
+
+	// Verify NextFetchTime was set
+	if asset.NextFetchTime == nil {
+		t.Error("NextFetchTime should be set after runLoopIteration")
+	}
+}
+
+func TestRunLoopIteration_AssetCreationError(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	configFileName := testConfigFile
+
+	mockFetcher := &mockProgramFetcher{}
+	mockDownloader := &mockDownloader{}
+	timeProvider := time.Now
+	timeSetter := defaultTimeSetter
+
+	// Use a nil client to cause asset creation to fail
+	var nilClient *radiko.Client
+	assetCreator := func(client *radiko.Client) (*radikron.Asset, error) {
+		if client == nil {
+			return nil, fmt.Errorf("client is nil")
+		}
+		return radikron.NewAsset(client)
+	}
+
+	asset, err := runLoopIteration(wg, configFileName, nilClient, assetCreator, mockFetcher, mockDownloader, timeProvider, timeSetter)
+	if err == nil {
+		t.Error("runLoopIteration should return error when asset creation fails")
+	}
+	if asset != nil {
+		t.Error("runLoopIteration should return nil asset when error occurs")
+	}
+}
+
+func TestProcessStation_FetchError(t *testing.T) {
+	ctx := context.Background()
+	wg := &sync.WaitGroup{}
+	stationID := testStationID
+
+	rule := &radikron.Rule{}
+	rule.SetName("test-rule")
+	rule.StationID = stationID
+	rules := radikron.Rules{rule}
+
+	mockFetcher := &mockProgramFetcher{
+		err: fmt.Errorf("fetch error"),
+	}
+	mockDownloader := &mockDownloader{}
+
+	// Should handle fetch error gracefully
+	processStation(ctx, wg, stationID, rules, mockFetcher, mockDownloader)
+
+	if !mockFetcher.Called() {
+		t.Error("FetchWeeklyPrograms should be called")
+	}
+	if mockDownloader.Called() {
+		t.Error("Download should not be called when fetch fails")
+	}
+}
+
+func TestProcessStation_DownloadError(t *testing.T) {
+	ctx := context.Background()
+	wg := &sync.WaitGroup{}
+	stationID := testStationID
+
+	rule := &radikron.Rule{}
+	rule.SetName("test-rule")
+	rule.StationID = stationID
+	rules := radikron.Rules{rule}
+
+	mockFetcher := &mockProgramFetcher{
+		progs: radikron.Progs{
+			{
+				StationID: stationID,
+				Title:     "Test Program",
+				Ft:        "20230605130000",
+				To:        "20230605140000",
+			},
+		},
+	}
+	mockDownloader := &mockDownloader{
+		err: fmt.Errorf("download error"),
+	}
+
+	// Should handle download error gracefully
+	processStation(ctx, wg, stationID, rules, mockFetcher, mockDownloader)
+
+	if !mockFetcher.Called() {
+		t.Error("FetchWeeklyPrograms should be called")
+	}
+	if !mockDownloader.Called() {
+		t.Error("Download should be called even if it fails")
+	}
+}
+
+func TestReloadConfig_NoAssetInContext(t *testing.T) {
+	ctx := context.Background() // No asset in context
+	configFileName := testConfigFile
+
+	_, err := reloadConfig(ctx, configFileName, time.Now, defaultTimeSetter)
+	if err == nil {
+		t.Error("reloadConfig should return error when asset not found in context")
+	}
+	if err != nil && err.Error() != "asset not found in context" {
+		t.Errorf("Expected 'asset not found in context' error, got: %v", err)
+	}
+}
+
+func TestReloadConfig_InvalidConfigFile(t *testing.T) {
+	var err error
+	radikron.Location, err = time.LoadLocation(radikron.TZTokyo)
+	if err != nil {
+		t.Fatalf("Failed to load location: %v", err)
+	}
+
+	client, err := radiko.New("")
+	if err != nil {
+		t.Fatalf("Failed to create radiko client: %v", err)
+	}
+
+	asset, err := radikron.NewAsset(client)
+	if err != nil {
+		t.Fatalf("Failed to create asset: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), contextKey, asset)
+	configFileName := nonexistentConfigFile
+
+	_, err = reloadConfig(ctx, configFileName, time.Now, defaultTimeSetter)
+	if err == nil {
+		t.Error("reloadConfig should return error for invalid config file")
+	}
+}
+
+func TestRunIteration_AssetNotFoundAfterReload(t *testing.T) {
+	// Create context without asset
+	ctx := context.Background()
+	wg := &sync.WaitGroup{}
+	configFileName := testConfigFile
+
+	mockFetcher := &mockProgramFetcher{}
+	mockDownloader := &mockDownloader{}
+
+	// This should fail because reloadConfig will fail (no asset in context)
+	err := runIteration(ctx, wg, configFileName, mockFetcher, mockDownloader, time.Now, defaultTimeSetter)
+	if err == nil {
+		t.Error("runIteration should return error when asset not found")
+	}
+}
+
+func TestRunIteration_AssetNotFoundAfterConfig(t *testing.T) {
+	var err error
+	radikron.Location, err = time.LoadLocation(radikron.TZTokyo)
+	if err != nil {
+		t.Fatalf("Failed to load location: %v", err)
+	}
+
+	client, err := radiko.New("")
+	if err != nil {
+		t.Fatalf("Failed to create radiko client: %v", err)
+	}
+
+	_, err = radikron.NewAsset(client)
+	if err != nil {
+		t.Fatalf("Failed to create asset: %v", err)
+	}
+
+	wg := &sync.WaitGroup{}
+	configFileName := testConfigFile
+
+	mockFetcher := &mockProgramFetcher{}
+	mockDownloader := &mockDownloader{}
+	timeProvider := func() time.Time { return time.Date(2023, 6, 5, 13, 0, 0, 0, time.UTC) }
+	timeSetter := defaultTimeSetter
+
+	// Create context without asset to simulate the edge case where asset is not found
+	ctx := context.Background()
+
+	err = runIteration(ctx, wg, configFileName, mockFetcher, mockDownloader, timeProvider, timeSetter)
+	if err == nil {
+		t.Error("runIteration should return error when asset not found after config reload")
+	}
+}
+
+func TestRun_WithDoneChannel(t *testing.T) {
+	var err error
+	radikron.Location, err = time.LoadLocation(radikron.TZTokyo)
+	if err != nil {
+		t.Fatalf("Failed to load location: %v", err)
+	}
+
+	client, err := radiko.New("")
+	if err != nil {
+		t.Fatalf("Failed to create radiko client: %v", err)
+	}
+
+	wg := &sync.WaitGroup{}
+	configFileName := testConfigFile
+	done := make(chan struct{})
+
+	mockFetcher := &mockProgramFetcher{}
+	mockDownloader := &mockDownloader{}
+	timeProvider := func() time.Time { return time.Date(2023, 6, 5, 13, 0, 0, 0, time.UTC) }
+	timeSetter := defaultTimeSetter
+
+	// Close done channel immediately to stop the loop
+	close(done)
+
+	// Run should return immediately when done channel is closed
+	err = run(wg, configFileName, client, radikron.NewAsset, mockFetcher, mockDownloader, timeProvider, timeSetter, done)
+	if err != nil {
+		t.Errorf("run should return nil when done channel is closed, got: %v", err)
+	}
+}
+
+func TestRun_WithIterationError(t *testing.T) {
+	var err error
+	radikron.Location, err = time.LoadLocation(radikron.TZTokyo)
+	if err != nil {
+		t.Fatalf("Failed to load location: %v", err)
+	}
+
+	client, err := radiko.New("")
+	if err != nil {
+		t.Fatalf("Failed to create radiko client: %v", err)
+	}
+
+	wg := &sync.WaitGroup{}
+	configFileName := nonexistentConfigFile // This will cause an error
+	done := make(chan struct{})
+
+	mockFetcher := &mockProgramFetcher{}
+	mockDownloader := &mockDownloader{}
+	timeProvider := func() time.Time { return time.Date(2023, 6, 5, 13, 0, 0, 0, time.UTC) }
+	timeSetter := defaultTimeSetter
+
+	// Run should return error when iteration fails
+	err = run(wg, configFileName, client, radikron.NewAsset, mockFetcher, mockDownloader, timeProvider, timeSetter, done)
+	if err == nil {
+		t.Error("run should return error when iteration fails")
+	}
+}
+
+func TestRun_WithTimer(t *testing.T) {
+	var err error
+	radikron.Location, err = time.LoadLocation(radikron.TZTokyo)
+	if err != nil {
+		t.Fatalf("Failed to load location: %v", err)
+	}
+
+	client, err := radiko.New("")
+	if err != nil {
+		t.Fatalf("Failed to create radiko client: %v", err)
+	}
+
+	wg := &sync.WaitGroup{}
+	configFileName := testConfigFile
+	done := make(chan struct{})
+
+	mockFetcher := &mockProgramFetcher{}
+	mockDownloader := &mockDownloader{}
+	fixedTime := time.Date(2023, 6, 5, 13, 0, 0, 0, time.UTC)
+	timeProvider := func() time.Time { return fixedTime }
+	timeSetter := defaultTimeSetter
+
+	// Run in goroutine and close done after a short delay
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		close(done)
+	}()
+
+	err = run(wg, configFileName, client, radikron.NewAsset, mockFetcher, mockDownloader, timeProvider, timeSetter, done)
+	if err != nil {
+		t.Errorf("run should handle timer correctly, got error: %v", err)
 	}
 }
 

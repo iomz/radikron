@@ -340,7 +340,6 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 	// Build ffmpeg command:
 	// -i: input file
 	// -acodec libmp3lame: use MP3 codec
-	// -ab 192k: audio bitrate 192kbps
 	// -ar 44100: sample rate 44.1kHz
 	// -y: overwrite output file if it exists
 	// -loglevel error: only show errors

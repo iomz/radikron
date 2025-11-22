@@ -149,7 +149,7 @@ rules:
     keyword: "シティポップ" # search by keyword (also a partial match)
     window: 48h # only within the past window from the current time
   hiccorohee:
-    pfm: "ヒコロヒー" # search by pfm
+    pfm: "ヒコロヒー" # search by pfm (i.e., the DJ/MC)
   trad:
     dow: # filter by day of the week (e.g, Mon, tue, WED)
       - wed

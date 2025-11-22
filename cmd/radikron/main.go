@@ -33,6 +33,17 @@ type AssetCreator func(client *radiko.Client) (*radikron.Asset, error)
 // TimeProvider provides the current time
 type TimeProvider func() time.Time
 
+// TimeSetter sets the current time in the radikron package
+type TimeSetter func(t time.Time)
+
+// defaultTimeSetter sets radikron.CurrentTime
+func defaultTimeSetter(t time.Time) {
+	radikron.CurrentTime = t
+}
+
+// contextKey is the key used to store asset in context
+var contextKey = radikron.ContextKey("asset")
+
 // radikronProgramFetcher implements ProgramFetcher using radikron.FetchWeeklyPrograms
 type radikronProgramFetcher struct{}
 
@@ -48,9 +59,9 @@ func (d *radikronDownloader) Download(ctx context.Context, wg *sync.WaitGroup, p
 }
 
 // reloadConfig loads configuration and applies it to the asset in the context
-func reloadConfig(ctx context.Context, filename string, timeProvider TimeProvider) (*config.Config, error) {
+func reloadConfig(ctx context.Context, filename string, timeProvider TimeProvider, timeSetter TimeSetter) (*config.Config, error) {
 	// Update current time using time provider
-	radikron.CurrentTime = timeProvider().In(radikron.Location)
+	timeSetter(timeProvider().In(radikron.Location))
 
 	// Load configuration
 	cfg, err := config.LoadConfig(filename)
@@ -135,9 +146,10 @@ func runIteration(
 	fetcher ProgramFetcher,
 	downloader Downloader,
 	timeProvider TimeProvider,
+	timeSetter TimeSetter,
 ) error {
 	// Load and apply configuration
-	cfg, err := reloadConfig(ctx, configFileName, timeProvider)
+	cfg, err := reloadConfig(ctx, configFileName, timeProvider, timeSetter)
 	if err != nil {
 		return fmt.Errorf("failed to reload config: %w", err)
 	}
@@ -161,6 +173,36 @@ func runIteration(
 	return nil
 }
 
+// runLoopIteration runs a single iteration of the main loop and returns the asset for sleep calculation
+func runLoopIteration(
+	wg *sync.WaitGroup,
+	configFileName string,
+	client *radiko.Client,
+	assetCreator AssetCreator,
+	fetcher ProgramFetcher,
+	downloader Downloader,
+	timeProvider TimeProvider,
+	timeSetter TimeSetter,
+) (*radikron.Asset, error) {
+	// Create new asset
+	asset, err := assetCreator(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create asset: %w", err)
+	}
+
+	// Create context with asset
+	ctx := context.WithValue(context.Background(), contextKey, asset)
+
+	// Run single iteration
+	if err := runIteration(ctx, wg, configFileName, fetcher, downloader, timeProvider, timeSetter); err != nil {
+		return nil, fmt.Errorf("iteration failed: %w", err)
+	}
+
+	// Get updated asset from context
+	asset = radikron.GetAsset(ctx)
+	return asset, nil
+}
+
 // run is the main event loop
 func run(
 	wg *sync.WaitGroup,
@@ -170,40 +212,30 @@ func run(
 	fetcher ProgramFetcher,
 	downloader Downloader,
 	timeProvider TimeProvider,
+	timeSetter TimeSetter,
 	done <-chan struct{},
-) {
-	ck := radikron.ContextKey("asset")
-
+) error {
 	for {
 		select {
 		case <-done:
-			return
+			return nil
 		default:
 		}
 
-		// Create new asset
-		asset, err := assetCreator(client)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// Create context with asset
-		ctx := context.WithValue(context.Background(), ck, asset)
-
 		// Run single iteration
-		if err := runIteration(ctx, wg, configFileName, fetcher, downloader, timeProvider); err != nil {
-			log.Fatal(err)
+		asset, err := runLoopIteration(wg, configFileName, client, assetCreator, fetcher, downloader, timeProvider, timeSetter)
+		if err != nil {
+			return err
 		}
 
 		// Sleep until next fetch time
-		asset = radikron.GetAsset(ctx)
 		if asset != nil && asset.NextFetchTime != nil {
 			log.Printf("fetching completed – sleeping until %v", asset.NextFetchTime)
 			fetchTimer := time.NewTimer(time.Until(*asset.NextFetchTime))
 			select {
 			case <-done:
 				fetchTimer.Stop()
-				return
+				return nil
 			case <-fetchTimer.C:
 			}
 		}
@@ -211,17 +243,18 @@ func run(
 }
 
 // runWithDefaults runs with default dependencies (for production use)
-func runWithDefaults(wg *sync.WaitGroup, configFileName string, done <-chan struct{}) {
+func runWithDefaults(wg *sync.WaitGroup, configFileName string, done <-chan struct{}) error {
 	client, err := radiko.New("")
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to create radiko client: %w", err)
 	}
 
 	fetcher := &radikronProgramFetcher{}
 	downloader := &radikronDownloader{}
 	timeProvider := time.Now
+	timeSetter := defaultTimeSetter
 
-	run(wg, configFileName, client, radikron.NewAsset, fetcher, downloader, timeProvider, done)
+	return run(wg, configFileName, client, radikron.NewAsset, fetcher, downloader, timeProvider, timeSetter, done)
 }
 
 func main() {
@@ -255,7 +288,9 @@ func main() {
 	// Run main loop in goroutine
 	wg := sync.WaitGroup{}
 	go func() {
-		runWithDefaults(&wg, *conf, done)
+		if err := runWithDefaults(&wg, *conf, done); err != nil {
+			log.Fatalf("fatal error in main loop: %v", err)
+		}
 	}()
 
 	// Wait for signal
