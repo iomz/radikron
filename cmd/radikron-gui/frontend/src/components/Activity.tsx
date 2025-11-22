@@ -3,6 +3,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAppStore } from '@/store/useAppStore';
 
+const getLogTypeColor = (type: 'info' | 'success' | 'error') => {
+  switch (type) {
+    case 'info':
+      return 'bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20';
+    case 'success':
+      return 'bg-green-500/10 text-green-500 dark:text-green-400 border border-green-500/20';
+    case 'error':
+      return 'bg-destructive/10 text-destructive border border-destructive/20';
+  }
+};
+
 export const Activity: React.FC = () => {
   const activityLogs = useAppStore((state) => state.activityLogs);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -16,17 +27,6 @@ export const Activity: React.FC = () => {
       }
     }
   }, [activityLogs]);
-
-  const getLogTypeColor = (type: 'info' | 'success' | 'error') => {
-    switch (type) {
-      case 'info':
-        return 'bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20';
-      case 'success':
-        return 'bg-green-500/10 text-green-500 dark:text-green-400 border border-green-500/20';
-      case 'error':
-        return 'bg-destructive/10 text-destructive border border-destructive/20';
-    }
-  };
 
   return (
     <Card className="md:col-span-2 self-start flex flex-col h-[250px]">

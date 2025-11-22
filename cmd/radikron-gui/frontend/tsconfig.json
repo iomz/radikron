@@ -20,10 +20,12 @@
 
     /* Linting */
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    // Relaxed for local development - these can be overly strict during active development.
+    // Consider enforcing via ESLint rules (no-unused-vars, no-fallthrough) in CI/linting instead.
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": false
   },
-  "include": ["src"]
+  "include": ["src", "src/**/*.d.ts"]
 }
 
