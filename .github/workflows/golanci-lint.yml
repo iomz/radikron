@@ -18,6 +18,26 @@ jobs:
         with:
           go-version: "1.22"
           cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            cmd/radikron-gui/frontend/node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('cmd/radikron-gui/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: cmd/radikron-gui/frontend
+      - name: Build frontend
+        run: pnpm run build
+        working-directory: cmd/radikron-gui/frontend
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
