@@ -1,0 +1,20 @@
+# Wails build output
+build/
+bin/
+
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# downloads
+/radiko

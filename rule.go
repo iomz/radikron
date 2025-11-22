@@ -27,6 +27,17 @@ func (rs Rules) FindMatch(stationID string, p *Prog) *Rule {
 	return nil
 }
 
+// FindMatchSilent returns the first matching rule without logging
+// This is useful when checking for matches on programs that may be skipped
+func (rs Rules) FindMatchSilent(stationID string, p *Prog) *Rule {
+	for _, r := range rs {
+		if r.MatchSilent(stationID, p) {
+			return r
+		}
+	}
+	return nil
+}
+
 func (rs Rules) HasRuleWithoutStationID() bool {
 	for _, r := range rs {
 		if !r.HasStationID() {
@@ -62,6 +73,16 @@ type Rule struct {
 // 3. check the StationID
 // 4. match the criteria
 func (r *Rule) Match(stationID string, p *Prog) bool {
+	return r.match(stationID, p, false)
+}
+
+// MatchSilent returns true if the rule matches the program without logging
+func (r *Rule) MatchSilent(stationID string, p *Prog) bool {
+	return r.match(stationID, p, true)
+}
+
+// match is the internal matching logic with optional log suppression
+func (r *Rule) match(stationID string, p *Prog, suppressLogs bool) bool {
 	// 1. check Window
 	if !r.MatchWindow(p.Ft) {
 		return false
@@ -76,7 +97,7 @@ func (r *Rule) Match(stationID string, p *Prog) bool {
 	}
 
 	// 4. match
-	if r.MatchPfm(p.Pfm) && r.MatchTitle(p.Title) && r.MatchKeyword(p) {
+	if r.matchPfm(p.Pfm, suppressLogs) && r.matchTitle(p.Title, suppressLogs) && r.matchKeyword(p, suppressLogs) {
 		return true
 	}
 	return false
@@ -133,26 +154,41 @@ func (r *Rule) MatchDoW(ft string) bool {
 }
 
 func (r *Rule) MatchKeyword(p *Prog) bool {
+	return r.matchKeyword(p, false)
+}
+
+// matchKeyword is the internal keyword matching logic with optional log suppression
+func (r *Rule) matchKeyword(p *Prog, suppressLogs bool) bool {
 	if !r.HasKeyword() {
 		return true // if no keyward, match all
 	}
 
 	if strings.Contains(p.Title, r.Keyword) {
-		log.Printf("rule[%s] matched with title: '%s'", r.Name, p.Title)
+		if !suppressLogs {
+			log.Printf("rule[%s] matched with title: '%s'", r.Name, p.Title)
+		}
 		return true
 	} else if strings.Contains(p.Pfm, r.Keyword) {
-		log.Printf("rule[%s] matched with pfm: '%s'", r.Name, p.Pfm)
+		if !suppressLogs {
+			log.Printf("rule[%s] matched with pfm: '%s'", r.Name, p.Pfm)
+		}
 		return true
 	} else if strings.Contains(p.Info, r.Keyword) {
-		log.Printf("rule[%s] matched with info: %s", r.Name, strings.ReplaceAll(p.Info, "\n", ""))
+		if !suppressLogs {
+			log.Printf("rule[%s] matched with info: %s", r.Name, strings.ReplaceAll(p.Info, "\n", ""))
+		}
 		return true
 	} else if strings.Contains(p.Desc, r.Keyword) {
-		log.Printf("rule[%s] matched with desc: '%s'", r.Name, strings.ReplaceAll(p.Desc, "\n", ""))
+		if !suppressLogs {
+			log.Printf("rule[%s] matched with desc: '%s'", r.Name, strings.ReplaceAll(p.Desc, "\n", ""))
+		}
 		return true
 	}
 	for _, tag := range p.Tags {
 		if strings.Contains(tag, r.Keyword) {
-			log.Printf("rule[%s] matched with tag: '%s'", r.Name, tag)
+			if !suppressLogs {
+				log.Printf("rule[%s] matched with tag: '%s'", r.Name, tag)
+			}
 			return true
 		}
 	}
@@ -160,11 +196,18 @@ func (r *Rule) MatchKeyword(p *Prog) bool {
 }
 
 func (r *Rule) MatchPfm(pfm string) bool {
+	return r.matchPfm(pfm, false)
+}
+
+// matchPfm is the internal pfm matching logic with optional log suppression
+func (r *Rule) matchPfm(pfm string, suppressLogs bool) bool {
 	if !r.HasPfm() {
 		return true // if no pfm, match all
 	}
 	if strings.Contains(pfm, r.Pfm) {
-		log.Printf("rule[%s] matched with pfm: '%s'", r.Name, pfm)
+		if !suppressLogs {
+			log.Printf("rule[%s] matched with pfm: '%s'", r.Name, pfm)
+		}
 		return true
 	}
 	return false
@@ -181,11 +224,18 @@ func (r *Rule) MatchStationID(stationID string) bool {
 }
 
 func (r *Rule) MatchTitle(title string) bool {
+	return r.matchTitle(title, false)
+}
+
+// matchTitle is the internal title matching logic with optional log suppression
+func (r *Rule) matchTitle(title string, suppressLogs bool) bool {
 	if !r.HasTitle() {
 		return true // if not title, match all
 	}
 	if strings.Contains(title, r.Title) {
-		log.Printf("rule[%s] matched with title: '%s'", r.Name, title)
+		if !suppressLogs {
+			log.Printf("rule[%s] matched with title: '%s'", r.Name, title)
+		}
 		return true
 	}
 	return false
