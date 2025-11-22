@@ -14,16 +14,24 @@ export const Configuration: React.FC = () => {
   const loadConfigInfo = useAppStore((state) => state.loadConfigInfo);
   const refreshStations = useAppStore((state) => state.refreshStations);
 
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
   const handleLoadConfig = async () => {
-    // Load the configuration file
-    await loadConfig(configFile);
-    // Refresh the displayed config info and stations to reflect the newly loaded configuration
-    // Note: loadConfig catches errors internally, so we refresh regardless to update the UI
+    setIsLoading(true);
+    setError(null);
     try {
+      // Load the configuration file
+      await loadConfig(configFile);
+      // Small delay to allow backend to process the loaded config
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // Refresh the displayed config info and stations to reflect the newly loaded configuration
       await Promise.all([loadConfigInfo(), refreshStations()]);
     } catch (error) {
-      // Refresh methods handle errors internally, but we log here for debugging
-      console.error('Failed to refresh config info after load:', error);
+      console.error('Failed to load configuration:', error);
+      setError('Failed to load configuration. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -36,17 +44,20 @@ export const Configuration: React.FC = () => {
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="config-file">Config File</Label>
-          <div className="flex gap-2">
+          <form onSubmit={(e) => { e.preventDefault(); if (configFile.trim() && !isLoading) handleLoadConfig(); }} className="flex gap-2">
             <Input
               id="config-file"
               value={configFile}
               onChange={(e) => setConfigFile(e.target.value)}
               placeholder="config.yml"
+              required
+              disabled={isLoading}
             />
-            <Button variant="outline" onClick={handleLoadConfig}>
-              Load
+            <Button type="submit" variant="outline" disabled={!configFile.trim() || isLoading}>
+              {isLoading ? 'Loading...' : 'Load'}
             </Button>
-          </div>
+          </form>
+          {error && <p className="text-sm text-red-500">{error}</p>}
         </div>
         {configInfo && (
           <div className="space-y-2 pt-2">

@@ -160,7 +160,7 @@ func (r *Rule) MatchKeyword(p *Prog) bool {
 // matchKeyword is the internal keyword matching logic with optional log suppression
 func (r *Rule) matchKeyword(p *Prog, suppressLogs bool) bool {
 	if !r.HasKeyword() {
-		return true // if no keyward, match all
+		return true // if no keyword, match all
 	}
 
 	if strings.Contains(p.Title, r.Keyword) {
@@ -230,7 +230,7 @@ func (r *Rule) MatchTitle(title string) bool {
 // matchTitle is the internal title matching logic with optional log suppression
 func (r *Rule) matchTitle(title string, suppressLogs bool) bool {
 	if !r.HasTitle() {
-		return true // if not title, match all
+		return true // if no title, match all
 	}
 	if strings.Contains(title, r.Title) {
 		if !suppressLogs {

@@ -15,7 +15,7 @@ const (
 	backgroundR         = 27
 	backgroundG         = 38
 	backgroundB         = 54
-	backgroundA         = 1
+	backgroundA         = uint8(255 / 2) // 50% opacity (127)
 )
 
 //go:embed all:frontend/dist
