@@ -45,3 +45,11 @@ Closes #123
 - **ALWAYS** use `pnpm` instead of `npm` for Node.js package management
 - Use `pnpm install`, `pnpm run build`, `pnpm run dev`, etc.
 - Never use `npm` commands in this project
+
+## Building and Development
+
+- When making changes to Go code, **ALWAYS** rebuild the binary to pick up changes
+- For the CLI binary: `go build -o radikron ./cmd/radikron`
+- For the GUI binary: `cd cmd/radikron-gui && wails build`
+- When using `wails dev` for development, it should auto-rebuild, but pre-built binaries need manual rebuild
+- The imports `github.com/iomz/radikron` reference local source files (correct for Go modules), but the binary must be rebuilt after code changes

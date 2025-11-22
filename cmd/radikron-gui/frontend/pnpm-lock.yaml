@@ -73,7 +73,7 @@ importers:
         specifier: ^5.3.0
         version: 5.9.3
       vite:
-        specifier: ^5.0.0
+        specifier: ^5.4.21
         version: 5.4.21(@types/node@24.10.1)(lightningcss@1.30.2)
 
 packages:

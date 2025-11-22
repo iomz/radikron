@@ -11,9 +11,20 @@ export const Configuration: React.FC = () => {
   const configFile = useAppStore((state) => state.configFile);
   const setConfigFile = useAppStore((state) => state.setConfigFile);
   const loadConfig = useAppStore((state) => state.loadConfig);
+  const loadConfigInfo = useAppStore((state) => state.loadConfigInfo);
+  const refreshStations = useAppStore((state) => state.refreshStations);
 
   const handleLoadConfig = async () => {
+    // Load the configuration file
     await loadConfig(configFile);
+    // Refresh the displayed config info and stations to reflect the newly loaded configuration
+    // Note: loadConfig catches errors internally, so we refresh regardless to update the UI
+    try {
+      await Promise.all([loadConfigInfo(), refreshStations()]);
+    } catch (error) {
+      // Refresh methods handle errors internally, but we log here for debugging
+      console.error('Failed to refresh config info after load:', error);
+    }
   };
 
   return (

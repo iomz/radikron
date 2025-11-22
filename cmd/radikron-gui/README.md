@@ -29,17 +29,20 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
 ### Setup
 
 1. Install frontend dependencies:
+
 ```bash
 cd frontend
 pnpm install
 ```
 
 2. Run in development mode:
+
 ```bash
 wails dev
 ```
 
 This will:
+
 - Start the Wails dev server
 - Launch the application window
 - Enable hot-reload for frontend changes
@@ -47,6 +50,7 @@ This will:
 ### Building
 
 Build the application:
+
 ```bash
 wails build
 ```
@@ -57,7 +61,7 @@ This creates platform-specific binaries in `build/bin/`.
 
 ### Structure
 
-```
+```text
 cmd/radikron-gui/
 ├── main.go          # Wails entry point
 ├── app.go           # App struct with exposed methods
@@ -105,6 +109,7 @@ The GUI uses the same core packages as the CLI:
 - `github.com/iomz/radikron/internal/config` - Configuration management
 
 This ensures:
+
 - ✅ No code duplication
 - ✅ Bug fixes benefit both interfaces
 - ✅ Consistent behavior between CLI and GUI

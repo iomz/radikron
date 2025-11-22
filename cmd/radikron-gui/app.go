@@ -13,6 +13,11 @@ import (
 	"github.com/yyoshiki41/go-radiko"
 )
 
+const (
+	// assetRetryDelay is the delay before retrying when asset is nil
+	assetRetryDelay = 10 * time.Second
+)
+
 // App struct represents the Wails application
 type App struct {
 	ctx           context.Context
@@ -177,7 +182,8 @@ func (a *App) StartMonitoring() error {
 	a.monitorWg.Add(1)
 	go a.runMonitoringLoop(ctx)
 
-	// Emit event to frontend
+	// Log and emit event to frontend
+	log.Printf("monitoring started")
 	runtime.EventsEmit(a.ctx, "monitoring-started", nil)
 
 	return nil
@@ -203,7 +209,8 @@ func (a *App) StopMonitoring() error {
 	a.monitorWg.Wait()
 	a.monitoring = false
 
-	// Emit event to frontend
+	// Log and emit event to frontend
+	log.Printf("monitoring stopped")
 	runtime.EventsEmit(a.ctx, "monitoring-stopped", nil)
 
 	return nil
@@ -216,16 +223,21 @@ type programWithStation struct {
 }
 
 // reloadConfigIfNeeded reloads and applies configuration if available
-func (a *App) reloadConfigIfNeeded() {
+func (a *App) reloadConfigIfNeeded() error {
 	// RLock to capture current configFile snapshot
 	a.mu.RLock()
 	configFile := a.configFile
 	a.mu.RUnlock()
 
+	// If no config file, don't reload
+	if configFile == "" {
+		return nil
+	}
+
 	// Load config using the snapshot (outside lock since it can take time)
 	cfg, err := config.LoadConfig(configFile)
 	if err != nil {
-		return
+		return fmt.Errorf("failed to load config from %s: %w", configFile, err)
 	}
 
 	// Lock while mutating a.asset and a.config
@@ -234,21 +246,23 @@ func (a *App) reloadConfigIfNeeded() {
 
 	// Apply config to asset while holding the lock
 	if err := cfg.ApplyToAsset(a.asset); err != nil {
-		return
+		return fmt.Errorf("failed to apply config to asset: %w", err)
 	}
 
 	// Update config while holding the lock
 	a.config = cfg
+
+	return nil
 }
 
 // collectProgramsFromStations collects and deduplicates programs from all stations
-func (a *App) collectProgramsFromStations(fetcher *radikronProgramFetcher) []*programWithStation {
+func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikronProgramFetcher) []*programWithStation {
 	allPrograms := make(map[string]*programWithStation) // key: program ID
 
 	// Process all stations and collect programs
-	for _, stationID := range a.asset.AvailableStations {
+	for _, stationID := range asset.AvailableStations {
 		// Skip if no rules match this station
-		if !a.asset.Rules.HasRuleWithoutStationID() && !a.asset.Rules.HasRuleForStationID(stationID) {
+		if !asset.Rules.HasRuleWithoutStationID() && !asset.Rules.HasRuleForStationID(stationID) {
 			continue
 		}
 
@@ -279,12 +293,14 @@ func (a *App) collectProgramsFromStations(fetcher *radikronProgramFetcher) []*pr
 }
 
 // processProgram handles a single program: checks duplicates, matches rules, and downloads if needed
+// Returns (matched, duplicate) to indicate if the program matched a rule or was a duplicate
 func (a *App) processProgram(
 	pws *programWithStation,
+	asset *radikron.Asset,
 	downloadCtx context.Context,
 	processedInThisIteration map[string]bool,
 	downloader *radikronDownloader,
-) {
+) (matched, duplicate bool) {
 	p := pws.prog
 	stationID := pws.stationID
 
@@ -292,18 +308,18 @@ func (a *App) processProgram(
 	a.mu.Lock()
 	if processedInThisIteration[p.ID] {
 		a.mu.Unlock()
-		return
+		return false, true
 	}
 	if a.asset.Schedules.HasDuplicate(p) {
 		a.mu.Unlock()
-		return
+		return false, true
 	}
 	processedInThisIteration[p.ID] = true
 	a.asset.Schedules = append(a.asset.Schedules, p)
 	a.mu.Unlock()
 
-	// Check if rule matches
-	matchedRule := a.asset.Rules.FindMatchSilent(stationID, p)
+	// Check if rule matches using the asset snapshot
+	matchedRule := asset.Rules.FindMatchSilent(stationID, p)
 	if matchedRule == nil {
 		// Rule didn't match, remove from schedules
 		a.mu.Lock()
@@ -315,7 +331,7 @@ func (a *App) processProgram(
 		}
 		a.mu.Unlock()
 		delete(processedInThisIteration, p.ID)
-		return
+		return false, false
 	}
 
 	// Double-check that program is still in schedules
@@ -328,21 +344,94 @@ func (a *App) processProgram(
 	a.mu.Unlock()
 
 	if !stillInSchedules || alreadyLogged {
-		return
+		return true, false
 	}
 
 	p.RuleName = matchedRule.Name
 	p.RuleFolder = matchedRule.Folder
 
+	log.Printf("rule[%s] matched [%s]%s - attempting download (start time: %s)", matchedRule.Name, stationID, p.Title, p.Ft)
+	runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+		"type":    "info",
+		"message": fmt.Sprintf("Rule '%s' matched [%s]%s (start: %s) - attempting download", matchedRule.Name, stationID, p.Title, p.Ft),
+	})
+
 	// Call Download() - it will log "start downloading" if it actually starts
-	if err := downloader.Download(downloadCtx, a.monitorWg, p); err != nil {
-		log.Printf("download failed: %s", err)
+	// Note: Download() may return nil if program is in future, duplicate, or file exists
+	err := downloader.Download(downloadCtx, a.monitorWg, p)
+	if err != nil {
+		log.Printf("download failed for [%s]%s: %s", p.StationID, p.Title, err)
 		runtime.EventsEmit(a.ctx, "download-failed", map[string]any{
 			"station": p.StationID,
 			"title":   p.Title,
 			"error":   err.Error(),
 		})
+		return true, false
 	}
+	// If err == nil, Download() may have skipped silently (future, duplicate, or exists)
+	// The download-started event will be emitted by Download() if it actually starts
+
+	return true, false
+}
+
+// checkAndLogRulesCount checks and logs the number of configured rules
+func (a *App) checkAndLogRulesCount(asset *radikron.Asset) {
+	a.mu.RLock()
+	rulesCount := len(asset.Rules)
+	a.mu.RUnlock()
+	if rulesCount == 0 {
+		log.Printf("warning: no rules configured, programs won't be downloaded")
+		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			"type":    "error",
+			"message": "No rules configured - please configure rules to download programs",
+		})
+	} else {
+		log.Printf("configured with %d rules", rulesCount)
+	}
+}
+
+// processAllPrograms collects programs from stations and processes them
+func (a *App) processAllPrograms(
+	asset *radikron.Asset,
+	fetcher *radikronProgramFetcher,
+	downloadCtx context.Context,
+	downloader *radikronDownloader,
+) {
+	// Collect all programs from all stations
+	programList := a.collectProgramsFromStations(asset, fetcher)
+	log.Printf("collected %d programs from stations", len(programList))
+
+	// Track programs processed in this iteration to prevent duplicates
+	processedInThisIteration := make(map[string]bool)
+
+	// Process each program
+	matchedCount := 0
+	duplicateCount := 0
+	processedCount := 0
+	for _, pws := range programList {
+		matched, duplicate := a.processProgram(pws, asset, downloadCtx, processedInThisIteration, downloader)
+		if matched {
+			matchedCount++
+		}
+		if duplicate {
+			duplicateCount++
+		}
+		processedCount++
+	}
+	log.Printf("processed %d programs: %d matched rules, %d duplicates", processedCount, matchedCount, duplicateCount)
+}
+
+// logAndSleepUntilNextFetch logs the next fetch time and sleeps until then
+func (a *App) logAndSleepUntilNextFetch(asset *radikron.Asset, ctx context.Context) {
+	a.mu.RLock()
+	nextFetchTime := asset.NextFetchTime
+	a.mu.RUnlock()
+	if nextFetchTime != nil {
+		log.Printf("sleeping until next fetch time: %s", nextFetchTime.Format(time.RFC3339))
+	} else {
+		log.Printf("sleeping until next fetch time: (not scheduled, defaulting to 1 hour)")
+	}
+	a.sleepUntilNextFetch(ctx)
 }
 
 // sleepUntilNextFetch sleeps until the next fetch time or until context is canceled
@@ -368,11 +457,17 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 	defer a.monitorWg.Done()
 	defer close(a.monitorDone)
 
+	log.Printf("monitoring loop started")
+	runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+		"type":    "info",
+		"message": "Monitoring loop started",
+	})
+
 	// Setup logger to capture radikron log messages and emit events
 	emitEvent := func(ctx context.Context, eventName string, data any) {
 		runtime.EventsEmit(ctx, eventName, data)
 	}
-	cleanupLogger := SetupLogger(a.ctx, emitEvent)
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, emitEvent)
 	defer cleanupLogger()
 
 	fetcher := &radikronProgramFetcher{}
@@ -381,6 +476,11 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Printf("monitoring loop stopped (context canceled)")
+			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+				"type":    "info",
+				"message": "Monitoring loop stopped",
+			})
 			return
 		default:
 		}
@@ -389,24 +489,41 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		radikron.CurrentTime = time.Now().In(radikron.Location)
 
 		// Reload config
-		a.reloadConfigIfNeeded()
-
-		// Create context with asset for downloads
-		downloadCtx := context.WithValue(ctx, radikron.ContextKey("asset"), a.asset)
-
-		// Collect all programs from all stations
-		programList := a.collectProgramsFromStations(fetcher)
-
-		// Track programs processed in this iteration to prevent duplicates
-		processedInThisIteration := make(map[string]bool)
-
-		// Process each program
-		for _, pws := range programList {
-			a.processProgram(pws, downloadCtx, processedInThisIteration, downloader)
+		if err := a.reloadConfigIfNeeded(); err != nil {
+			log.Printf("warning: failed to reload config: %v", err)
+			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+				"type":    "error",
+				"message": fmt.Sprintf("Failed to reload config: %v", err),
+			})
 		}
 
+		// Get asset snapshot while holding lock
+		a.mu.RLock()
+		asset := a.asset
+		a.mu.RUnlock()
+
+		if asset == nil {
+			log.Printf("warning: asset is nil, skipping iteration")
+			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+				"type":    "error",
+				"message": "Asset is not initialized, skipping iteration",
+			})
+			time.Sleep(assetRetryDelay) // Wait a bit before retrying
+			continue
+		}
+
+		// Create context with asset and event emitter for downloads
+		downloadCtx := context.WithValue(ctx, radikron.ContextKey("asset"), asset)
+		downloadCtx = context.WithValue(downloadCtx, radikron.ContextKey("eventEmitter"), eventEmitter)
+
+		// Check if rules are configured
+		a.checkAndLogRulesCount(asset)
+
+		// Collect and process programs
+		a.processAllPrograms(asset, fetcher, downloadCtx, downloader)
+
 		// Sleep until next fetch time
-		a.sleepUntilNextFetch(ctx)
+		a.logAndSleepUntilNextFetch(asset, ctx)
 	}
 }
 

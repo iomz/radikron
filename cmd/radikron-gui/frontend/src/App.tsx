@@ -39,10 +39,14 @@ const AppComponent: React.FC = () => {
     // Listen for monitoring status changes
     const unsubscribeStarted = EventsOn('monitoring-started', () => {
       setMonitoring(true);
+      addActivityLog('success', 'Monitoring started');
+      console.log('Monitoring started');
     });
 
     const unsubscribeStopped = EventsOn('monitoring-stopped', () => {
       setMonitoring(false);
+      addActivityLog('info', 'Monitoring stopped');
+      console.log('Monitoring stopped');
     });
 
     // Listen for download events
