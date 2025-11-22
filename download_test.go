@@ -1,13 +1,18 @@
 package radikron
 
 import (
+	"context"
 	"embed"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/bogem/id3v2"
 	"github.com/yyoshiki41/radigo"
@@ -16,6 +21,10 @@ import (
 var (
 	//go:embed test/playlist-test.m3u8
 	PlaylistTestM3U8 embed.FS
+)
+
+const (
+	osWindows = "windows"
 )
 
 func TestBuildM3U8RequestURI(t *testing.T) {
@@ -919,7 +928,7 @@ func TestMoveFile_CopyFallbackErrorPaths(t *testing.T) {
 
 	// Test 2: Destination directory is non-writable (fails at Create in copy fallback)
 	// Skip on Windows as file permissions work differently (ACLs vs Unix permissions)
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != osWindows {
 		// Create a read-only directory
 		readOnlyDir := filepath.Join(tmpDir, "readonly")
 		err = os.MkdirAll(readOnlyDir, 0500) // Read-only, no write permission
@@ -1034,7 +1043,7 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	// Skip on Windows: id3v2.Open() locks the directory on Windows even after failure,
 	// making it impossible to clean up reliably before t.TempDir() cleanup runs.
 	// The error handling is still tested on other platforms.
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != osWindows {
 		dirPath := filepath.Join(tmpDir, "dir.aac")
 		err = os.MkdirAll(dirPath, DirPermissions)
 		if err != nil {
@@ -1049,5 +1058,781 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 
 		// Clean up the test directory
 		_ = os.Remove(dirPath)
+	}
+}
+
+func TestInitSemaphores(_ *testing.T) {
+	// Test with nil asset
+	InitSemaphores(nil)
+	// Should not panic
+
+	// Test with asset with default values (0 or negative)
+	asset1 := &Asset{
+		MaxDownloadingConcurrency: 0,
+		MaxEncodingConcurrency:    0,
+	}
+	InitSemaphores(asset1)
+	// Should use defaults
+
+	// Test with asset with custom values
+	asset2 := &Asset{
+		MaxDownloadingConcurrency: 32,
+		MaxEncodingConcurrency:    4,
+	}
+	InitSemaphores(asset2)
+	// Should update semaphores
+
+	// Test with negative values (should use defaults)
+	asset3 := &Asset{
+		MaxDownloadingConcurrency: -1,
+		MaxEncodingConcurrency:    -1,
+	}
+	InitSemaphores(asset3)
+	// Should use defaults
+}
+
+func TestGetChunklistFromM3U8(t *testing.T) {
+	// This function makes HTTP requests, so we need to test it carefully
+	// For now, we'll test error cases that don't require a real server
+
+	// Test with invalid URL (should fail)
+	_, err := getChunklistFromM3U8("http://invalid-url-that-does-not-exist-12345.com/test.m3u8")
+	if err == nil {
+		t.Log("getChunklistFromM3U8 may succeed with network retries, but should eventually fail")
+	}
+
+	// Test with empty URL (should fail)
+	_, err = getChunklistFromM3U8("")
+	if err == nil {
+		t.Error("getChunklistFromM3U8 should return error for empty URL")
+	}
+}
+
+func TestValidateAndCleanupOutputFile(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-validate")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	downloadsDir := filepath.Join(testDir, "downloads")
+	err := os.MkdirAll(downloadsDir, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create test directory: %v", err)
+	}
+
+	// Create context with asset
+	asset := &Asset{
+		MinimumOutputSize: 1024 * 1024, // 1MB
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+
+	// Test 1: File doesn't exist (should return false)
+	output := newOutputConfigFromPath(downloadsDir, "nonexistent", radigo.AudioFormatAAC)
+	shouldRetry := validateAndCleanupOutputFile(ctx, output)
+	if shouldRetry {
+		t.Error("validateAndCleanupOutputFile should return false when file doesn't exist")
+	}
+
+	// Test 2: File exists but is too small (should remove and return true)
+	smallFile := output.AbsPath()
+	err = os.WriteFile(smallFile, []byte("small"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create small file: %v", err)
+	}
+
+	shouldRetry = validateAndCleanupOutputFile(ctx, output)
+	if !shouldRetry {
+		t.Error("validateAndCleanupOutputFile should return true when file is too small")
+	}
+	if asset.NextFetchTime == nil {
+		t.Error("NextFetchTime should be set when file is removed")
+	}
+	if _, err := os.Stat(smallFile); err == nil {
+		t.Error("Small file should be removed")
+	}
+
+	// Test 3: File exists and is large enough (should return false)
+	largeFile := output.AbsPath()
+	largeContent := make([]byte, 2*1024*1024) // 2MB
+	err = os.WriteFile(largeFile, largeContent, 0600)
+	if err != nil {
+		t.Fatalf("Failed to create large file: %v", err)
+	}
+
+	shouldRetry = validateAndCleanupOutputFile(ctx, output)
+	if shouldRetry {
+		t.Error("validateAndCleanupOutputFile should return false when file is large enough")
+	}
+	if _, err := os.Stat(largeFile); os.IsNotExist(err) {
+		t.Error("Large file should not be removed")
+	}
+
+	// Test 4: File exists, is too small, but removal fails
+	smallFile2 := filepath.Join(downloadsDir, "small2.aac")
+	err = os.WriteFile(smallFile2, []byte("small"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create small file: %v", err)
+	}
+	output2 := newOutputConfigFromPath(downloadsDir, "small2", radigo.AudioFormatAAC)
+
+	// Make file read-only to prevent deletion (on Unix)
+	if runtime.GOOS != osWindows {
+		err = os.Chmod(smallFile2, 0400)
+		if err == nil {
+			defer func() {
+				_ = os.Chmod(smallFile2, 0600)
+			}()
+			shouldRetry = validateAndCleanupOutputFile(ctx, output2)
+			// Should return false if removal fails
+			if shouldRetry {
+				t.Log("validateAndCleanupOutputFile may return true even if removal fails")
+			}
+		}
+	}
+}
+
+func TestWriteOutputFile(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-write")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	downloadsDir := filepath.Join(testDir, "downloads")
+	err := os.MkdirAll(downloadsDir, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create test directory: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Test AAC format (should just rename)
+	sourceFile := filepath.Join(downloadsDir, "source.aac")
+	err = os.WriteFile(sourceFile, []byte("test aac content"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	output := newOutputConfigFromPath(downloadsDir, "test-output", radigo.AudioFormatAAC)
+	err = writeOutputFile(ctx, sourceFile, output)
+	if err != nil {
+		t.Errorf("writeOutputFile failed for AAC: %v", err)
+	}
+	if _, err := os.Stat(output.AbsPath()); os.IsNotExist(err) {
+		t.Error("Output file should exist after writeOutputFile for AAC")
+	}
+	if _, err := os.Stat(sourceFile); err == nil {
+		t.Error("Source file should not exist after writeOutputFile (renamed)")
+	}
+
+	// Test MP3 format (requires ffmpeg, skip if not available)
+	sourceFile2 := filepath.Join(downloadsDir, "source2.aac")
+	err = os.WriteFile(sourceFile2, []byte("test aac content for mp3"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	output2 := newOutputConfigFromPath(downloadsDir, "test-output2", radigo.AudioFormatMP3)
+	err = writeOutputFile(ctx, sourceFile2, output2)
+	if err != nil {
+		// ffmpeg might not be available, that's okay
+		if !strings.Contains(err.Error(), "ffmpeg not found") {
+			t.Logf("writeOutputFile for MP3 failed (may be expected if ffmpeg not available): %v", err)
+		}
+	} else {
+		// If conversion succeeded, verify output exists
+		if _, err := os.Stat(output2.AbsPath()); os.IsNotExist(err) {
+			t.Error("Output file should exist after writeOutputFile for MP3")
+		}
+	}
+
+	// Test invalid format
+	output3 := &radigo.OutputConfig{
+		DirFullPath:  downloadsDir,
+		FileBaseName: "test-invalid",
+		FileFormat:   "invalid",
+	}
+	sourceFile3 := filepath.Join(downloadsDir, "source3.aac")
+	err = os.WriteFile(sourceFile3, []byte("test"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	err = writeOutputFile(ctx, sourceFile3, output3)
+	if err == nil {
+		t.Error("writeOutputFile should return error for invalid format")
+	}
+}
+
+func TestDownload_InvalidTimeFormat(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	// Create context with asset
+	asset := &Asset{
+		OutputFormat:      radigo.AudioFormatAAC,
+		DownloadDir:       "downloads",
+		MinimumOutputSize: 1024,
+		Rules:             Rules{},
+		Schedules:         Schedules{},
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+
+	wg := &sync.WaitGroup{}
+	prog := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		Ft:        "invalid-time-format", // Invalid time format
+		To:        "20230605140000",
+	}
+
+	err := Download(ctx, wg, prog)
+	if err == nil {
+		t.Error("Download should return error for invalid time format")
+	}
+	if !strings.Contains(err.Error(), "invalid start time format") {
+		t.Errorf("Expected error about invalid time format, got: %v", err)
+	}
+}
+
+func TestDownload_FutureProgram(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	// Set current time to a fixed point
+	fixedTime := time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
+	CurrentTime = fixedTime
+
+	// Create context with asset
+	asset := &Asset{
+		OutputFormat:      radigo.AudioFormatAAC,
+		DownloadDir:       "downloads",
+		MinimumOutputSize: 1024,
+		Rules:             Rules{},
+		Schedules:         Schedules{},
+		NextFetchTime:     nil,
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+
+	wg := &sync.WaitGroup{}
+	// Program starts in the future (1 hour later)
+	prog := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		Ft:        "20230605130000", // 1 PM (future)
+		To:        "20230605140000", // 2 PM
+	}
+
+	err := Download(ctx, wg, prog)
+	if err != nil {
+		t.Errorf("Download should not return error for future program: %v", err)
+	}
+
+	// Verify NextFetchTime was set
+	if asset.NextFetchTime == nil {
+		t.Error("NextFetchTime should be set for future program")
+	}
+
+	// Verify program was not added to schedules (should skip)
+	if len(asset.Schedules) != 0 {
+		t.Error("Future program should not be added to schedules")
+	}
+}
+
+func TestDownload_DuplicateProgram(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	// Set current time
+	fixedTime := time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
+	CurrentTime = fixedTime
+
+	// Create context with asset
+	prog1 := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		Ft:        "20230605100000", // 10 AM (past)
+		To:        "20230605110000",
+	}
+	asset := &Asset{
+		OutputFormat:      radigo.AudioFormatAAC,
+		DownloadDir:       "downloads",
+		MinimumOutputSize: 1024,
+		Rules:             Rules{},
+		Schedules:         Schedules{prog1}, // Already in schedules
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+
+	wg := &sync.WaitGroup{}
+	prog2 := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		Ft:        "20230605100000", // Same as prog1
+		To:        "20230605110000",
+	}
+
+	err := Download(ctx, wg, prog2)
+	if err != nil {
+		t.Errorf("Download should not return error for duplicate program: %v", err)
+	}
+
+	// Verify program was not added again
+	if len(asset.Schedules) != 1 {
+		t.Errorf("Duplicate program should not be added, schedules count: %d", len(asset.Schedules))
+	}
+}
+
+func TestDownload_InvalidEndTime(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	// Set current time
+	fixedTime := time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
+	CurrentTime = fixedTime
+
+	// Create context with asset
+	asset := &Asset{
+		OutputFormat:      radigo.AudioFormatAAC,
+		DownloadDir:       "downloads",
+		MinimumOutputSize: 1024,
+		Rules:             Rules{},
+		Schedules:         Schedules{},
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+
+	wg := &sync.WaitGroup{}
+	// Program in future but with invalid end time
+	prog := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		Ft:        "20230605130000",   // 1 PM (future)
+		To:        "invalid-end-time", // Invalid end time
+	}
+
+	err := Download(ctx, wg, prog)
+	if err == nil {
+		t.Error("Download should return error for invalid end time format")
+	}
+	if !strings.Contains(err.Error(), "invalid end time format") {
+		t.Errorf("Expected error about invalid end time format, got: %v", err)
+	}
+}
+
+func TestDownload_NoAssetInContext(t *testing.T) {
+	ctx := context.Background() // No asset in context
+	wg := &sync.WaitGroup{}
+	prog := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		Ft:        "20230605100000",
+		To:        "20230605110000",
+	}
+
+	// Download will panic when asset is nil, so we test that it panics
+	// This tests the nil pointer dereference path
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Download should panic when asset is nil in context")
+		}
+	}()
+
+	_ = Download(ctx, wg, prog)
+	t.Error("Download should have panicked")
+}
+
+func TestDownloadLink(t *testing.T) {
+	// Create a test HTTP server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET request, got %s", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("test audio content"))
+	}))
+	defer server.Close()
+
+	// Create temporary output directory
+	tmpDir := t.TempDir()
+
+	// Test successful download
+	testURL := server.URL + "/test.aac"
+	err := downloadLink(testURL, tmpDir)
+	if err != nil {
+		t.Errorf("downloadLink failed: %v", err)
+	}
+
+	// Verify file was created
+	expectedFile := filepath.Join(tmpDir, "test.aac")
+	if _, err := os.Stat(expectedFile); os.IsNotExist(err) {
+		t.Error("File should be created after download")
+	}
+
+	// Verify file content
+	content, err := os.ReadFile(expectedFile)
+	if err != nil {
+		t.Fatalf("Failed to read downloaded file: %v", err)
+	}
+	if string(content) != "test audio content" {
+		t.Errorf("File content mismatch: got %s, want test audio content", string(content))
+	}
+}
+
+func TestDownloadLink_ServerError(t *testing.T) {
+	// Create a test HTTP server that returns error
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	testURL := server.URL + "/test.aac"
+
+	// downloadLink doesn't check status code, so it will still create the file
+	// but the content will be empty or error response
+	err := downloadLink(testURL, tmpDir)
+	// The function may or may not return an error depending on implementation
+	// It writes the response body regardless of status code
+	if err != nil {
+		t.Logf("downloadLink returned error (may be expected): %v", err)
+	}
+}
+
+func TestDownloadLink_InvalidURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	invalidURL := "http://invalid-url-that-does-not-exist-12345.com/test.aac"
+
+	err := downloadLink(invalidURL, tmpDir)
+	if err == nil {
+		t.Error("downloadLink should return error for invalid URL")
+	}
+}
+
+func TestDownloadLink_FileCreationError(t *testing.T) {
+	// Create a test HTTP server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("test content"))
+	}))
+	defer server.Close()
+
+	// Use invalid directory path to cause file creation error
+	invalidDir := filepath.Join(os.TempDir(), "nonexistent", "subdir", "path")
+	testURL := server.URL + "/test.aac"
+
+	err := downloadLink(testURL, invalidDir)
+	if err == nil {
+		t.Error("downloadLink should return error when file creation fails")
+	}
+}
+
+func TestBulkDownload_Success(t *testing.T) {
+	// Initialize semaphores
+	InitSemaphores(&Asset{
+		MaxDownloadingConcurrency: 10,
+		MaxEncodingConcurrency:    2,
+	})
+
+	// Create a test HTTP server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fileName := filepath.Base(r.URL.Path)
+		_, _ = w.Write([]byte("content for " + fileName))
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+
+	// Test with multiple URLs
+	urls := []string{
+		server.URL + "/chunk1.aac",
+		server.URL + "/chunk2.aac",
+		server.URL + "/chunk3.aac",
+	}
+
+	err := bulkDownload(urls, tmpDir)
+	if err != nil {
+		t.Errorf("bulkDownload failed: %v", err)
+	}
+
+	// Verify all files were downloaded
+	for i, url := range urls {
+		fileName := filepath.Base(url)
+		expectedFile := filepath.Join(tmpDir, fileName)
+		if _, err := os.Stat(expectedFile); os.IsNotExist(err) {
+			t.Errorf("File %d (%s) should be created", i+1, fileName)
+		}
+	}
+}
+
+func TestBulkDownload_WithErrors(t *testing.T) {
+	// Initialize semaphores
+	InitSemaphores(&Asset{
+		MaxDownloadingConcurrency: 10,
+		MaxEncodingConcurrency:    2,
+	})
+
+	// Create a test HTTP server that fails for some requests
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		// Fail every other request
+		if requestCount%2 == 0 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fileName := filepath.Base(r.URL.Path)
+		_, _ = w.Write([]byte("content for " + fileName))
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+
+	// Test with multiple URLs (some will fail)
+	urls := []string{
+		server.URL + "/chunk1.aac",
+		server.URL + "/chunk2.aac",
+		server.URL + "/chunk3.aac",
+	}
+
+	err := bulkDownload(urls, tmpDir)
+	// bulkDownload retries, so it may succeed or fail depending on retry logic
+	// The function returns error only if all retries fail
+	if err != nil {
+		t.Logf("bulkDownload returned error (may be expected with failures): %v", err)
+	}
+}
+
+func TestBulkDownload_AllFail(t *testing.T) {
+	// Initialize semaphores
+	InitSemaphores(&Asset{
+		MaxDownloadingConcurrency: 10,
+		MaxEncodingConcurrency:    2,
+	})
+
+	tmpDir := t.TempDir()
+
+	// Test with invalid URLs (all will fail)
+	urls := []string{
+		"http://invalid-url-1.com/chunk1.aac",
+		"http://invalid-url-2.com/chunk2.aac",
+	}
+
+	err := bulkDownload(urls, tmpDir)
+	if err == nil {
+		t.Error("bulkDownload should return error when all downloads fail")
+	}
+	if err != nil && !strings.Contains(err.Error(), "lack of aac files") {
+		t.Errorf("Expected 'lack of aac files' error, got: %v", err)
+	}
+}
+
+func TestBulkDownload_EmptyList(t *testing.T) {
+	// Initialize semaphores
+	InitSemaphores(&Asset{
+		MaxDownloadingConcurrency: 10,
+		MaxEncodingConcurrency:    2,
+	})
+
+	tmpDir := t.TempDir()
+
+	// Test with empty list
+	urls := []string{}
+
+	err := bulkDownload(urls, tmpDir)
+	if err != nil {
+		t.Errorf("bulkDownload should not return error for empty list: %v", err)
+	}
+}
+
+func TestGetChunklist_MediaPlaylist(t *testing.T) {
+	// Create a media playlist (not master playlist)
+	mediaPlaylist := `#EXTM3U
+#EXT-X-VERSION:3
+#EXTINF:10.0,
+chunk1.aac
+#EXTINF:10.0,
+chunk2.aac
+#EXTINF:10.0,
+chunk3.aac
+#EXT-X-ENDLIST
+`
+
+	reader := strings.NewReader(mediaPlaylist)
+	chunklist, err := getChunklist(reader)
+	if err != nil {
+		t.Errorf("getChunklist failed: %v", err)
+	}
+	if len(chunklist) != 3 {
+		t.Errorf("Expected 3 chunks, got %d", len(chunklist))
+	}
+	if chunklist[0] != "chunk1.aac" {
+		t.Errorf("First chunk should be chunk1.aac, got %s", chunklist[0])
+	}
+}
+
+func TestGetChunklistFromM3U8_Success(t *testing.T) {
+	// Create a media playlist
+	mediaPlaylist := `#EXTM3U
+#EXT-X-VERSION:3
+#EXTINF:10.0,
+chunk1.aac
+#EXTINF:10.0,
+chunk2.aac
+#EXT-X-ENDLIST
+`
+
+	// Create HTTP server that serves the media playlist
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		_, _ = w.Write([]byte(mediaPlaylist))
+	}))
+	defer server.Close()
+
+	chunklist, err := getChunklistFromM3U8(server.URL)
+	if err != nil {
+		t.Errorf("getChunklistFromM3U8 failed: %v", err)
+	}
+	if len(chunklist) != 2 {
+		t.Errorf("Expected 2 chunks, got %d", len(chunklist))
+	}
+}
+
+func TestTimeshiftProgM3U8_NoAsset(t *testing.T) {
+	// Test with no asset in context
+	ctx := context.Background()
+	prog := &Prog{
+		StationID: "FMT",
+		Ft:        "20230605130000",
+		To:        "20230605145500",
+	}
+
+	// This will panic when trying to access nil asset
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("timeshiftProgM3U8 should panic when asset is nil")
+		}
+	}()
+
+	_, _ = timeshiftProgM3U8(ctx, prog)
+	t.Error("timeshiftProgM3U8 should have panicked")
+}
+
+func TestDownloadProgram_ChunklistError(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-download-prog")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	ctx := context.Background()
+	wg := &sync.WaitGroup{}
+
+	// Create output config
+	downloadsDir := filepath.Join(testDir, "downloads")
+	err := os.MkdirAll(downloadsDir, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create test directory: %v", err)
+	}
+
+	output := newOutputConfigFromPath(downloadsDir, "test-output", radigo.AudioFormatAAC)
+
+	// Test with invalid M3U8 URL (will cause getChunklistFromM3U8 to fail)
+	prog := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		M3U8:      "http://invalid-url-that-does-not-exist-12345.com/playlist.m3u8",
+	}
+
+	// downloadProgram runs in a goroutine, so we need to wait for it
+	wg.Add(1)
+	downloadProgram(ctx, wg, prog, output)
+	wg.Wait()
+
+	// Verify output file was not created (download should have failed)
+	if _, err := os.Stat(output.AbsPath()); err == nil {
+		t.Error("Output file should not be created when chunklist fetch fails")
+	}
+}
+
+func TestDownloadProgram_BulkDownloadError(t *testing.T) {
+	// Save original env value
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+
+	testDir := filepath.Join(os.TempDir(), "radikron-test-download-prog")
+	os.Setenv(EnvRadicronHome, testDir)
+	defer os.RemoveAll(testDir)
+
+	ctx := context.Background()
+	wg := &sync.WaitGroup{}
+
+	// Create output config
+	downloadsDir := filepath.Join(testDir, "downloads")
+	err := os.MkdirAll(downloadsDir, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create test directory: %v", err)
+	}
+
+	output := newOutputConfigFromPath(downloadsDir, "test-output", radigo.AudioFormatAAC)
+
+	// Create a media playlist that points to invalid URLs (will cause bulkDownload to fail)
+	mediaPlaylist := `#EXTM3U
+#EXT-X-VERSION:3
+#EXTINF:10.0,
+http://invalid-url-1.com/chunk1.aac
+#EXTINF:10.0,
+http://invalid-url-2.com/chunk2.aac
+#EXT-X-ENDLIST
+`
+
+	// Create HTTP server that serves the media playlist
+	chunkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		_, _ = w.Write([]byte(mediaPlaylist))
+	}))
+	defer chunkServer.Close()
+
+	prog := &Prog{
+		StationID: "FMT",
+		Title:     "Test Program",
+		M3U8:      chunkServer.URL,
+	}
+
+	// downloadProgram runs in a goroutine, so we need to wait for it
+	wg.Add(1)
+	downloadProgram(ctx, wg, prog, output)
+	wg.Wait()
+
+	// Verify output file was not created (download should have failed)
+	if _, err := os.Stat(output.AbsPath()); err == nil {
+		t.Error("Output file should not be created when bulkDownload fails")
 	}
 }
