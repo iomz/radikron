@@ -119,6 +119,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       } else {
         await App.StartMonitoring();
       }
+      // Reflect the new state in the store
+      set({ monitoring: !monitoring });
     } catch (error) {
       console.error('Failed to toggle monitoring:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -129,6 +131,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadConfig: async (filename: string) => {
     try {
       await App.LoadConfig(filename);
+      // Refresh derived data after a successful load
+      await Promise.all([
+        get().loadConfigInfo(),
+        get().loadStations(),
+      ]);
     } catch (error) {
       console.error('Failed to load config:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);

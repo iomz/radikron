@@ -178,6 +178,39 @@ type ruleYAML struct {
 	Folder    string   `yaml:"folder,omitempty"`
 }
 
+// convertRulesToYAML converts rules to YAML format
+func convertRulesToYAML(rules radikron.Rules) map[string]*ruleYAML {
+	if len(rules) == 0 {
+		return nil
+	}
+	result := make(map[string]*ruleYAML)
+	for _, rule := range rules {
+		ruleYAML := &ruleYAML{
+			Folder: rule.Folder,
+		}
+		if rule.HasStationID() {
+			ruleYAML.StationID = rule.StationID
+		}
+		if rule.HasTitle() {
+			ruleYAML.Title = rule.Title
+		}
+		if rule.HasDoW() {
+			ruleYAML.DoW = rule.DoW
+		}
+		if rule.HasKeyword() {
+			ruleYAML.Keyword = rule.Keyword
+		}
+		if rule.HasPfm() {
+			ruleYAML.Pfm = rule.Pfm
+		}
+		if rule.HasWindow() {
+			ruleYAML.Window = rule.Window
+		}
+		result[rule.Name] = ruleYAML
+	}
+	return result
+}
+
 // SaveConfig saves the configuration to a file in YAML format
 func (c *Config) SaveConfig(filename string) error {
 	// Convert absolute path
@@ -211,33 +244,7 @@ func (c *Config) SaveConfig(filename string) error {
 	}
 
 	// Convert rules to YAML format
-	if len(c.Rules) > 0 {
-		cfgYAML.Rules = make(map[string]*ruleYAML)
-		for _, rule := range c.Rules {
-			ruleYAML := &ruleYAML{
-				Folder: rule.Folder,
-			}
-			if rule.HasStationID() {
-				ruleYAML.StationID = rule.StationID
-			}
-			if rule.HasTitle() {
-				ruleYAML.Title = rule.Title
-			}
-			if rule.HasDoW() {
-				ruleYAML.DoW = rule.DoW
-			}
-			if rule.HasKeyword() {
-				ruleYAML.Keyword = rule.Keyword
-			}
-			if rule.HasPfm() {
-				ruleYAML.Pfm = rule.Pfm
-			}
-			if rule.HasWindow() {
-				ruleYAML.Window = rule.Window
-			}
-			cfgYAML.Rules[rule.Name] = ruleYAML
-		}
-	}
+	cfgYAML.Rules = convertRulesToYAML(c.Rules)
 
 	// Marshal to YAML
 	data, err := yaml.Marshal(&cfgYAML)
@@ -247,7 +254,7 @@ func (c *Config) SaveConfig(filename string) error {
 
 	// Write atomically to file
 	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	if err := os.Rename(tmpPath, configPath); err != nil {

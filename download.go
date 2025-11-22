@@ -26,6 +26,73 @@ var (
 	semMu          sync.Mutex // protects semaphore recreation
 )
 
+// emitDownloadStarted emits a download started event if emitter is available, otherwise logs it
+func emitDownloadStarted(ctx context.Context, stationID, title, startTime, uri string) {
+	if emitter := GetEventEmitter(ctx); emitter != nil {
+		emitter.EmitDownloadStarted(stationID, title, startTime, uri)
+	} else {
+		log.Printf("start downloading [%s]%s (%s): %s", stationID, title, startTime, uri)
+	}
+}
+
+// emitDownloadCompleted emits a download completed event if emitter is available, otherwise logs it
+func emitDownloadCompleted(ctx context.Context, stationID, title, filePath string) {
+	if emitter := GetEventEmitter(ctx); emitter != nil {
+		emitter.EmitDownloadCompleted(stationID, title, filePath)
+	} else {
+		log.Printf("download completed [%s]%s: %s", stationID, title, filePath)
+	}
+}
+
+// emitFileSaved emits a file saved event if emitter is available, otherwise logs it
+func emitFileSaved(ctx context.Context, stationID, title, filePath string) {
+	if emitter := GetEventEmitter(ctx); emitter != nil {
+		emitter.EmitFileSaved(stationID, title, filePath)
+	} else {
+		log.Printf("+file saved: %s", filePath)
+	}
+}
+
+// emitDownloadSkipped emits a download skipped event if emitter is available, otherwise logs it
+func emitDownloadSkipped(ctx context.Context, reason, stationID, title, startTime string) {
+	if emitter := GetEventEmitter(ctx); emitter != nil {
+		emitter.EmitDownloadSkipped(reason, stationID, title, startTime)
+	} else {
+		if stationID != "" && title != "" && startTime != "" {
+			log.Printf("-skip %s [%s]%s (%s)", reason, stationID, title, startTime)
+		} else {
+			log.Printf("-skip %s", reason)
+		}
+	}
+}
+
+// emitEncodingStarted emits an encoding started event if emitter is available, otherwise logs it
+func emitEncodingStarted(ctx context.Context, filePath string) {
+	if emitter := GetEventEmitter(ctx); emitter != nil {
+		emitter.EmitEncodingStarted(filePath)
+	} else {
+		log.Printf("start encoding to MP3: %s", filePath)
+	}
+}
+
+// emitEncodingCompleted emits an encoding completed event if emitter is available, otherwise logs it
+func emitEncodingCompleted(ctx context.Context, filePath string) {
+	if emitter := GetEventEmitter(ctx); emitter != nil {
+		emitter.EmitEncodingCompleted(filePath)
+	} else {
+		log.Printf("finish encoding to MP3: %s", filePath)
+	}
+}
+
+// emitLogMessage emits a log message if emitter is available, otherwise logs it
+func emitLogMessage(ctx context.Context, level, message string) {
+	if emitter := GetEventEmitter(ctx); emitter != nil {
+		emitter.EmitLogMessage(level, message)
+	} else {
+		log.Printf("%s", message)
+	}
+}
+
 // InitSemaphores initializes or updates the semaphores based on the asset's concurrency settings.
 // This should be called when configuration is applied to ensure semaphores match the config.
 func InitSemaphores(asset *Asset) {
@@ -71,6 +138,7 @@ func Download(
 
 	startTime, err = time.ParseInLocation(DatetimeLayout, start, Location)
 	if err != nil {
+		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to parse start time '%s': %v", start, err))
 		return fmt.Errorf("invalid start time format '%s': %w", start, err)
 	}
 
@@ -78,6 +146,7 @@ func Download(
 	if startTime.After(CurrentTime) {
 		nextEndTime, err = time.ParseInLocation(DatetimeLayout, prog.To, Location)
 		if err != nil {
+			emitLogMessage(ctx, "error", fmt.Sprintf("Failed to parse end time '%s': %v", prog.To, err))
 			return fmt.Errorf("invalid end time format '%s': %w", prog.To, err)
 		}
 		// update the next fetching time
@@ -85,21 +154,13 @@ func Download(
 			next := nextEndTime.Add(BufferMinutes * time.Minute)
 			asset.NextFetchTime = &next
 		}
+		emitLogMessage(ctx, "info", fmt.Sprintf("skipping future program [%s]%s (starts at %s, current time %s)", prog.StationID, title, start, CurrentTime.Format(DatetimeLayout)))
 		return nil
 	}
 
-	// the program is already to be downloaded
 	// Note: Duplicate check and schedule addition is now done in the monitoring loop before calling Download()
-	// This check remains as a safety net in case Download() is called directly
-	if asset.Schedules.HasDuplicate(prog) {
-		log.Printf("-skip duplicate [%s]%s (%s)", prog.StationID, title, start)
-		return nil
-	}
-	// Add to schedules if not already added (safety net for direct calls)
-	// In the GUI monitoring loop, this is already done before calling Download()
-	if !asset.Schedules.HasDuplicate(prog) {
-		asset.Schedules = append(asset.Schedules, prog)
-	}
+	// We don't check duplicates here because processProgram() already added the program to schedules,
+	// and checking here would incorrectly detect it as a duplicate
 
 	// the output config
 	fileBaseName := fmt.Sprintf(
@@ -115,33 +176,37 @@ func Download(
 		prog.RuleFolder,
 	)
 	if err != nil {
+		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to configure output: %v", err))
 		return fmt.Errorf("failed to configure output: %w", err)
 	}
+
 	if err = output.SetupDir(); err != nil {
+		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to setup output dir: %v", err))
 		return fmt.Errorf("failed to setup the output dir: %w", err)
 	}
 
+	// Final check: verify target location doesn't exist before proceeding with download
+	if output.IsExist() {
+		emitDownloadSkipped(ctx, "already exists", prog.StationID, title, start)
+		emitLogMessage(ctx, "info", fmt.Sprintf("file already exists at target, skipping [%s]%s: %s", prog.StationID, title, output.AbsPath()))
+		return nil
+	}
+
 	// Check for duplicates and move from default folder to configured folder if needed
-	// handleDuplicate checks the target location first and handles skip cases
-	if err := handleDuplicate(fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output, asset.Rules); err != nil {
+	// handleDuplicate checks other locations and handles skip cases
+	if err := handleDuplicate(ctx, fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output, asset.Rules, prog.StationID, title, start); err != nil {
 		// If errSkipAfterMove, file was moved and exists at target - skip without logging again
 		if errors.Is(err, errSkipAfterMove) {
 			return nil
 		}
+		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to handle duplicate: %v", err))
 		return fmt.Errorf("failed to handle duplicate: %w", err)
-	}
-
-	// Final check: verify target location doesn't exist before proceeding with download
-	// This is necessary because handleDuplicate may find duplicates in other folders and return early,
-	// so we need to verify the target location specifically to prevent downloading when it already exists.
-	if output.IsExist() {
-		log.Printf("-skip already exists: %s", output.AbsPath())
-		return nil
 	}
 
 	// fetch the recording m3u8 uri
 	uri, err := timeshiftProgM3U8(ctx, prog)
 	if err != nil {
+		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to fetch M3U8 URI: %v", err))
 		return fmt.Errorf(
 			"playlist.m3u8 not available [%s]%s (%s): %s",
 			prog.StationID,
@@ -152,9 +217,9 @@ func Download(
 	}
 	// Log rule match only when download actually starts (not skipped)
 	if prog.RuleName != "" {
-		log.Printf("rule[%s] matched: [%s]%s (%s)", prog.RuleName, prog.StationID, title, start)
+		emitLogMessage(ctx, "info", fmt.Sprintf("rule[%s] matched: [%s]%s (%s)", prog.RuleName, prog.StationID, title, start))
 	}
-	log.Printf("start downloading [%s]%s (%s): %s", prog.StationID, title, start, uri)
+	emitDownloadStarted(ctx, prog.StationID, title, start, uri)
 	prog.M3U8 = uri
 	wg.Add(1)
 	go downloadProgram(ctx, wg, prog, output)
@@ -272,6 +337,9 @@ func downloadProgram(
 		return
 	}
 
+	// Download completed - file is written to disk and validated
+	emitDownloadCompleted(ctx, prog.StationID, prog.Title, output.AbsPath())
+
 	concatedFile, err := radigo.ConcatAACFilesFromList(ctx, aacDir)
 	if err != nil {
 		log.Printf("failed to concat aac files: %s", err)
@@ -289,12 +357,12 @@ func downloadProgram(
 
 	err = writeID3Tag(output, prog)
 	if err != nil {
-		log.Printf("ID3v2: %v", err)
+		emitLogMessage(ctx, "error", fmt.Sprintf("ID3v2: %v", err))
 		return
 	}
 
-	// finish downloading the file
-	log.Printf("+file saved: %s", output.AbsPath())
+	// File saved - metadata tags have been written
+	emitFileSaved(ctx, prog.StationID, prog.Title, output.AbsPath())
 }
 
 // writeOutputFile writes the concatenated file to the output location,
@@ -307,8 +375,12 @@ func writeOutputFile(ctx context.Context, concatedFile string, output *radigo.Ou
 		// Limit concurrent encoding operations to prevent resource exhaustion
 		encodingSem <- struct{}{}
 		defer func() { <-encodingSem }()
-		log.Printf("start encoding to MP3: %s", output.AbsPath())
-		return convertAACtoMP3(ctx, concatedFile, output.AbsPath())
+		emitEncodingStarted(ctx, output.AbsPath())
+		err := convertAACtoMP3(ctx, concatedFile, output.AbsPath())
+		if err == nil {
+			emitEncodingCompleted(ctx, output.AbsPath())
+		}
+		return err
 	default:
 		return fmt.Errorf("invalid file format")
 	}
@@ -452,32 +524,6 @@ func newOutputConfigFromPath(dirPath, fileBaseName, fileFormat string) *radigo.O
 	}
 }
 
-// checkDuplicate checks if a file exists in either the default download directory
-// or in the configured folder. Returns true and the path if found, false otherwise.
-func checkDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string) (exists bool, existingPath string) {
-	// Check in default download directory
-	defaultPath, err := getRadicronPath(downloadDir)
-	if err == nil {
-		defaultOutput := newOutputConfigFromPath(defaultPath, fileBaseName, fileFormat)
-		if defaultOutput.IsExist() {
-			return true, defaultOutput.AbsPath()
-		}
-	}
-
-	// Check in configured folder if different from default
-	if configuredFolder != "" {
-		configuredPath, err := getRadicronPath(filepath.Join(downloadDir, configuredFolder))
-		if err == nil {
-			configuredOutput := newOutputConfigFromPath(configuredPath, fileBaseName, fileFormat)
-			if configuredOutput.IsExist() {
-				return true, configuredOutput.AbsPath()
-			}
-		}
-	}
-
-	return false, ""
-}
-
 // moveFile attempts to move a file using os.Rename, falling back to copy-then-delete
 // if the rename fails (e.g., across filesystems).
 func moveFile(source, dest string) error {
@@ -587,23 +633,18 @@ func handleMoveFromDefaultFolder(source, targetPath string, output *radigo.Outpu
 }
 
 // handleDuplicate checks for duplicates in all configured folders and moves files from default folder to configured folder if needed
-func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig, rules Rules) error {
-	// Check target location first - if file already exists at target, skip immediately
-	if output.IsExist() {
-		log.Printf("-skip already exists: %s", output.AbsPath())
-		return nil
-	}
-
+func handleDuplicate(ctx context.Context, fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig, rules Rules, stationID, title, startTime string) error {
 	// Collect all unique configured folders from all rules
 	configuredFolders := collectConfiguredFolders(configuredFolder, rules)
 
-	// Check in all configured folders (excluding target, which we already checked)
+	// Check in all configured folders (excluding target, which is already checked before calling this)
 	// This takes precedence over default folder
 	targetPath := output.AbsPath()
 	exists, existingPath := checkConfiguredFoldersForDuplicate(
 		configuredFolders, downloadDir, fileBaseName, fileFormat, targetPath)
 	if exists {
-		log.Printf("-skip already exists: %s", existingPath)
+		emitDownloadSkipped(ctx, "already exists", stationID, title, startTime)
+		emitLogMessage(ctx, "info", fmt.Sprintf("file already exists in configured folder, skipping [%s]%s: %s", stationID, title, existingPath))
 		return nil
 	}
 
@@ -623,7 +664,8 @@ func handleDuplicate(fileBaseName, fileFormat, downloadDir, configuredFolder str
 	}
 
 	// File exists in default folder, no configured folder - skip
-	log.Printf("-skip already exists: %s", defaultOutput.AbsPath())
+	emitDownloadSkipped(ctx, "already exists", stationID, title, startTime)
+	emitLogMessage(ctx, "info", fmt.Sprintf("file already exists in default folder, skipping [%s]%s: %s", stationID, title, defaultOutput.AbsPath()))
 	return nil
 }
 
