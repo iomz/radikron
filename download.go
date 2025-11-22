@@ -158,9 +158,14 @@ func Download(
 		return nil
 	}
 
-	// Note: Duplicate check and schedule addition is now done in the monitoring loop before calling Download()
-	// We don't check duplicates here because processProgram() already added the program to schedules,
-	// and checking here would incorrectly detect it as a duplicate
+	// Check for duplicate in schedules (for direct calls to Download, e.g., in tests)
+	// Note: In normal flow, processProgram() checks duplicates before adding to schedules,
+	// so this check mainly helps when Download() is called directly
+	if asset.Schedules.HasDuplicate(prog) {
+		emitDownloadSkipped(ctx, "duplicate program", prog.StationID, title, start)
+		emitLogMessage(ctx, "info", fmt.Sprintf("duplicate program already in schedules, skipping [%s]%s (%s)", prog.StationID, title, start))
+		return nil
+	}
 
 	// the output config
 	fileBaseName := fmt.Sprintf(
@@ -337,7 +342,7 @@ func downloadProgram(
 		return
 	}
 
-	// Download completed - file is written to disk and validated
+	// Download completed - tmp files are ready for concatenation and validation
 	emitDownloadCompleted(ctx, prog.StationID, prog.Title, output.AbsPath())
 
 	concatedFile, err := radigo.ConcatAACFilesFromList(ctx, aacDir)
@@ -605,11 +610,8 @@ func checkConfiguredFoldersForDuplicate(
 func handleMoveFromDefaultFolder(source, targetPath string, output *radigo.OutputConfig) error {
 	// Check if target already exists (edge case: file appeared between checks or race condition)
 	if output.IsExist() {
-		log.Printf("-skip target already exists, removing source: %s (target: %s)", source, targetPath)
-		// Target exists, remove source file to avoid duplicates
-		if err := os.Remove(source); err != nil {
-			log.Printf("warning: failed to remove source file %s after target exists: %v", source, err)
-		}
+		log.Printf("-skip target already exists, keeping both files: %s (target: %s)", source, targetPath)
+		// Target exists, keep both files and skip download
 		return nil
 	}
 

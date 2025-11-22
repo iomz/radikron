@@ -96,6 +96,11 @@ func (a *App) LoadConfig(filename string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Check if asset is initialized before applying config
+	if a.asset == nil {
+		return fmt.Errorf("asset not initialized")
+	}
+
 	// Apply config to asset
 	if err := cfg.ApplyToAsset(a.asset); err != nil {
 		return fmt.Errorf("failed to apply config: %w", err)
@@ -171,7 +176,11 @@ func (a *App) StartMonitoring() error {
 	}
 
 	// Create context for monitoring
-	ctx, cancel := context.WithCancel(context.Background())
+	parentCtx := a.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
 	ctx = context.WithValue(ctx, radikron.ContextKey("asset"), a.asset)
 	a.monitorCancel = cancel
 	a.monitorDone = make(chan struct{})
@@ -216,12 +225,6 @@ func (a *App) StopMonitoring() error {
 	return nil
 }
 
-// programWithStation wraps a program with its station ID
-type programWithStation struct {
-	prog      *radikron.Prog
-	stationID string
-}
-
 // reloadConfigIfNeeded reloads and applies configuration if available
 func (a *App) reloadConfigIfNeeded() error {
 	// RLock to capture current configFile snapshot
@@ -244,6 +247,10 @@ func (a *App) reloadConfigIfNeeded() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if a.asset == nil {
+		return fmt.Errorf("asset not initialized")
+	}
+
 	// Apply config to asset while holding the lock
 	if err := cfg.ApplyToAsset(a.asset); err != nil {
 		return fmt.Errorf("failed to apply config to asset: %w", err)
@@ -253,6 +260,12 @@ func (a *App) reloadConfigIfNeeded() error {
 	a.config = cfg
 
 	return nil
+}
+
+// programWithStation wraps a program with its station ID
+type programWithStation struct {
+	prog      *radikron.Prog
+	stationID string
 }
 
 // collectProgramsFromStations collects and deduplicates programs from all stations
@@ -292,6 +305,18 @@ func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikr
 	return programList
 }
 
+// removeProgramFromSchedules removes a program with the given ID from the schedules slice.
+// Returns the modified slice. This is O(n) but necessary for slice-based removal.
+func removeProgramFromSchedules(schedules radikron.Schedules, programID string) radikron.Schedules {
+	for i, s := range schedules {
+		if s.ID == programID {
+			// Remove element by creating a new slice without it
+			return append(schedules[:i], schedules[i+1:]...)
+		}
+	}
+	return schedules
+}
+
 // processProgram handles a single program: checks duplicates, matches rules, and downloads if needed
 // Returns (matched, duplicate) to indicate if the program matched a rule or was a duplicate
 func (a *App) processProgram(
@@ -323,12 +348,7 @@ func (a *App) processProgram(
 	if matchedRule == nil {
 		// Rule didn't match, remove from schedules
 		a.mu.Lock()
-		for i, s := range a.asset.Schedules {
-			if s.ID == p.ID {
-				a.asset.Schedules = append(a.asset.Schedules[:i], a.asset.Schedules[i+1:]...)
-				break
-			}
-		}
+		a.asset.Schedules = removeProgramFromSchedules(a.asset.Schedules, p.ID)
 		a.mu.Unlock()
 		delete(processedInThisIteration, p.ID)
 		return false, false
@@ -436,8 +456,19 @@ func (a *App) logAndSleepUntilNextFetch(asset *radikron.Asset, ctx context.Conte
 
 // sleepUntilNextFetch sleeps until the next fetch time or until context is canceled
 func (a *App) sleepUntilNextFetch(ctx context.Context) {
-	if a.asset.NextFetchTime != nil {
-		sleepDuration := time.Until(*a.asset.NextFetchTime)
+	// Acquire read lock to safely read NextFetchTime
+	a.mu.RLock()
+	var nextFetchTime *time.Time
+	if a.asset != nil && a.asset.NextFetchTime != nil {
+		// Copy the time value to avoid holding lock during sleep
+		nextFetchTimeCopy := *a.asset.NextFetchTime
+		nextFetchTime = &nextFetchTimeCopy
+	}
+	a.mu.RUnlock()
+
+	// Use the local copy to decide whether to create a timer or sleep
+	if nextFetchTime != nil {
+		sleepDuration := time.Until(*nextFetchTime)
 		if sleepDuration > 0 {
 			timer := time.NewTimer(sleepDuration)
 			select {
