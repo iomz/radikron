@@ -1,6 +1,6 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "radikron-gui",
+  "name": "Radikron",
   "outputfilename": "radikron-gui",
   "frontend": {
     "dir": "./frontend",
@@ -24,4 +24,3 @@
   "obfuscated": false,
   "garbleargs": ""
 }
-

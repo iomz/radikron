@@ -109,12 +109,27 @@ func (a *App) LoadConfig(filename string) error {
 
 // SaveConfig saves the current configuration to a file
 func (a *App) SaveConfig(filename string) error {
-	// Note: This would need to be implemented in the config package
-	// For now, we'll just update the config file path
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if a.config == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	// Save config to file using the config package
+	if err := a.config.SaveConfig(filename); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	// Update config file path on success
 	a.configFile = filename
+
+	// Emit event to frontend
+	runtime.EventsEmit(a.ctx, "config-saved", map[string]any{
+		"success": true,
+		"file":    filename,
+	})
+
 	return nil
 }
 
@@ -202,13 +217,28 @@ type programWithStation struct {
 
 // reloadConfigIfNeeded reloads and applies configuration if available
 func (a *App) reloadConfigIfNeeded() {
-	if cfg, err := config.LoadConfig(a.configFile); err == nil {
-		if err := cfg.ApplyToAsset(a.asset); err == nil {
-			a.mu.Lock()
-			a.config = cfg
-			a.mu.Unlock()
-		}
+	// RLock to capture current configFile snapshot
+	a.mu.RLock()
+	configFile := a.configFile
+	a.mu.RUnlock()
+
+	// Load config using the snapshot (outside lock since it can take time)
+	cfg, err := config.LoadConfig(configFile)
+	if err != nil {
+		return
 	}
+
+	// Lock while mutating a.asset and a.config
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Apply config to asset while holding the lock
+	if err := cfg.ApplyToAsset(a.asset); err != nil {
+		return
+	}
+
+	// Update config while holding the lock
+	a.config = cfg
 }
 
 // collectProgramsFromStations collects and deduplicates programs from all stations

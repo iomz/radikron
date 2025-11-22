@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -149,6 +150,109 @@ func (c *Config) buildConfig() error {
 		return fmt.Errorf("error loading rules: %w", err)
 	}
 	c.Rules = rules
+
+	return nil
+}
+
+// configYAML represents the YAML structure for saving configuration
+type configYAML struct {
+	AreaID                    string               `yaml:"area-id"`
+	ExtraStations             []string             `yaml:"extra-stations,omitempty"`
+	IgnoreStations            []string             `yaml:"ignore-stations,omitempty"`
+	FileFormat                string               `yaml:"file-format"`
+	MinimumOutputSize         int64                `yaml:"minimum-output-size"`
+	DownloadDir               string               `yaml:"downloads"`
+	MaxDownloadingConcurrency *int                 `yaml:"max-downloading-concurrency,omitempty"`
+	MaxEncodingConcurrency    *int                 `yaml:"max-encoding-concurrency,omitempty"`
+	Rules                     map[string]*ruleYAML `yaml:"rules,omitempty"`
+}
+
+// ruleYAML represents a rule in YAML format
+type ruleYAML struct {
+	StationID string   `yaml:"station-id,omitempty"`
+	Title     string   `yaml:"title,omitempty"`
+	DoW       []string `yaml:"dow,omitempty"`
+	Keyword   string   `yaml:"keyword,omitempty"`
+	Pfm       string   `yaml:"pfm,omitempty"`
+	Window    string   `yaml:"window,omitempty"`
+	Folder    string   `yaml:"folder,omitempty"`
+}
+
+// SaveConfig saves the configuration to a file in YAML format
+func (c *Config) SaveConfig(filename string) error {
+	// Convert absolute path
+	configPath, err := filepath.Abs(filename)
+	if err != nil {
+		return fmt.Errorf("invalid config path: %w", err)
+	}
+
+	// Create directory if it doesn't exist
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, fs.ModePerm); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Convert config to YAML structure
+	cfgYAML := configYAML{
+		AreaID:            c.AreaID,
+		ExtraStations:     c.ExtraStations,
+		IgnoreStations:    c.IgnoreStations,
+		FileFormat:        c.FileFormat,
+		MinimumOutputSize: c.MinimumOutputSize / (radikron.Kilobytes * radikron.Kilobytes), // Convert bytes to MB
+		DownloadDir:       c.DownloadDir,
+	}
+
+	// Only include concurrency settings if they differ from defaults
+	if c.MaxDownloadingConcurrency != radikron.MaxDownloadingConcurrency {
+		cfgYAML.MaxDownloadingConcurrency = &c.MaxDownloadingConcurrency
+	}
+	if c.MaxEncodingConcurrency != radikron.MaxEncodingConcurrency {
+		cfgYAML.MaxEncodingConcurrency = &c.MaxEncodingConcurrency
+	}
+
+	// Convert rules to YAML format
+	if len(c.Rules) > 0 {
+		cfgYAML.Rules = make(map[string]*ruleYAML)
+		for _, rule := range c.Rules {
+			ruleYAML := &ruleYAML{
+				Folder: rule.Folder,
+			}
+			if rule.HasStationID() {
+				ruleYAML.StationID = rule.StationID
+			}
+			if rule.HasTitle() {
+				ruleYAML.Title = rule.Title
+			}
+			if rule.HasDoW() {
+				ruleYAML.DoW = rule.DoW
+			}
+			if rule.HasKeyword() {
+				ruleYAML.Keyword = rule.Keyword
+			}
+			if rule.HasPfm() {
+				ruleYAML.Pfm = rule.Pfm
+			}
+			if rule.HasWindow() {
+				ruleYAML.Window = rule.Window
+			}
+			cfgYAML.Rules[rule.Name] = ruleYAML
+		}
+	}
+
+	// Marshal to YAML
+	data, err := yaml.Marshal(&cfgYAML)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Write atomically to file
+	tmpPath := configPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		return fmt.Errorf("failed to rename config file: %w", err)
+	}
 
 	return nil
 }
