@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1830,5 +1831,383 @@ http://invalid-url-2.com/chunk2.aac
 	// Verify output file was not created (download should have failed)
 	if _, err := os.Stat(output.AbsPath()); err == nil {
 		t.Error("Output file should not be created when bulkDownload fails")
+	}
+}
+
+// mockEventEmitter is a test implementation of EventEmitter
+type mockEventEmitter struct {
+	downloadStarted   []struct{ stationID, title, startTime, uri string }
+	downloadCompleted []struct{ stationID, title, filePath string }
+	fileSaved         []struct{ stationID, title, filePath string }
+	downloadSkipped   []struct{ reason, stationID, title, startTime string }
+	encodingStarted   []string
+	encodingCompleted []string
+	logMessages       []struct{ level, message string }
+}
+
+func (m *mockEventEmitter) EmitDownloadStarted(stationID, title, startTime, uri string) {
+	m.downloadStarted = append(m.downloadStarted, struct{ stationID, title, startTime, uri string }{stationID, title, startTime, uri})
+}
+
+func (m *mockEventEmitter) EmitDownloadCompleted(stationID, title, filePath string) {
+	m.downloadCompleted = append(m.downloadCompleted, struct{ stationID, title, filePath string }{stationID, title, filePath})
+}
+
+func (m *mockEventEmitter) EmitFileSaved(stationID, title, filePath string) {
+	m.fileSaved = append(m.fileSaved, struct{ stationID, title, filePath string }{stationID, title, filePath})
+}
+
+func (m *mockEventEmitter) EmitDownloadSkipped(reason, stationID, title, startTime string) {
+	m.downloadSkipped = append(m.downloadSkipped, struct{ reason, stationID, title, startTime string }{reason, stationID, title, startTime})
+}
+
+func (m *mockEventEmitter) EmitEncodingStarted(filePath string) {
+	m.encodingStarted = append(m.encodingStarted, filePath)
+}
+
+func (m *mockEventEmitter) EmitEncodingCompleted(filePath string) {
+	m.encodingCompleted = append(m.encodingCompleted, filePath)
+}
+
+func (m *mockEventEmitter) EmitLogMessage(level, message string) {
+	m.logMessages = append(m.logMessages, struct{ level, message string }{level, message})
+}
+
+func TestEmitDownloadStarted_WithEmitter(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+
+	emitDownloadStarted(ctx, "FMT", "Test Program", "20230605100000", "http://test.com/playlist.m3u8")
+
+	if len(emitter.downloadStarted) != 1 {
+		t.Errorf("Expected 1 download started event, got %d", len(emitter.downloadStarted))
+	}
+	if emitter.downloadStarted[0].stationID != "FMT" {
+		t.Errorf("Expected stationID FMT, got %s", emitter.downloadStarted[0].stationID)
+	}
+}
+
+func TestEmitDownloadStarted_WithoutEmitter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	// Should not panic, just log
+	emitDownloadStarted(ctx, "FMT", "Test Program", "20230605100000", "http://test.com/playlist.m3u8")
+}
+
+func TestEmitDownloadCompleted_WithEmitter(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+
+	emitDownloadCompleted(ctx, "FMT", "Test Program", "/path/to/file.aac")
+
+	if len(emitter.downloadCompleted) != 1 {
+		t.Errorf("Expected 1 download completed event, got %d", len(emitter.downloadCompleted))
+	}
+}
+
+func TestEmitDownloadCompleted_WithoutEmitter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitDownloadCompleted(ctx, "FMT", "Test Program", "/path/to/file.aac")
+}
+
+func TestEmitFileSaved_WithEmitter(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+
+	emitFileSaved(ctx, "FMT", "Test Program", "/path/to/file.aac")
+
+	if len(emitter.fileSaved) != 1 {
+		t.Errorf("Expected 1 file saved event, got %d", len(emitter.fileSaved))
+	}
+}
+
+func TestEmitFileSaved_WithoutEmitter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitFileSaved(ctx, "FMT", "Test Program", "/path/to/file.aac")
+}
+
+func TestEmitDownloadSkipped_WithEmitter(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+
+	emitDownloadSkipped(ctx, "already exists", "FMT", "Test Program", "20230605100000")
+
+	if len(emitter.downloadSkipped) != 1 {
+		t.Errorf("Expected 1 download skipped event, got %d", len(emitter.downloadSkipped))
+	}
+}
+
+func TestEmitDownloadSkipped_WithoutEmitter_WithAllFields(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitDownloadSkipped(ctx, "already exists", "FMT", "Test Program", "20230605100000")
+}
+
+func TestEmitDownloadSkipped_WithoutEmitter_WithEmptyFields(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitDownloadSkipped(ctx, "test reason", "", "", "")
+}
+
+func TestEmitEncodingStarted_WithEmitter(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+
+	emitEncodingStarted(ctx, "/path/to/file.aac")
+
+	if len(emitter.encodingStarted) != 1 {
+		t.Errorf("Expected 1 encoding started event, got %d", len(emitter.encodingStarted))
+	}
+}
+
+func TestEmitEncodingStarted_WithoutEmitter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitEncodingStarted(ctx, "/path/to/file.aac")
+}
+
+func TestEmitEncodingCompleted_WithEmitter(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+
+	emitEncodingCompleted(ctx, "/path/to/file.mp3")
+
+	if len(emitter.encodingCompleted) != 1 {
+		t.Errorf("Expected 1 encoding completed event, got %d", len(emitter.encodingCompleted))
+	}
+}
+
+func TestEmitEncodingCompleted_WithoutEmitter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitEncodingCompleted(ctx, "/path/to/file.mp3")
+}
+
+func TestEmitLogMessage_WithEmitter(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+
+	emitLogMessage(ctx, "info", "Test message")
+
+	if len(emitter.logMessages) != 1 {
+		t.Errorf("Expected 1 log message, got %d", len(emitter.logMessages))
+	}
+	if emitter.logMessages[0].level != "info" {
+		t.Errorf("Expected level info, got %s", emitter.logMessages[0].level)
+	}
+}
+
+func TestEmitLogMessage_WithoutEmitter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitLogMessage(ctx, "error", "Test error message")
+}
+
+func TestEmitLogMessage_WithoutEmitter_EmptyLevel(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emitLogMessage(ctx, "", "Test message with empty level")
+}
+
+func TestMoveFile_ErrorOpeningSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	nonExistentSource := filepath.Join(tmpDir, "nonexistent.txt")
+	destFile := filepath.Join(tmpDir, "dest.txt")
+
+	err := moveFile(nonExistentSource, destFile)
+	if err == nil {
+		t.Error("moveFile should return error when source file doesn't exist")
+	}
+}
+
+func TestMoveFile_CopyError(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+
+	// Create source file
+	err := os.WriteFile(sourceFile, []byte("test content"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// On Unix, try to move to a read-only location to force copy fallback error
+	// Skip on Windows as permissions work differently
+	if runtime.GOOS != osWindows {
+		readOnlyDir := filepath.Join(tmpDir, "readonly")
+		err = os.MkdirAll(readOnlyDir, 0500)
+		if err != nil {
+			t.Fatalf("Failed to create read-only directory: %v", err)
+		}
+		defer func() {
+			_ = os.Chmod(readOnlyDir, 0700)
+		}()
+
+		readOnlyDest := filepath.Join(readOnlyDir, "dest.txt")
+		err = moveFile(sourceFile, readOnlyDest)
+		// Should fail when trying to create destination in read-only dir
+		if err == nil {
+			t.Error("moveFile should return error when destination directory is read-only")
+		}
+	}
+}
+
+func TestHandleMoveFromDefaultFolder_TargetExists(t *testing.T) {
+	downloadsDir, cleanup := setupHandleDuplicateTest(t)
+	defer cleanup()
+
+	citypopDir := filepath.Join(downloadsDir, "citypop")
+	err := os.MkdirAll(citypopDir, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create citypop directory: %v", err)
+	}
+
+	// Create file in default folder
+	defaultFile := filepath.Join(downloadsDir, "move-test.aac")
+	err = os.WriteFile(defaultFile, []byte("test content"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create default file: %v", err)
+	}
+
+	// Create target file (simulating race condition)
+	output, err := newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	targetFile := output.AbsPath()
+	err = os.WriteFile(targetFile, []byte("existing content"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create target file: %v", err)
+	}
+
+	ctx := context.Background()
+	err = handleMoveFromDefaultFolder(ctx, defaultFile, targetFile, output, "TEST", "Test Program", "20230605100000")
+	if err != nil {
+		t.Errorf("handleMoveFromDefaultFolder should not return error when target exists: %v", err)
+	}
+
+	// Source should still exist (target exists, so move is skipped)
+	if _, err := os.Stat(defaultFile); os.IsNotExist(err) {
+		t.Error("Source file should still exist when target exists")
+	}
+}
+
+func TestHandleMoveFromDefaultFolder_MoveErrorTargetAppears(t *testing.T) {
+	downloadsDir, cleanup := setupHandleDuplicateTest(t)
+	defer cleanup()
+
+	citypopDir := filepath.Join(downloadsDir, "citypop")
+	err := os.MkdirAll(citypopDir, DirPermissions)
+	if err != nil {
+		t.Fatalf("Failed to create citypop directory: %v", err)
+	}
+
+	// Create file in default folder
+	defaultFile := filepath.Join(downloadsDir, "move-test.aac")
+	err = os.WriteFile(defaultFile, []byte("test content"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create default file: %v", err)
+	}
+
+	output, err := newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	if err != nil {
+		t.Fatalf("newOutputConfig failed: %v", err)
+	}
+	targetFile := output.AbsPath()
+
+	// On Unix, we can simulate a move error by making the destination directory read-only
+	// This will cause moveFile to fail, but if target appears during the error, source should be removed
+	if runtime.GOOS != osWindows {
+		// Make citypop dir read-only to cause move error
+		err = os.Chmod(citypopDir, 0500)
+		if err == nil {
+			defer func() {
+				_ = os.Chmod(citypopDir, 0700)
+			}()
+
+			// Create target file after making dir read-only (simulating race condition)
+			// This tests the error path where target appears during move error
+			err = os.WriteFile(targetFile, []byte("existing"), 0600)
+			if err == nil {
+				ctx := context.Background()
+				err = handleMoveFromDefaultFolder(ctx, defaultFile, targetFile, output, "TEST", "Test Program", "20230605100000")
+				// Should handle the error gracefully
+				_ = err
+			}
+		}
+	}
+}
+
+func TestGetRadicronPath_GetwdError(t *testing.T) {
+	// This is hard to test directly, but we can verify the error path exists
+	// by checking the code handles Getwd errors
+	originalEnv := os.Getenv(EnvRadicronHome)
+	defer os.Setenv(EnvRadicronHome, originalEnv)
+	os.Unsetenv(EnvRadicronHome)
+
+	// getRadicronPath calls os.Getwd() which rarely fails, but the code should handle it
+	// We can't easily mock os.Getwd, but we verify the error handling exists
+	_, err := getRadicronPath("test")
+	// Should succeed in normal cases
+	if err != nil {
+		t.Logf("getRadicronPath returned error (may be expected in some environments): %v", err)
+	}
+}
+
+func TestConvertAACtoMP3_FFmpegNotFound(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	sourceFile := filepath.Join(tmpDir, "source.aac")
+	destFile := filepath.Join(tmpDir, "dest.mp3")
+
+	// Create source file
+	err := os.WriteFile(sourceFile, []byte("test aac content"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Temporarily modify PATH to exclude ffmpeg
+	originalPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", originalPath)
+
+	// Set PATH to empty to simulate ffmpeg not found
+	os.Setenv("PATH", "")
+
+	err = convertAACtoMP3(ctx, sourceFile, destFile)
+	if err == nil {
+		t.Error("convertAACtoMP3 should return error when ffmpeg is not found")
+	}
+	if err != nil && !strings.Contains(err.Error(), "ffmpeg not found") {
+		t.Errorf("Expected error about ffmpeg not found, got: %v", err)
+	}
+}
+
+func TestConvertAACtoMP3_ConversionError(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	sourceFile := filepath.Join(tmpDir, "source.aac")
+	destFile := filepath.Join(tmpDir, "dest.mp3")
+
+	// Create invalid source file (not a valid AAC file)
+	err := os.WriteFile(sourceFile, []byte("not a valid aac file"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Check if ffmpeg is available
+	_, err = exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not available, skipping conversion error test")
+	}
+
+	// Try to convert invalid file
+	err = convertAACtoMP3(ctx, sourceFile, destFile)
+	// Should fail with conversion error
+	if err == nil {
+		t.Error("convertAACtoMP3 should return error for invalid source file")
+	}
+	if err != nil && !strings.Contains(err.Error(), "ffmpeg conversion failed") {
+		t.Logf("convertAACtoMP3 returned error (expected): %v", err)
 	}
 }

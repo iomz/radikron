@@ -33,9 +33,11 @@ Closes #123
 
 ## Commit Behavior
 
-- **DO NOT** automatically commit changes
+- **NEVER commit changes without explicit user request**
+- **DO NOT** automatically commit changes, even after making fixes or completing tasks
+- **DO NOT** commit changes as part of completing a task unless the user explicitly asks you to commit
 - Always let the user review changes first before committing
-- Only commit when explicitly requested by the user
+- Only commit when the user explicitly requests it (e.g., "commit the changes", "commit this", etc.)
 - When committing, use the Conventional Changelog format described above
 - **ALWAYS** run gofmt whenever making changes to a Go file
 - **ALWAYS** check golangci-lint before committing a change and confirm there are no lint errors. If golangci-lint reports issues, fix them before committing. If a fix is not possible immediately (e.g., requires architectural changes or external dependencies), document the issue in the commit message or open a GitHub issue, and get reviewer approval before committing with lint errors.
