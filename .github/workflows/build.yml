@@ -8,7 +8,7 @@ jobs:
   build:
     strategy:
       matrix:
-        go-version: ["1.23", "1.24"]
+        go-version: ["1.24"]
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
@@ -20,6 +20,26 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Download Go modules
         run: go mod download
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            cmd/radikron-gui/frontend/node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('cmd/radikron-gui/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: cmd/radikron-gui/frontend
+      - name: Build frontend
+        run: pnpm run build
+        working-directory: cmd/radikron-gui/frontend
       - name: Build
         run: go build -v ./...
       - name: Test
