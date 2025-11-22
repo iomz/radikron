@@ -289,7 +289,9 @@ func TestHandleDuplicate_NonexistentFile(t *testing.T) {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
-	err = handleDuplicate(ctx, "nonexistent-file", radigo.AudioFormatAAC, "downloads", "", output, Rules{}, "TEST", "Test Program", "20230605100000")
+	err = handleDuplicate(
+		ctx, "nonexistent-file", radigo.AudioFormatAAC, "downloads", "",
+		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for non-existent file: %v", err)
 	}
@@ -341,7 +343,9 @@ func TestHandleDuplicate_MoveToConfiguredFolder(t *testing.T) {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
-	err = handleDuplicate(ctx, "move-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{}, "TEST", "Test Program", "20230605100000")
+	err = handleDuplicate(
+		ctx, "move-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	// errSkipAfterMove is a sentinel error indicating successful move, not a real error
 	if err != nil && !errors.Is(err, errSkipAfterMove) {
 		t.Errorf("handleDuplicate should not return error when moving file: %v", err)
@@ -377,7 +381,9 @@ func TestHandleDuplicate_ExistingInConfiguredFolder(t *testing.T) {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
-	err = handleDuplicate(ctx, "move-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{}, "TEST", "Test Program", "20230605100000")
+	err = handleDuplicate(
+		ctx, "move-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for existing file in configured folder: %v", err)
 	}
@@ -414,7 +420,9 @@ func TestHandleDuplicate_ConflictBothLocations(t *testing.T) {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
-	err = handleDuplicate(ctx, "conflict-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{}, "TEST", "Test Program", "20230605100000")
+	err = handleDuplicate(
+		ctx, "conflict-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error when file exists in both locations: %v", err)
 	}
@@ -462,7 +470,9 @@ func TestHandleDuplicate_ChecksAllConfiguredFolders(t *testing.T) {
 		t.Fatalf("newOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
-	err = handleDuplicate(ctx, "test-file", radigo.AudioFormatAAC, "downloads", "citypop", output, rules, "TEST", "Test Program", "20230605100000")
+	err = handleDuplicate(
+		ctx, "test-file", radigo.AudioFormatAAC, "downloads", "citypop",
+		output, rules, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error: %v", err)
 	}
@@ -508,7 +518,9 @@ func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
 	// The edge case check (line 445) handles race conditions where target appears
 	// between the initial check and the move attempt
 	ctx := context.Background()
-	err = handleDuplicate(ctx, "target-exists-test", radigo.AudioFormatAAC, "downloads", "citypop", output, Rules{}, "TEST", "Test Program", "20230605100000")
+	err = handleDuplicate(
+		ctx, "target-exists-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error when target exists: %v", err)
 	}

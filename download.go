@@ -154,7 +154,9 @@ func Download(
 			next := nextEndTime.Add(BufferMinutes * time.Minute)
 			asset.NextFetchTime = &next
 		}
-		emitLogMessage(ctx, "info", fmt.Sprintf("skipping future program [%s]%s (starts at %s, current time %s)", prog.StationID, title, start, CurrentTime.Format(DatetimeLayout)))
+		emitLogMessage(ctx, "info", fmt.Sprintf(
+			"skipping future program [%s]%s (starts at %s, current time %s)",
+			prog.StationID, title, start, CurrentTime.Format(DatetimeLayout)))
 		return nil
 	}
 
@@ -199,7 +201,9 @@ func Download(
 
 	// Check for duplicates and move from default folder to configured folder if needed
 	// handleDuplicate checks other locations and handles skip cases
-	if err := handleDuplicate(ctx, fileBaseName, asset.OutputFormat, asset.DownloadDir, prog.RuleFolder, output, asset.Rules, prog.StationID, title, start); err != nil {
+	if err := handleDuplicate(
+		ctx, fileBaseName, asset.OutputFormat, asset.DownloadDir,
+		prog.RuleFolder, output, asset.Rules, prog.StationID, title, start); err != nil {
 		// If errSkipAfterMove, file was moved and exists at target - skip without logging again
 		if errors.Is(err, errSkipAfterMove) {
 			return nil
@@ -635,7 +639,13 @@ func handleMoveFromDefaultFolder(source, targetPath string, output *radigo.Outpu
 }
 
 // handleDuplicate checks for duplicates in all configured folders and moves files from default folder to configured folder if needed
-func handleDuplicate(ctx context.Context, fileBaseName, fileFormat, downloadDir, configuredFolder string, output *radigo.OutputConfig, rules Rules, stationID, title, startTime string) error {
+func handleDuplicate(
+	ctx context.Context,
+	fileBaseName, fileFormat, downloadDir, configuredFolder string,
+	output *radigo.OutputConfig,
+	rules Rules,
+	stationID, title, startTime string,
+) error {
 	// Collect all unique configured folders from all rules
 	configuredFolders := collectConfiguredFolders(configuredFolder, rules)
 
@@ -667,7 +677,9 @@ func handleDuplicate(ctx context.Context, fileBaseName, fileFormat, downloadDir,
 
 	// File exists in default folder, no configured folder - skip
 	emitDownloadSkipped(ctx, "already exists", stationID, title, startTime)
-	emitLogMessage(ctx, "info", fmt.Sprintf("file already exists in default folder, skipping [%s]%s: %s", stationID, title, defaultOutput.AbsPath()))
+	emitLogMessage(ctx, "info", fmt.Sprintf(
+		"file already exists in default folder, skipping [%s]%s: %s",
+		stationID, title, defaultOutput.AbsPath()))
 	return nil
 }
 
