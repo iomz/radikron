@@ -3,7 +3,9 @@ package radikron
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1328,6 +1330,21 @@ func TestDownload_DuplicateProgram(t *testing.T) {
 	fixedTime := time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
 	CurrentTime = fixedTime
 
+	// Load Versions from embedded JSON (required for NewDevice)
+	versionsJSON, err := VersionsJSON.Open("assets/versions.json")
+	if err != nil {
+		t.Fatalf("Failed to open versions.json: %v", err)
+	}
+	defer versionsJSON.Close()
+	blob, err := io.ReadAll(versionsJSON)
+	if err != nil {
+		t.Fatalf("Failed to read versions.json: %v", err)
+	}
+	var versions Versions
+	if err := json.Unmarshal(blob, &versions); err != nil {
+		t.Fatalf("Failed to unmarshal versions.json: %v", err)
+	}
+
 	// Create context with asset
 	prog1 := &Prog{
 		StationID: "FMT",
@@ -1341,6 +1358,8 @@ func TestDownload_DuplicateProgram(t *testing.T) {
 		MinimumOutputSize: 1024,
 		Rules:             Rules{},
 		Schedules:         Schedules{prog1}, // Already in schedules
+		Versions:          versions,
+		AreaDevices:       map[string]*Device{},
 	}
 	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
 
@@ -1352,7 +1371,7 @@ func TestDownload_DuplicateProgram(t *testing.T) {
 		To:        "20230605110000",
 	}
 
-	err := Download(ctx, wg, prog2)
+	err = Download(ctx, wg, prog2)
 	if err != nil {
 		t.Errorf("Download should not return error for duplicate program: %v", err)
 	}
