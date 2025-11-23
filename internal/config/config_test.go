@@ -1013,3 +1013,345 @@ func TestSaveConfigPreservesRuleOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestMarshalConfigWithOrder_NoRules(t *testing.T) {
+	// Test marshaling config with no rules
+	cfg := &configYAML{
+		AreaID:     "JP13",
+		FileFormat: "aac",
+		Rules:      nil,
+		rulesOrder: nil,
+	}
+
+	data, err := marshalConfigWithOrder(cfg)
+	if err != nil {
+		t.Fatalf("expected no error marshaling config with no rules, got: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty YAML data")
+	}
+
+	// Verify it can be unmarshaled
+	var result configYAML
+	if err := yaml.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+	if result.AreaID != "JP13" {
+		t.Errorf("expected AreaID to be JP13, got %s", result.AreaID)
+	}
+}
+
+func TestMarshalConfigWithOrder_EmptyRules(t *testing.T) {
+	// Test marshaling config with empty rules map
+	cfg := &configYAML{
+		AreaID:     "JP13",
+		FileFormat: "aac",
+		Rules:      make(map[string]*ruleYAML),
+		rulesOrder: []string{},
+	}
+
+	data, err := marshalConfigWithOrder(cfg)
+	if err != nil {
+		t.Fatalf("expected no error marshaling config with empty rules, got: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty YAML data")
+	}
+}
+
+func TestMarshalConfigWithOrder_MissingRuleInMap(t *testing.T) {
+	// Test case where rulesOrder contains a name that doesn't exist in Rules map
+	cfg := &configYAML{
+		AreaID:     "JP13",
+		FileFormat: "aac",
+		Rules: map[string]*ruleYAML{
+			"existing-rule": {
+				StationID: "FMT",
+				Title:     "Test",
+			},
+		},
+		rulesOrder: []string{"existing-rule", "missing-rule"},
+	}
+
+	data, err := marshalConfigWithOrder(cfg)
+	if err != nil {
+		t.Fatalf("expected no error when rule is missing from map, got: %v", err)
+	}
+
+	// Verify only existing rule is in output
+	var result struct {
+		Rules map[string]*ruleYAML `yaml:"rules"`
+	}
+	if err := yaml.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+	if _, exists := result.Rules["missing-rule"]; exists {
+		t.Error("missing rule should not appear in output")
+	}
+	if _, exists := result.Rules["existing-rule"]; !exists {
+		t.Error("existing rule should appear in output")
+	}
+}
+
+func TestSaveConfig_WithRulesOrder(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "order-test.yml")
+
+	// Create config with rules in specific order
+	cfg := &Config{
+		AreaID:     "JP13",
+		FileFormat: radigo.AudioFormatAAC,
+		Rules: radikron.Rules{
+			&radikron.Rule{Name: "rule1", StationID: "FMT", Title: "First"},
+			&radikron.Rule{Name: "rule2", StationID: "TBS", Title: "Second"},
+			&radikron.Rule{Name: "rule3", StationID: "MBS", Title: "Third"},
+		},
+	}
+
+	// Save config
+	err := cfg.SaveConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error saving config, got: %v", err)
+	}
+
+	// Load and verify order
+	loadedCfg, err := LoadConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error loading config, got: %v", err)
+	}
+
+	expectedOrder := []string{"rule1", "rule2", "rule3"}
+	if len(loadedCfg.Rules) != len(expectedOrder) {
+		t.Fatalf("expected %d rules, got %d", len(expectedOrder), len(loadedCfg.Rules))
+	}
+
+	for i, expectedName := range expectedOrder {
+		if loadedCfg.Rules[i].Name != expectedName {
+			t.Errorf("rule order mismatch at index %d: expected %s, got %s",
+				i, expectedName, loadedCfg.Rules[i].Name)
+		}
+	}
+}
+
+func TestSaveConfig_EmptyRules(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "empty-rules.yml")
+
+	cfg := &Config{
+		AreaID:     "JP13",
+		FileFormat: radigo.AudioFormatAAC,
+		Rules:      radikron.Rules{},
+	}
+
+	err := cfg.SaveConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error saving config with empty rules, got: %v", err)
+	}
+
+	// Verify file was created
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		t.Fatal("config file was not created")
+	}
+
+	// Load and verify
+	loadedCfg, err := LoadConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error loading config, got: %v", err)
+	}
+	if len(loadedCfg.Rules) != 0 {
+		t.Errorf("expected 0 rules, got %d", len(loadedCfg.Rules))
+	}
+}
+
+func TestConvertRulesToYAML_MultipleRules(t *testing.T) {
+	// Test with multiple rules to ensure order is preserved
+	rules := radikron.Rules{
+		&radikron.Rule{Name: "first", StationID: "FMT"},
+		&radikron.Rule{Name: "second", StationID: "TBS"},
+		&radikron.Rule{Name: "third", StationID: "MBS"},
+	}
+
+	rulesMap, order := convertRulesToYAML(rules)
+	if len(rulesMap) != 3 {
+		t.Errorf("expected 3 rules in map, got %d", len(rulesMap))
+	}
+	if len(order) != 3 {
+		t.Errorf("expected order length 3, got %d", len(order))
+	}
+
+	expectedOrder := []string{"first", "second", "third"}
+	for i, expectedName := range expectedOrder {
+		if order[i] != expectedName {
+			t.Errorf("order mismatch at index %d: expected %s, got %s", i, expectedName, order[i])
+		}
+		if _, exists := rulesMap[expectedName]; !exists {
+			t.Errorf("rule %s not found in map", expectedName)
+		}
+	}
+}
+
+func TestConvertRulesToYAML_AllRuleFields(t *testing.T) {
+	// Test with a rule that has all possible fields set
+	rule := &radikron.Rule{
+		Name:      "full-rule",
+		StationID: "FMT",
+		Title:     "Full Title",
+		Keyword:   "keyword",
+		Pfm:       "Person",
+		DoW:       []string{"mon", "tue"},
+		Window:    "48h",
+		Folder:    "test-folder",
+	}
+
+	rules := radikron.Rules{rule}
+	rulesMap, order := convertRulesToYAML(rules)
+
+	if len(order) != 1 || order[0] != "full-rule" {
+		t.Errorf("expected order to contain 'full-rule', got %v", order)
+	}
+
+	ruleYAML, exists := rulesMap["full-rule"]
+	if !exists {
+		t.Fatal("expected rule to be in map")
+	}
+
+	if ruleYAML.StationID != "FMT" {
+		t.Errorf("expected StationID FMT, got %s", ruleYAML.StationID)
+	}
+	if ruleYAML.Title != "Full Title" {
+		t.Errorf("expected Title 'Full Title', got %s", ruleYAML.Title)
+	}
+	if ruleYAML.Keyword != "keyword" {
+		t.Errorf("expected Keyword 'keyword', got %s", ruleYAML.Keyword)
+	}
+	if ruleYAML.Pfm != "Person" {
+		t.Errorf("expected Pfm 'Person', got %s", ruleYAML.Pfm)
+	}
+	if len(ruleYAML.DoW) != 2 {
+		t.Errorf("expected DoW length 2, got %d", len(ruleYAML.DoW))
+	}
+	if ruleYAML.Window != "48h" {
+		t.Errorf("expected Window '48h', got %s", ruleYAML.Window)
+	}
+	if ruleYAML.Folder != "test-folder" {
+		t.Errorf("expected Folder 'test-folder', got %s", ruleYAML.Folder)
+	}
+}
+
+func TestSaveConfig_ErrorPaths(t *testing.T) {
+	cfg := &Config{
+		AreaID:     "JP13",
+		FileFormat: radigo.AudioFormatAAC,
+		Rules:      radikron.Rules{},
+	}
+
+	// Test with invalid path (on Unix, /dev/null/config.yml should fail)
+	// On Windows, we'll use a path with invalid characters
+	invalidPath := string([]rune{0}) + "invalid.yml"
+	err := cfg.SaveConfig(invalidPath)
+	// filepath.Abs may or may not error depending on platform, so we just verify it doesn't panic
+	// We don't assert on the error since it's platform-dependent
+	if err == nil {
+		t.Log("SaveConfig with invalid path did not error (platform-dependent behavior)")
+	}
+}
+
+func TestMarshalConfigWithOrder_WithRules(t *testing.T) {
+	// Test marshaling config with rules to ensure all code paths are covered
+	cfg := &configYAML{
+		AreaID:     "JP13",
+		FileFormat: "aac",
+		Rules: map[string]*ruleYAML{
+			"test-rule": {
+				StationID: "FMT",
+				Title:     "Test Title",
+				Keyword:   "test",
+				Pfm:       "Test Person",
+				DoW:       []string{"mon", "tue"},
+				Window:    "48h",
+				Folder:    "test-folder",
+			},
+		},
+		rulesOrder: []string{"test-rule"},
+	}
+
+	data, err := marshalConfigWithOrder(cfg)
+	if err != nil {
+		t.Fatalf("expected no error marshaling config with rules, got: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty YAML data")
+	}
+
+	// Verify it can be unmarshaled and rules are present
+	var result struct {
+		Rules map[string]*ruleYAML `yaml:"rules"`
+	}
+	if err := yaml.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+	if _, exists := result.Rules["test-rule"]; !exists {
+		t.Error("expected test-rule to be in output")
+	}
+}
+
+func TestMarshalConfigWithOrder_MultipleRulesOrder(t *testing.T) {
+	// Test with multiple rules to ensure order is preserved in marshaling
+	cfg := &configYAML{
+		AreaID:     "JP13",
+		FileFormat: "aac",
+		Rules: map[string]*ruleYAML{
+			"first":  {StationID: "FMT"},
+			"second": {StationID: "TBS"},
+			"third":  {StationID: "MBS"},
+		},
+		rulesOrder: []string{"first", "second", "third"},
+	}
+
+	data, err := marshalConfigWithOrder(cfg)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// Read the YAML as text to verify order
+	yamlStr := string(data)
+	firstPos := findStringPosition(yamlStr, "first:")
+	secondPos := findStringPosition(yamlStr, "second:")
+	thirdPos := findStringPosition(yamlStr, "third:")
+
+	if firstPos == -1 || secondPos == -1 || thirdPos == -1 {
+		t.Fatal("not all rules found in output")
+	}
+
+	if firstPos >= secondPos || secondPos >= thirdPos {
+		t.Errorf("rules not in correct order: first at %d, second at %d, third at %d",
+			firstPos, secondPos, thirdPos)
+	}
+}
+
+func findStringPosition(s, substr string) int {
+	idx := 0
+	for {
+		pos := findStringInLines(s, substr, idx)
+		if pos == -1 {
+			return -1
+		}
+		// Check if it's actually a rule name (not part of another string)
+		before := pos - 1
+		after := pos + len(substr)
+		if (before < 0 || s[before] == '\n' || s[before] == ' ') &&
+			(after >= len(s) || s[after] == ':' || s[after] == '\n') {
+			return pos
+		}
+		idx = pos + 1
+	}
+}
+
+func findStringInLines(s, substr string, start int) int {
+	for i := start; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
