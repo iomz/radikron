@@ -30,6 +30,10 @@ export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
 }
 
+export function SearchWeeklyPrograms(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SearchWeeklyPrograms'](arg1, arg2, arg3, arg4);
+}
+
 export function StartMonitoring() {
   return window['go']['main']['App']['StartMonitoring']();
 }

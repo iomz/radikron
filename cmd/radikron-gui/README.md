@@ -25,35 +25,35 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
 
 1. Install frontend dependencies:
 
-```bash
-cd frontend
-pnpm install
-```
+   ```bash
+   cd frontend
+   pnpm install
+   ```
 
 2. Return to the repository root:
 
-```bash
-cd ..
-```
+   ```bash
+   cd ..
+   ```
 
 3. Run in development mode:
 
-```bash
-wails dev
-```
+   ```bash
+   wails dev
+   ```
 
-This will:
+   This will:
 
-- Start the Wails dev server
-- Open a native application window
-- Enable hot-reload for frontend changes
+   - Start the Wails dev server
+   - Open a native application window
+   - Enable hot-reload for frontend changes
 
 4. Test the development build:
 
-The application window will open automatically. You can test the GUI functionality by interacting with the interface. Note that:
+   The application window will open automatically. You can test the GUI functionality by interacting with the interface. Note that:
 
-- **Frontend changes** (React/TypeScript/CSS) will reload automatically in the window
-- **Go code changes** require restarting `wails dev` to take effect
+   - **Frontend changes** (React/TypeScript/CSS) will reload automatically in the window
+   - **Go code changes** require restarting `wails dev` to take effect
 
 ### Building
 

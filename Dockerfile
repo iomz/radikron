@@ -29,7 +29,6 @@ COPY --from=build /build/radikron /app/radikron
 # set timezone
 ENV TZ "Asia/Tokyo"
 # set the default download dir
-ENV RADICRON_HOME "/radiko"
 VOLUME ["/radiko"]
 
 ENTRYPOINT ["/app/radikron"]

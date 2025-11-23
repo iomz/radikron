@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/store/useAppStore';
 import * as App from '../../wailsjs/go/main/App';
+import { getAreaName } from '@/lib/regions';
 
 export const Configuration: React.FC = () => {
   const configInfo = useAppStore((state) => state.configInfo);
@@ -31,7 +32,19 @@ export const Configuration: React.FC = () => {
         {configInfo ? (
           <div className="space-y-1 text-sm">
             <p>
-              <span className="font-medium">Area ID:</span> {configInfo.AreaID || 'N/A'}
+              <span className="font-medium">Area ID:</span>{' '}
+              {configInfo.AreaID ? (
+                <>
+                  {configInfo.AreaID}
+                  {getAreaName(configInfo.AreaID) && (
+                    <span className="text-muted-foreground ml-2">
+                      ({getAreaName(configInfo.AreaID)})
+                    </span>
+                  )}
+                </>
+              ) : (
+                'N/A'
+              )}
             </p>
             <p>
               <span className="font-medium">File Format:</span> {configInfo.FileFormat || 'N/A'}
