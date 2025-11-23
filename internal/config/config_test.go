@@ -516,6 +516,19 @@ func TestSaveConfig(t *testing.T) {
 	if len(savedCfg.Rules) != len(cfg.Rules) {
 		t.Errorf("expected %d rules, got %d", len(cfg.Rules), len(savedCfg.Rules))
 	}
+
+	// Verify rule order is preserved
+	if len(cfg.Rules) > 0 {
+		for i, originalRule := range cfg.Rules {
+			if i >= len(savedCfg.Rules) {
+				t.Fatalf("saved config has fewer rules than original")
+			}
+			if savedCfg.Rules[i].Name != originalRule.Name {
+				t.Errorf("rule order not preserved at index %d: expected %s, got %s",
+					i, originalRule.Name, savedCfg.Rules[i].Name)
+			}
+		}
+	}
 }
 
 func TestSaveConfigWithCustomConcurrency(t *testing.T) {
@@ -623,9 +636,12 @@ func TestSaveConfigWithDefaultConcurrency(t *testing.T) {
 func TestConvertRulesToYAML(t *testing.T) {
 	// Test with empty rules
 	rules := radikron.Rules{}
-	result := convertRulesToYAML(rules)
+	result, order := convertRulesToYAML(rules)
 	if result != nil {
 		t.Errorf("expected nil for empty rules, got %v", result)
+	}
+	if order != nil {
+		t.Errorf("expected nil order for empty rules, got %v", order)
 	}
 
 	// Test with rules containing all fields
@@ -641,9 +657,12 @@ func TestConvertRulesToYAML(t *testing.T) {
 	}
 
 	rules = radikron.Rules{rule}
-	result = convertRulesToYAML(rules)
+	result, order = convertRulesToYAML(rules)
 	if result == nil {
 		t.Fatal("expected non-nil result for rules with fields")
+	}
+	if len(order) != 1 || order[0] != "test-rule" {
+		t.Errorf("expected order to contain 'test-rule', got %v", order)
 	}
 
 	ruleYAML, ok := result["test-rule"]
@@ -683,9 +702,12 @@ func TestConvertRulesToYAMLPartialFields(t *testing.T) {
 	}
 
 	rules := radikron.Rules{rule}
-	result := convertRulesToYAML(rules)
+	result, order := convertRulesToYAML(rules)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+	}
+	if len(order) != 1 || order[0] != "partial-rule" {
+		t.Errorf("expected order to contain 'partial-rule', got %v", order)
 	}
 
 	ruleYAML, ok := result["partial-rule"]
@@ -926,6 +948,68 @@ rules:
 		_, err = loadRules()
 		if err == nil {
 			t.Error("expected error with malformed rule")
+		}
+	}
+}
+
+func TestSaveConfigPreservesRuleOrder(t *testing.T) {
+	// Create a temporary directory
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "order-test-config.yml")
+
+	// Create a config with multiple rules in a specific order
+	cfg := &Config{
+		AreaID:     "JP13",
+		FileFormat: radigo.AudioFormatAAC,
+		Rules: radikron.Rules{
+			&radikron.Rule{Name: "first-rule", StationID: "FMT", Title: "First"},
+			&radikron.Rule{Name: "second-rule", StationID: "TBS", Title: "Second"},
+			&radikron.Rule{Name: "third-rule", StationID: "MBS", Title: "Third"},
+			&radikron.Rule{Name: "fourth-rule", StationID: "FMJ", Title: "Fourth"},
+		},
+	}
+
+	// Save the config
+	err := cfg.SaveConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error saving config, got: %v", err)
+	}
+
+	// Load the saved config
+	savedCfg, err := LoadConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error loading saved config, got: %v", err)
+	}
+
+	// Verify the order is preserved
+	expectedOrder := []string{"first-rule", "second-rule", "third-rule", "fourth-rule"}
+	if len(savedCfg.Rules) != len(expectedOrder) {
+		t.Fatalf("expected %d rules, got %d", len(expectedOrder), len(savedCfg.Rules))
+	}
+
+	for i, expectedName := range expectedOrder {
+		if savedCfg.Rules[i].Name != expectedName {
+			t.Errorf("rule order not preserved at index %d: expected %s, got %s",
+				i, expectedName, savedCfg.Rules[i].Name)
+		}
+	}
+
+	// Verify the rules can be saved and loaded multiple times while preserving order
+	err = savedCfg.SaveConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error saving config again, got: %v", err)
+	}
+
+	reloadedCfg, err := LoadConfig(configFile)
+	if err != nil {
+		t.Fatalf("expected no error reloading config, got: %v", err)
+	}
+
+	// Verify order is still preserved after multiple save/load cycles
+	for i, expectedName := range expectedOrder {
+		if reloadedCfg.Rules[i].Name != expectedName {
+			t.Errorf("rule order not preserved after multiple save/load cycles at index %d: expected %s, got %s",
+				i, expectedName, reloadedCfg.Rules[i].Name)
 		}
 	}
 }
