@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,21 +25,35 @@ import * as App from '../../wailsjs/go/main/App';
 import { radikron } from '../../wailsjs/go/models';
 import { BrowserOpenURL } from '../../wailsjs/runtime/runtime';
 
-interface Program {
-  ID: string;
-  StationID: string;
-  Ft: string;
-  To: string;
-  Title: string;
-  Desc: string;
-  Info: string;
-  Pfm: string;
-  Tags: string[];
-  Genre: {
-    Personality: string;
-    Program: string;
-  };
+// SanitizedHTML renders HTML content safely with XSS protection
+interface SanitizedHTMLProps {
+  html: string;
+  className?: string;
 }
+
+const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
+  const sanitizedHTML = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+    ALLOWED_ATTR: ['href', 'target', 'rel'],
+  });
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const link = target.closest('a');
+    if (link && link.href) {
+      e.preventDefault();
+      BrowserOpenURL(link.href);
+    }
+  };
+
+  return (
+    <div
+      className={className}
+      dangerouslySetInnerHTML={{ __html: sanitizedHTML }}
+      onClick={handleClick}
+    />
+  );
+};
 
 export const WeeklyProgramBrowser: React.FC = () => {
   const stationsRaw = useAppStore((state) => state.stations);
@@ -48,11 +63,11 @@ export const WeeklyProgramBrowser: React.FC = () => {
     keyword: '',
     station: '',
   });
-  const [programs, setPrograms] = useState<Program[]>([]);
+  const [programs, setPrograms] = useState<radikron.Prog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
+  const [selectedProgram, setSelectedProgram] = useState<radikron.Prog | null>(null);
 
   // Fetch program snapshots when component mounts
   useEffect(() => {
@@ -107,22 +122,10 @@ export const WeeklyProgramBrowser: React.FC = () => {
         return;
       }
 
-      // Convert results to Program interface
-      const convertedPrograms: Program[] = results.map((prog: any) => ({
-        ID: prog.ID || '',
-        StationID: prog.StationID || '',
-        Ft: prog.Ft || '',
-        To: prog.To || '',
-        Title: prog.Title || '',
-        Desc: prog.Desc || '',
-        Info: prog.Info || '',
-        Pfm: prog.Pfm || '',
-        Tags: prog.Tags || [],
-        Genre: {
-          Personality: prog.Genre?.Personality || '',
-          Program: prog.Genre?.Program || '',
-        },
-      }));
+      // Convert results to radikron.Prog using the generated model
+      const convertedPrograms: radikron.Prog[] = results.map((prog: any) =>
+        radikron.Prog.createFrom(prog)
+      );
 
       // Sort programs by start date (Ft field) - format is YYYYMMDDHHmmss, so string comparison works
       const sortedPrograms = convertedPrograms.sort((a, b) => {
@@ -185,7 +188,7 @@ export const WeeklyProgramBrowser: React.FC = () => {
         <CardHeader className="flex-shrink-0">
           <CardTitle>Program Search</CardTitle>
           <CardDescription>
-            Search weekly programs using rule matching criteria. Leave fields empty to match all.
+            Enter a keyword to search programs. Station is optional.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex-1 min-h-0 flex flex-col gap-4">
@@ -301,9 +304,15 @@ export const WeeklyProgramBrowser: React.FC = () => {
             </div>
           )}
 
-          {!error && !isInitializing && programs.length === 0 && !isLoading && (
+          {!error && !isInitializing && programs.length === 0 && !isLoading && searchCriteria.keyword.trim() && (
             <div className="flex-shrink-0 text-center py-8 text-muted-foreground">
-              <p>No programs found. Try adjusting your search criteria.</p>
+              <p>No programs found. Try adjusting your search keyword or station.</p>
+            </div>
+          )}
+
+          {!error && !isInitializing && programs.length === 0 && !isLoading && !searchCriteria.keyword.trim() && (
+            <div className="flex-shrink-0 text-center py-8 text-muted-foreground">
+              <p>Enter a keyword above to search for programs.</p>
             </div>
           )}
         </CardContent>
@@ -339,17 +348,9 @@ export const WeeklyProgramBrowser: React.FC = () => {
                 {selectedProgram.Desc && (
                   <div>
                     <p className="text-sm font-medium text-muted-foreground mb-1">Description</p>
-                    <div
+                    <SanitizedHTML
+                      html={selectedProgram.Desc}
                       className="text-sm text-foreground [&_*]:text-foreground [&_a]:text-primary [&_a]:underline [&_a:hover]:opacity-80"
-                      dangerouslySetInnerHTML={{ __html: selectedProgram.Desc }}
-                      onClick={(e) => {
-                        const target = e.target as HTMLElement;
-                        const link = target.closest('a');
-                        if (link && link.href) {
-                          e.preventDefault();
-                          BrowserOpenURL(link.href);
-                        }
-                      }}
                     />
                   </div>
                 )}
@@ -357,17 +358,9 @@ export const WeeklyProgramBrowser: React.FC = () => {
                 {selectedProgram.Info && (
                   <div>
                     <p className="text-sm font-medium text-muted-foreground mb-1">Info</p>
-                    <div
+                    <SanitizedHTML
+                      html={selectedProgram.Info}
                       className="text-sm text-foreground [&_*]:text-foreground [&_a]:text-primary [&_a]:underline [&_a:hover]:opacity-80"
-                      dangerouslySetInnerHTML={{ __html: selectedProgram.Info }}
-                      onClick={(e) => {
-                        const target = e.target as HTMLElement;
-                        const link = target.closest('a');
-                        if (link && link.href) {
-                          e.preventDefault();
-                          BrowserOpenURL(link.href);
-                        }
-                      }}
                     />
                   </div>
                 )}
