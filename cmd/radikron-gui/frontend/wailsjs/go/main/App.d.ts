@@ -3,6 +3,8 @@
 import {config} from '../models';
 import {radikron} from '../models';
 
+export function FetchProgramSnapshots():Promise<void>;
+
 export function GetAvailableStations():Promise<Array<string>>;
 
 export function GetConfig():Promise<config.Config>;
