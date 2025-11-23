@@ -49,7 +49,7 @@ type Asset struct {
 	MinimumOutputSize int64
 	NextFetchTime     *time.Time
 	OutputFormat      string
-	DownloadDir       string // directory name for downloads (default: "downloads")
+	DownloadDir       string // directory name for downloads (default: "radiko")
 	Regions           Regions
 	Rules             Rules
 	Schedules         Schedules
@@ -386,7 +386,7 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 	// empty FileFormat
 	asset.OutputFormat = radigo.AudioFormatAAC
 	// default DownloadDir
-	asset.DownloadDir = "downloads"
+	asset.DownloadDir = "radiko"
 	// default concurrency values
 	asset.MaxDownloadingConcurrency = MaxDownloadingConcurrency
 	asset.MaxEncodingConcurrency = MaxEncodingConcurrency

@@ -39,11 +39,6 @@ func LoadConfig(filename string) (*Config, error) {
 		return nil, fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	// Set up RADICRON_HOME if not set
-	if os.Getenv(radikron.EnvRadicronHome) == "" {
-		os.Setenv(radikron.EnvRadicronHome, filepath.Join(cwd, "radiko"))
-	}
-
 	// Configure viper
 	if err := setupViper(filename, cwd); err != nil {
 		return nil, err
@@ -123,12 +118,28 @@ func setDefaults() {
 		currentAreaID = radikron.DefaultArea
 	}
 
+	// Get default downloads directory (cross-platform: $HOME/Downloads/radiko)
+	var defaultDownloads string
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current working directory if home directory can't be determined
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			// Last resort: use relative path
+			defaultDownloads = "radiko"
+		} else {
+			defaultDownloads = filepath.Join(cwd, "radiko")
+		}
+	} else {
+		defaultDownloads = filepath.Join(homeDir, "Downloads", "radiko")
+	}
+
 	viper.SetDefault("area-id", currentAreaID)
 	viper.SetDefault("extra-stations", []string{})
 	viper.SetDefault("ignore-stations", []string{})
 	viper.SetDefault("file-format", radigo.AudioFormatAAC)
 	viper.SetDefault("minimum-output-size", radikron.DefaultMinimumOutputSize)
-	viper.SetDefault("downloads", "downloads")
+	viper.SetDefault("downloads", defaultDownloads)
 	viper.SetDefault("max-downloading-concurrency", radikron.MaxDownloadingConcurrency)
 	viper.SetDefault("max-encoding-concurrency", radikron.MaxEncodingConcurrency)
 }

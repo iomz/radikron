@@ -13,8 +13,6 @@ const (
 	DefaultInterval = "168h"
 	// DefaultMinimumOutputSize
 	DefaultMinimumOutputSize = 1
-	// Environment Variable for RADICRON_HOME
-	EnvRadicronHome = "RADICRON_HOME"
 	// Language for ID3v2 tags
 	ID3v2LangJPN = "jpn"
 	// LatLng for Japan

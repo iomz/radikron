@@ -161,7 +161,7 @@ Create a configuration file (`config.yml`) to define rules for recording. The co
 
 - **`area-id`**: Your region code (e.g., `JP13` for Tokyo). If unset, defaults to your detected region.
 - **`file-format`**: Output audio format - `aac` (default) or `mp3`.
-- **`downloads`**: Directory name for downloaded files (default: `downloads`). Combined with `${RADICRON_HOME}` to form the full path.
+- **`downloads`**: Directory path for downloaded files (default: `$HOME/Downloads/radiko` on all platforms).
 - **`extra-stations`**: List of station IDs to include even if they're not in your region.
 - **`ignore-stations`**: List of station IDs to exclude from monitoring.
 - **`minimum-output-size`**: Minimum file size in MB (default: 1 MB). Files smaller than this are rejected as potentially corrupted.
@@ -187,7 +187,7 @@ Rules are evaluated with AND logic - a program must match all specified criteria
 ```yaml
 area-id: JP13 # if unset, default to "your" region
 file-format: aac # audio format: aac or mp3, default is aac
-downloads: downloads # download directory name, default is "downloads"
+downloads: ~/Downloads/radiko # download directory path, default is "$HOME/Downloads/radiko"
 extra-stations:
   - ALPHA-STATION # include stations not in your region
 ignore-stations:
@@ -213,7 +213,7 @@ rules:
     title: "THE TRAD"
 ```
 
-The base directory for downloads and temporary files is determined by the `RADICRON_HOME` environment variable. If not set, it defaults to `./radiko` in the current working directory. The actual download location will be `${RADICRON_HOME}/{downloads}` (or the value specified in the `downloads` config option).
+The base directory for downloads defaults to `$HOME/Downloads/radiko` (cross-platform: `~/Downloads/radiko` on Unix/macOS, `%USERPROFILE%\Downloads\radiko` on Windows). If the home directory cannot be determined, it falls back to `./radiko` in the current working directory.
 
 ### ID3 Tags
 
@@ -240,11 +240,7 @@ Simply run radikron with your configuration file:
 radikron -c config.yml
 ```
 
-By default, radikron will use `./radiko` as the base directory (containing `downloads` and `tmp` subdirectories). To use a different location, set the `RADICRON_HOME` environment variable:
-
-```bash
-RADICRON_HOME=/path/to/your/directory radikron -c config.yml
-```
+By default, radikron will use `$HOME/Downloads/radiko` as the download directory. Temporary files are stored in the system temporary directory.
 
 **Note**: radikron automatically creates all necessary directories (download directories, subfolders, and temporary directories) when needed. You don't need to create them manually.
 
