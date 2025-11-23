@@ -10,7 +10,7 @@
 
 # Compiled binary
 radikron
-radikron-gui
+/radikron-gui
 
 # Test binary, built with `go test -c`
 *.test
