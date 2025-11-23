@@ -1437,6 +1437,7 @@ func TestDownload_InvalidEndTime(t *testing.T) {
 }
 
 func TestDownload_NoAssetInContext(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background() // No asset in context
 	wg := &sync.WaitGroup{}
 	prog := &Prog{
@@ -1446,16 +1447,14 @@ func TestDownload_NoAssetInContext(t *testing.T) {
 		To:        "20230605110000",
 	}
 
-	// Download will panic when asset is nil, so we test that it panics
-	// This tests the nil pointer dereference path
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Download should panic when asset is nil in context")
-		}
-	}()
-
-	_ = Download(ctx, wg, prog)
-	t.Error("Download should have panicked")
+	// Download should return an error when asset is nil
+	err := Download(ctx, wg, prog)
+	if err == nil {
+		t.Error("Download should return an error when asset is nil in context")
+	}
+	if !strings.Contains(err.Error(), "asset is nil") {
+		t.Errorf("Expected error about nil asset, got: %v", err)
+	}
 }
 
 func TestDownloadLink(t *testing.T) {
