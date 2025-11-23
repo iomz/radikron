@@ -100,3 +100,47 @@ func TestDecodeWeeklyProgram_ErrorCases(t *testing.T) {
 		t.Errorf("expected no programs on error")
 	}
 }
+
+func TestFetchWeeklyPrograms(t *testing.T) {
+	// This test requires network access and will make a real HTTP request
+	// Skip if running in CI or if network is unavailable
+	if testing.Short() {
+		t.Skip("Skipping network test in short mode")
+	}
+
+	// Test with a real station ID (FMT is a common station)
+	progs, err := FetchWeeklyPrograms("FMT")
+	if err != nil {
+		// If network is unavailable, skip the test
+		if strings.Contains(err.Error(), "no such host") || strings.Contains(err.Error(), "connection refused") {
+			t.Skip("Network unavailable, skipping test")
+		}
+		t.Errorf("FetchWeeklyPrograms failed: %v", err)
+		return
+	}
+
+	// Should return some programs
+	if len(progs) == 0 {
+		t.Error("FetchWeeklyPrograms should return at least one program")
+	}
+
+	// Verify program structure
+	if len(progs) > 0 {
+		p := progs[0]
+		if p.StationID == "" {
+			t.Error("Program should have StationID")
+		}
+		if p.Ft == "" {
+			t.Error("Program should have Ft (start time)")
+		}
+		if p.To == "" {
+			t.Error("Program should have To (end time)")
+		}
+	}
+
+	// Test with invalid station ID
+	_, err = FetchWeeklyPrograms("INVALID_STATION_ID_12345")
+	if err == nil {
+		t.Error("FetchWeeklyPrograms should return error for invalid station ID")
+	}
+}

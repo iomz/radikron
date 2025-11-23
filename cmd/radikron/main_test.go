@@ -329,6 +329,7 @@ func TestProcessStation_DownloadError(t *testing.T) {
 	rule := &radikron.Rule{}
 	rule.SetName("test-rule")
 	rule.StationID = stationID
+	rule.Title = "Test" // Add title criteria so rule can match
 	rules := radikron.Rules{rule}
 
 	mockFetcher := &mockProgramFetcher{
