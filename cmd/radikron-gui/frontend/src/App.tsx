@@ -1,16 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { ErrorBoundary } from 'react-error-boundary';
-import { EventsOn } from '../wailsjs/runtime/runtime';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Configuration } from '@/components/Configuration';
-import { Stations } from '@/components/Stations';
-import { Activity } from '@/components/Activity';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { useAppStore } from '@/store/useAppStore';
-import { useThemeStore } from '@/store/useThemeStore';
-import iconBlack from './assets/black.png';
-import iconWhite from './assets/white.png';
+import React, { useEffect, useState } from "react";
+import { ErrorBoundary } from "react-error-boundary";
+import { EventsOn } from "../wailsjs/runtime/runtime";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dashboard } from "@/components/Dashboard";
+import { RulesEditor } from "@/components/RulesEditor";
+import { WeeklyProgramBrowser } from "@/components/WeeklyProgramBrowser";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useAppStore } from "@/store/useAppStore";
+import { useThemeStore } from "@/store/useThemeStore";
+import iconBlack from "./assets/black.png";
+import iconWhite from "./assets/white.png";
 
 // Type definitions for event data
 interface DownloadEventData {
@@ -25,21 +26,24 @@ interface ConfigLoadedData {
 }
 
 interface LogMessageData {
-  type: 'info' | 'success' | 'error';
+  type: "info" | "success" | "error";
   message: string;
 }
 
 // Error fallback component
-const ErrorFallback: React.FC<{ error: Error; resetErrorBoundary: () => void }> = ({
-  error,
-  resetErrorBoundary,
-}) => {
+const ErrorFallback: React.FC<{
+  error: Error;
+  resetErrorBoundary: () => void;
+}> = ({ error, resetErrorBoundary }) => {
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <div className="max-w-md w-full bg-card border border-destructive rounded-lg p-6 space-y-4">
-        <h2 className="text-xl font-bold text-destructive">Something went wrong</h2>
+        <h2 className="text-xl font-bold text-destructive">
+          Something went wrong
+        </h2>
         <p className="text-muted-foreground">
-          An unexpected error occurred. Please try again or restart the application.
+          An unexpected error occurred. Please try again or restart the
+          application.
         </p>
         <details className="text-sm">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground mb-2">
@@ -67,22 +71,24 @@ const AppComponent: React.FC = () => {
   const loadConfigInfo = useAppStore((state) => state.loadConfigInfo);
   const getEffectiveTheme = useThemeStore((state) => state.getEffectiveTheme);
   const theme = useThemeStore((state) => state.theme);
-  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>(() => getEffectiveTheme());
+  const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">(() =>
+    getEffectiveTheme(),
+  );
 
   // Update effective theme when theme changes
   useEffect(() => {
     setEffectiveTheme(getEffectiveTheme());
-    
+
     // Listen for system theme changes if theme is 'system'
-    if (theme === 'system' && typeof window !== 'undefined') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    if (theme === "system" && typeof window !== "undefined") {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
       const handleChange = () => {
         setEffectiveTheme(getEffectiveTheme());
       };
-      
+
       if (mediaQuery.addEventListener) {
-        mediaQuery.addEventListener('change', handleChange);
-        return () => mediaQuery.removeEventListener('change', handleChange);
+        mediaQuery.addEventListener("change", handleChange);
+        return () => mediaQuery.removeEventListener("change", handleChange);
       } else {
         mediaQuery.addListener(handleChange);
         return () => mediaQuery.removeListener(handleChange);
@@ -90,7 +96,7 @@ const AppComponent: React.FC = () => {
     }
   }, [theme, getEffectiveTheme]);
 
-  const appIcon = effectiveTheme === 'dark' ? iconBlack : iconWhite;
+  const appIcon = effectiveTheme === "dark" ? iconBlack : iconWhite;
 
   // Load initial data
   useEffect(() => {
@@ -100,42 +106,89 @@ const AppComponent: React.FC = () => {
   // Set up event listeners
   useEffect(() => {
     // Listen for monitoring status changes
-    const unsubscribeStarted = EventsOn('monitoring-started', () => {
+    const unsubscribeStarted = EventsOn("monitoring-started", () => {
       setMonitoring(true);
-      addActivityLog('success', 'Monitoring started');
-      console.log('Monitoring started');
+      addActivityLog("success", "Monitoring started");
+      console.log("Monitoring started");
     });
 
-    const unsubscribeStopped = EventsOn('monitoring-stopped', () => {
+    const unsubscribeStopped = EventsOn("monitoring-stopped", () => {
       setMonitoring(false);
-      addActivityLog('info', 'Monitoring stopped');
-      console.log('Monitoring stopped');
+      addActivityLog("info", "Monitoring stopped");
+      console.log("Monitoring stopped");
     });
 
     // Listen for download events
-    const unsubscribeDownloadStarted = EventsOn('download-started', (data: DownloadEventData) => {
-      addActivityLog('info', `Started downloading: ${data.title} (${data.station})`);
-    });
+    const unsubscribeDownloadStarted = EventsOn(
+      "download-started",
+      (data: DownloadEventData) => {
+        addActivityLog(
+          "info",
+          `Started downloading: ${data.title} (${data.station})`,
+        );
+      },
+    );
 
-    const unsubscribeDownloadCompleted = EventsOn('download-completed', (data: DownloadEventData) => {
-      addActivityLog('success', `Completed: ${data.title} (${data.station})`);
-    });
+    const unsubscribeDownloadCompleted = EventsOn(
+      "download-completed",
+      (data: DownloadEventData) => {
+        let dateStr = "";
+        if (data.start && data.start.length === 14) {
+          // Format: YYYYMMDDHHmmss -> YYYY/MM/DD
+          const year = data.start.substring(0, 4);
+          const month = data.start.substring(4, 6);
+          const day = data.start.substring(6, 8);
+          const hour = data.start.substring(8, 10);
+          const minute = data.start.substring(10, 12);
+          const second = data.start.substring(12, 14);
+          dateStr = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+        }
+        const message = dateStr
+          ? `Completed: [${data.station}]${data.title} - ${dateStr}`
+          : `Completed: [${data.station}]${data.title}`;
+        addActivityLog("success", message);
+      },
+    );
 
-    const unsubscribeDownloadFailed = EventsOn('download-failed', (data: DownloadEventData) => {
-      addActivityLog('error', `Failed: ${data.title} (${data.station}) - ${data.error || 'Unknown error'}`);
-    });
+    const unsubscribeDownloadFailed = EventsOn(
+      "download-failed",
+      (data: DownloadEventData) => {
+        addActivityLog(
+          "error",
+          `Failed: ${data.title} (${data.station}) - ${data.error || "Unknown error"}`,
+        );
+      },
+    );
 
-    const unsubscribeConfigLoaded = EventsOn('config-loaded', (data: ConfigLoadedData) => {
-      if (data.success) {
-        addActivityLog('success', 'Configuration loaded successfully');
-        loadConfigInfo();
-      }
-    });
+    const unsubscribeConfigLoaded = EventsOn(
+      "config-loaded",
+      (data: ConfigLoadedData) => {
+        if (data.success) {
+          addActivityLog("success", "Configuration loaded successfully");
+          loadConfigInfo();
+        }
+      },
+    );
 
     // Listen for log messages from radikron
-    const unsubscribeLogMessage = EventsOn('log-message', (data: LogMessageData) => {
-      addActivityLog(data.type, data.message);
-    });
+    const unsubscribeLogMessage = EventsOn(
+      "log-message",
+      (data: LogMessageData) => {
+        // Filter out duplicate messages that are already handled by structured events
+        const message = data.message.toLowerCase();
+        // Skip messages that duplicate structured events
+        if (
+          message.includes("start downloading") ||
+          message.includes("download completed") ||
+          message.includes("+file saved") ||
+          message.includes("start encoding to mp3") ||
+          message.includes("finish encoding to mp3")
+        ) {
+          return; // Skip duplicate log messages
+        }
+        addActivityLog(data.type, data.message);
+      },
+    );
 
     // Cleanup
     return () => {
@@ -156,33 +209,58 @@ const AppComponent: React.FC = () => {
           <p className="text-muted-foreground">Loading...</p>
         </div>
       ) : (
-        <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <Tabs defaultValue="dashboard" className="min-h-screen bg-background text-foreground flex flex-col">
           <header className="border-b bg-card">
-            <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <img src={appIcon} alt="Radikron" className="w-8 h-8" />
-                <h1 className="text-2xl font-bold">Radikron</h1>
-              </div>
-              <div className="flex items-center gap-4">
-                <Badge variant={monitoring ? 'default' : 'secondary'}>
-                  {monitoring ? 'Running' : 'Stopped'}
-                </Badge>
-                <Button onClick={toggleMonitoring}>
-                  {monitoring ? 'Stop Monitoring' : 'Start Monitoring'}
-                </Button>
-                <ThemeToggle />
+            <div className="container mx-auto px-4 py-4">
+              <div className="flex items-center justify-between mb-4">
+
+                <div className="flex items-center gap-3">
+                  <img src={appIcon} alt="Radikron" className="w-8 h-8" />
+                  <h1 className="text-2xl font-bold">Radikron</h1>
+                </div>
+
+                <TabsList>
+                  <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+                  <TabsTrigger value="rules">Rules Editor</TabsTrigger>
+                  <TabsTrigger value="programs">Weekly Programs</TabsTrigger>
+                </TabsList>
+
+                <div className="flex items-center gap-4">
+                  <div>
+                    <Badge variant={monitoring ? "default" : "secondary"}>
+                      {monitoring && (
+                        <span
+                          // Positioning and styling using Tailwind classes
+                          className="h-2 w-2 bg-red-500 rounded-full border border-white dark:border-gray-900 animate-pulse-grow"
+                        />
+                      )}
+                      {monitoring ? "Running" : "Stopped"}
+                    </Badge>
+                  </div>
+                  <Button onClick={toggleMonitoring}>
+                    {monitoring ? "Stop Monitoring" : "Start Monitoring"}
+                  </Button>
+                  <ThemeToggle />
+                </div>
+
               </div>
             </div>
           </header>
 
-          <main className="flex-1 flex items-center justify-center px-4 py-8">
-            <div className="grid gap-6 md:grid-cols-2 w-full max-w-7xl mx-auto">
-              <Configuration />
-              <Stations />
-              <Activity />
+          <main className="flex-1 px-4 py-4">
+            <div className="container mx-auto">
+              <TabsContent value="dashboard">
+                <Dashboard />
+              </TabsContent>
+              <TabsContent value="rules">
+                <RulesEditor />
+              </TabsContent>
+              <TabsContent value="programs">
+                <WeeklyProgramBrowser />
+              </TabsContent>
             </div>
           </main>
-        </div>
+        </Tabs>
       )}
     </ErrorBoundary>
   );

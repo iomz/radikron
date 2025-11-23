@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/.pnpm-store
             cmd/radikron-gui/frontend/node_modules
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('cmd/radikron-gui/frontend/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
       - name: Install frontend dependencies

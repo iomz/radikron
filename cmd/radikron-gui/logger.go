@@ -34,6 +34,7 @@ func NewWailsEventEmitter(ctx context.Context) *WailsEventEmitter {
 
 // EmitDownloadStarted implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitDownloadStarted(stationID, title, startTime, uri string) {
+	log.Printf("start downloading [%s]%s (%s): %s", stationID, title, startTime, uri)
 	runtime.EventsEmit(e.ctx, "download-started", map[string]any{
 		"station": stationID,
 		"title":   title,
@@ -43,15 +44,17 @@ func (e *WailsEventEmitter) EmitDownloadStarted(stationID, title, startTime, uri
 }
 
 // EmitDownloadCompleted implements radikron.EventEmitter
-func (e *WailsEventEmitter) EmitDownloadCompleted(stationID, title, filePath string) {
+func (e *WailsEventEmitter) EmitDownloadCompleted(stationID, title, startTime, filePath string) {
 	// Extract station and title from filePath if not provided
 	if stationID == "" || title == "" {
 		stationID, title = extractProgramInfoFromPath(filePath)
 	}
 
+	log.Printf("download completed [%s]%s: %s", stationID, title, filePath)
 	runtime.EventsEmit(e.ctx, "download-completed", map[string]any{
 		"station": stationID,
 		"title":   title,
+		"start":   startTime,
 	})
 }
 
@@ -62,6 +65,7 @@ func (e *WailsEventEmitter) EmitFileSaved(stationID, title, filePath string) {
 		stationID, title = extractProgramInfoFromPath(filePath)
 	}
 
+	log.Printf("+file saved: %s", filePath)
 	runtime.EventsEmit(e.ctx, "file-saved", map[string]any{
 		"station":  stationID,
 		"title":    title,
@@ -71,6 +75,11 @@ func (e *WailsEventEmitter) EmitFileSaved(stationID, title, filePath string) {
 
 // EmitDownloadSkipped implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitDownloadSkipped(reason, stationID, title, startTime string) {
+	if stationID != "" && title != "" && startTime != "" {
+		log.Printf("-skip %s [%s]%s (%s)", reason, stationID, title, startTime)
+	} else {
+		log.Printf("-skip %s", reason)
+	}
 	runtime.EventsEmit(e.ctx, "download-skipped", map[string]any{
 		"reason":  reason,
 		"station": stationID,
@@ -81,6 +90,7 @@ func (e *WailsEventEmitter) EmitDownloadSkipped(reason, stationID, title, startT
 
 // EmitEncodingStarted implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitEncodingStarted(filePath string) {
+	log.Printf("start encoding to MP3: %s", filePath)
 	runtime.EventsEmit(e.ctx, "encoding-started", map[string]any{
 		"filePath": filePath,
 	})
@@ -88,6 +98,7 @@ func (e *WailsEventEmitter) EmitEncodingStarted(filePath string) {
 
 // EmitEncodingCompleted implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitEncodingCompleted(filePath string) {
+	log.Printf("finish encoding to MP3: %s", filePath)
 	runtime.EventsEmit(e.ctx, "encoding-completed", map[string]any{
 		"filePath": filePath,
 	})

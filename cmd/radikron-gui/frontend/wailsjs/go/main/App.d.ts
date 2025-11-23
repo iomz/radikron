@@ -15,3 +15,5 @@ export function SaveConfig(arg1:string):Promise<void>;
 export function StartMonitoring():Promise<void>;
 
 export function StopMonitoring():Promise<void>;
+
+export function UpdateConfig(arg1:config.Config):Promise<void>;

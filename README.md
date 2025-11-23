@@ -11,7 +11,7 @@
 [![go report](https://goreportcard.com/badge/github.com/iomz/radikron)](https://goreportcard.com/report/github.com/iomz/radikron)
 [![license: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-Sometimes we miss our favorite shows on [radiko](https://radiko.jp/) and they get vanished from <http://radiko.jp/#!/timeshift> – let's just keep them automatically saved locally, from AoE.
+Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they get vanished from <http://radiko.jp/#!/timeshift> – let's just keep them automatically saved in your local disk, from AoE.
 
 **Disclaimer**:
 
@@ -24,9 +24,13 @@ Sometimes we miss our favorite shows on [radiko](https://radiko.jp/) and they ge
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
+  - [CLI Version](#cli-version)
+  - [GUI Version](#gui-version)
 - [Configuration](#configuration)
   - [ID3 Tags](#id3-tags)
 - [Usage](#usage)
+  - [CLI Usage](#cli-usage)
+  - [GUI Usage](#gui-usage)
   - [Try with Docker](#try-with-docker)
 - [Build the image yourself](#build-the-image-yourself)
 - [Credit](#credit)
@@ -35,7 +39,13 @@ Sometimes we miss our favorite shows on [radiko](https://radiko.jp/) and they ge
 
 ## Features
 
-radikron is a powerful, automated radio program downloader for [radiko](https://radiko.jp/) with the following features:
+radikron is a powerful, automated radio program downloader for [radiko](https://radiko.jp/) available in both **CLI** and **GUI** versions. Both versions share the same core logic, ensuring consistent behavior and reliability.
+
+### 🖥️ Dual Interface Support
+
+- **CLI Version**: Lightweight command-line interface perfect for servers and automation
+- **GUI Version**: Modern graphical interface built with Wails v2 for desktop users
+- **Shared Core**: Both versions use the same underlying engine, so bug fixes and features benefit both interfaces
 
 ### 🎯 Smart Rule-Based Matching
 
@@ -82,6 +92,16 @@ All downloaded files are automatically tagged with rich metadata:
 - **Background Operation**: Runs continuously, monitoring and downloading programs as they become available
 - **Graceful Shutdown**: Waits for downloads to complete before exiting
 
+### 🖱️ GUI Features
+
+The GUI version provides a user-friendly interface with:
+
+- **Configuration Management**: Load and manage configuration files through an intuitive interface
+- **Station Browser**: View all available radio stations in your region
+- **Monitoring Control**: Start and stop automatic monitoring with a single click
+- **Real-Time Activity Log**: Monitor download progress, completions, and errors in real-time
+- **Event System**: Real-time updates via Wails events for instant feedback
+
 ### 🐳 Docker Support
 
 - Pre-built Docker images for easy deployment
@@ -98,9 +118,40 @@ The [docker image](#try-with-docker) already contains all the requirements inclu
 
 ## Installation
 
+### CLI Version
+
+Install the command-line version:
+
 ```bash
 go install github.com/iomz/radikron/cmd/radikron@latest
 ```
+
+### GUI Version
+
+The GUI version requires building from source. See the [GUI README](cmd/radikron-gui/README.md) for detailed setup instructions.
+
+**Quick start for GUI development**:
+
+```bash
+# Install frontend dependencies
+cd cmd/radikron-gui/frontend
+pnpm install
+
+# Return to GUI directory
+cd ..
+
+# Run in development mode
+wails dev
+
+# Or build for production
+wails build
+```
+
+**Prerequisites for GUI**:
+
+- Go 1.20+
+- Node.js and pnpm
+- Wails v2 (install with `go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 
 ## Configuration
 
@@ -114,6 +165,8 @@ Create a configuration file (`config.yml`) to define rules for recording. The co
 - **`extra-stations`**: List of station IDs to include even if they're not in your region.
 - **`ignore-stations`**: List of station IDs to exclude from monitoring.
 - **`minimum-output-size`**: Minimum file size in MB (default: 1 MB). Files smaller than this are rejected as potentially corrupted.
+- **`max-downloading-concurrency`**: Maximum number of concurrent download operations (default: 64). Only included in config if different from default.
+- **`max-encoding-concurrency`**: Maximum number of concurrent MP3 encoding operations (default: 2). Set lower than downloading concurrency since encoding is CPU-intensive. Only included in config if different from default.
 
 ### Rule Configuration
 
@@ -140,11 +193,13 @@ extra-stations:
 ignore-stations:
   - JOAK # ignore stations from search
 minimum-output-size: 2 # do not save an audio below this size (in MB), default is 1 (MB)
+# max-downloading-concurrency: 64  # Maximum concurrent download operations (default: 64)
+# max-encoding-concurrency: 2  # Maximum concurrent encoding operations for MP3 conversion (default: 2)
 rules:
-  airship: # name your rule as you like
-    folder: citypop # (optional) organize downloads into subfolders
-    station-id: FMT # (optional) the station_id, if not available by default, automatically add this station to the watch list
-    title: "GOODYEAR MUSIC AIRSHIP～シティポップ レイディオ～" # this can be a partial match
+  midday: # name your rule as you like
+    folder: "MIDDAY LOUNGE" # (optional) organize downloads into subfolders
+    station-id: FMJ # (optional) the station_id, if not available by default, automatically add this station to the watch list
+    title: "MIDDAY LOUNGE" # this can be a partial match
   citypop:
     keyword: "シティポップ" # search by keyword (also a partial match)
     window: 48h # only within the past window from the current time
@@ -175,7 +230,9 @@ These tags are embedded in both AAC and MP3 files, making it easy to organize an
 
 ## Usage
 
-### Basic Usage
+### CLI Usage
+
+**Basic Usage**:
 
 Simply run radikron with your configuration file:
 
@@ -200,13 +257,13 @@ The application will:
 - Tag files with ID3 metadata
 - Continue monitoring and downloading on a schedule
 
-### Command-Line Options
+**Command-Line Options**:
 
 - **`-c <file>`**: Specify the configuration file (default: `config.yml`)
 - **`-d`**: Enable debug mode with detailed logging
 - **`-v`**: Print version information
 
-### Running as a Service
+**Running as a Service**:
 
 radikron is designed to run continuously. It automatically:
 
@@ -215,6 +272,20 @@ radikron is designed to run continuously. It automatically:
 - Handles interruptions gracefully (waits for in-progress downloads on shutdown)
 
 For production use, consider running it as a systemd service or using a process manager like `supervisord`.
+
+### GUI Usage
+
+The GUI version provides a visual interface for managing radikron:
+
+1. **Launch the application**: Run the built binary or use `wails dev` for development
+2. **Load configuration**: Use the configuration panel to load your `config.yml` file
+3. **View stations**: Browse available radio stations in your region
+4. **Start monitoring**: Click "Start Monitoring" to begin automatic downloading
+5. **Monitor activity**: Watch real-time updates in the activity log
+
+The GUI shares the same configuration format and behavior as the CLI version, so you can use the same `config.yml` file with both interfaces.
+
+For detailed GUI setup and development instructions, see the [GUI README](cmd/radikron-gui/README.md).
 
 ### Try with Docker
 
@@ -234,4 +305,4 @@ docker compose build
 
 ## Credit
 
-This project is heavily based on [yyoshiki41/go-radiko](https://github.com/yyoshiki41/go-radiko) and [yyoshiki41/radigo](https://github.com/yyoshiki41/radigo), and therefore follows the [GPLv3 License](https://github.com/yyoshiki41/radigo/blob/main/LICENSE).
+This project started off from [yyoshiki41/go-radiko](https://github.com/yyoshiki41/go-radiko) and [yyoshiki41/radigo](https://github.com/yyoshiki41/radigo), and therefore follows the [GPLv3 License](https://github.com/yyoshiki41/radigo/blob/main/LICENSE).

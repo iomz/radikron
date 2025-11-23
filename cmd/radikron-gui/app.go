@@ -117,6 +117,35 @@ func (a *App) LoadConfig(filename string) error {
 	return nil
 }
 
+// UpdateConfig updates the current configuration with new values
+func (a *App) UpdateConfig(newConfig *config.Config) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if newConfig == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
+	// Check if asset is initialized before applying config
+	if a.asset == nil {
+		return fmt.Errorf("asset not initialized")
+	}
+
+	// Apply config to asset
+	if err := newConfig.ApplyToAsset(a.asset); err != nil {
+		return fmt.Errorf("failed to apply config: %w", err)
+	}
+
+	a.config = newConfig
+
+	// Emit event to frontend
+	runtime.EventsEmit(a.ctx, "config-updated", map[string]any{
+		"success": true,
+	})
+
+	return nil
+}
+
 // SaveConfig saves the current configuration to a file
 func (a *App) SaveConfig(filename string) error {
 	a.mu.Lock()
@@ -305,18 +334,6 @@ func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikr
 	return programList
 }
 
-// removeProgramFromSchedules removes a program with the given ID from the schedules slice.
-// Returns the modified slice. This is O(n) but necessary for slice-based removal.
-func removeProgramFromSchedules(schedules radikron.Schedules, programID string) radikron.Schedules {
-	for i, s := range schedules {
-		if s.ID == programID {
-			// Remove element by creating a new slice without it
-			return append(schedules[:i], schedules[i+1:]...)
-		}
-	}
-	return schedules
-}
-
 // processProgram handles a single program: checks duplicates, matches rules, and downloads if needed
 // Returns (matched, duplicate) to indicate if the program matched a rule or was a duplicate
 func (a *App) processProgram(
@@ -329,7 +346,7 @@ func (a *App) processProgram(
 	p := pws.prog
 	stationID := pws.stationID
 
-	// Lock to prevent race conditions when checking/adding to schedules
+	// Lock to prevent race conditions when checking duplicates
 	a.mu.Lock()
 	if processedInThisIteration[p.ID] {
 		a.mu.Unlock()
@@ -340,47 +357,53 @@ func (a *App) processProgram(
 		return false, true
 	}
 	processedInThisIteration[p.ID] = true
-	a.asset.Schedules = append(a.asset.Schedules, p)
+	// Don't add to schedules yet - Download() will check for duplicates
+	// We'll add to schedules after Download() confirms it will proceed
 	a.mu.Unlock()
 
 	// Check if rule matches using the asset snapshot
 	matchedRule := asset.Rules.FindMatchSilent(stationID, p)
 	if matchedRule == nil {
-		// Rule didn't match, remove from schedules
+		// Rule didn't match - remove from processed tracking
 		a.mu.Lock()
-		a.asset.Schedules = removeProgramFromSchedules(a.asset.Schedules, p.ID)
-		a.mu.Unlock()
 		delete(processedInThisIteration, p.ID)
+		a.mu.Unlock()
 		return false, false
 	}
 
-	// Double-check that program is still in schedules
+	// Check if we've already logged this program in this iteration
+	// (to prevent duplicate log messages for the same program)
 	a.mu.Lock()
-	stillInSchedules := a.asset.Schedules.HasDuplicate(p)
 	alreadyLogged := processedInThisIteration[p.ID+"_logged"]
-	if !alreadyLogged && stillInSchedules {
+	if !alreadyLogged {
 		processedInThisIteration[p.ID+"_logged"] = true
-	}
-	a.mu.Unlock()
-
-	if !stillInSchedules || alreadyLogged {
+		a.mu.Unlock()
+		// First time processing this program - continue to download attempt
+	} else {
+		a.mu.Unlock()
+		// Already processed this program in this iteration - skip
 		return true, false
 	}
 
 	p.RuleName = matchedRule.Name
 	p.RuleFolder = matchedRule.Folder
+	// Ensure StationID is set correctly (it should be set from XML, but ensure it matches)
+	if p.StationID == "" {
+		p.StationID = stationID
+	}
 
-	log.Printf("rule[%s] matched [%s]%s - attempting download (start time: %s)", matchedRule.Name, stationID, p.Title, p.Ft)
-	runtime.EventsEmit(a.ctx, "log-message", map[string]any{
-		"type":    "info",
-		"message": fmt.Sprintf("Rule '%s' matched [%s]%s (start: %s) - attempting download", matchedRule.Name, stationID, p.Title, p.Ft),
-	})
-
-	// Call Download() - it will log "start downloading" if it actually starts
+	// Call Download() - it will log "rule matched" and "start downloading" if it actually starts
 	// Note: Download() may return nil if program is in future, duplicate, or file exists
 	err := downloader.Download(downloadCtx, a.monitorWg, p)
 	if err != nil {
-		log.Printf("download failed for [%s]%s: %s", p.StationID, p.Title, err)
+		// Download failed - remove from processed tracking
+		a.mu.Lock()
+		delete(processedInThisIteration, p.ID)
+		a.mu.Unlock()
+		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			"type":    "error",
+			"message": fmt.Sprintf("download failed for [%s]%s: %s", p.StationID, p.Title, err),
+		})
 		runtime.EventsEmit(a.ctx, "download-failed", map[string]any{
 			"station": p.StationID,
 			"title":   p.Title,
@@ -388,7 +411,15 @@ func (a *App) processProgram(
 		})
 		return true, false
 	}
-	// If err == nil, Download() may have skipped silently (future, duplicate, or exists)
+	// Download() returned nil - it either started the download or skipped it
+	// Add to schedules to prevent processing it again in future iterations
+	// Note: Download() checks for duplicates internally, so if it skipped due to duplicate,
+	// we still add it here to ensure it's tracked (though it won't be downloaded)
+	a.mu.Lock()
+	if !a.asset.Schedules.HasDuplicate(p) {
+		a.asset.Schedules = append(a.asset.Schedules, p)
+	}
+	a.mu.Unlock()
 	// The download-started event will be emitted by Download() if it actually starts
 
 	return true, false
