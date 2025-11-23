@@ -320,6 +320,63 @@ func (a *App) GetAvailableStations() ([]string, error) {
 	return a.asset.AvailableStations, nil
 }
 
+// SearchWeeklyPrograms searches weekly programs using rule criteria
+// It fetches programs from all available stations and filters them using the provided rule
+func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationID string) (radikron.Progs, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.asset == nil {
+		return nil, fmt.Errorf("asset not initialized")
+	}
+
+	// Create a temporary rule for matching
+	tempRule := &radikron.Rule{
+		Name:      "search",
+		Title:     ruleTitle,
+		Pfm:       rulePfm,
+		Keyword:   ruleKeyword,
+		StationID: ruleStationID,
+	}
+
+	// Get stations to search (all if no station specified, otherwise just the specified one)
+	stationsToSearch := a.asset.AvailableStations
+	if ruleStationID != "" {
+		// Check if the station exists
+		found := false
+		for _, station := range a.asset.AvailableStations {
+			if station == ruleStationID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("station %s not found", ruleStationID)
+		}
+		stationsToSearch = []string{ruleStationID}
+	}
+
+	// Fetch programs from all stations and filter
+	var matchingPrograms radikron.Progs
+	for _, stationID := range stationsToSearch {
+		programs, err := radikron.FetchWeeklyPrograms(stationID)
+		if err != nil {
+			// Log error but continue with other stations
+			runtime.LogError(a.ctx, fmt.Sprintf("Failed to fetch programs for station %s: %v", stationID, err))
+			continue
+		}
+
+		// Filter programs using the rule
+		for _, prog := range programs {
+			if tempRule.MatchSilent(stationID, prog) {
+				matchingPrograms = append(matchingPrograms, prog)
+			}
+		}
+	}
+
+	return matchingPrograms, nil
+}
+
 // OpenDirectory opens the specified directory in the system's file browser
 func (a *App) OpenDirectory(dirPath string) error {
 	if dirPath == "" {

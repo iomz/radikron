@@ -1,6 +1,6 @@
 # radikron
 
-![radikron](https://i.imgur.com/BiTAPQz.png)
+![radikron](https://i.imgur.com/S0NIoIW.png)
 
 [![build status](https://github.com/iomz/radikron/workflows/build/badge.svg)](https://github.com/iomz/radikron/actions?query=workflow%3Abuild)
 [![docker status](https://github.com/iomz/radikron/actions/workflows/docker.yml/badge.svg)](https://github.com/iomz/radikron/actions/workflows/docker.yml)
@@ -22,11 +22,23 @@ Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they
 <!-- vim-markdown-toc GFM -->
 
 - [Features](#features)
+  - [🖥️ Dual Interface Support](#-dual-interface-support)
+  - [🎯 Smart Rule-Based Matching](#-smart-rule-based-matching)
+  - [📁 Flexible File Organization](#-flexible-file-organization)
+  - [🏷️ Automatic ID3 Tagging](#-automatic-id3-tagging)
+  - [🛡️ Intelligent Download Management](#-intelligent-download-management)
+  - [🌐 Multi-Region Support](#-multi-region-support)
+  - [🔄 Continuous Monitoring](#-continuous-monitoring)
+  - [🖱️ GUI Features](#-gui-features)
+  - [🐳 Docker Support](#-docker-support)
 - [Requirements](#requirements)
 - [Installation](#installation)
   - [CLI Version](#cli-version)
   - [GUI Version](#gui-version)
 - [Configuration](#configuration)
+  - [Configuration Options](#configuration-options)
+  - [Rule Configuration](#rule-configuration)
+  - [Example Configuration](#example-configuration)
   - [ID3 Tags](#id3-tags)
 - [Usage](#usage)
   - [CLI Usage](#cli-usage)
