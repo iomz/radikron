@@ -10,6 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAppStore } from "@/store/useAppStore";
 import * as App from "../../wailsjs/go/main/App";
 import { config, radikron } from "../../wailsjs/go/models";
@@ -22,6 +30,8 @@ export const RulesEditor: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [rules, setRules] = useState<config.Config | null>(null);
   const [expandedRules, setExpandedRules] = useState<Set<number>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [ruleToDelete, setRuleToDelete] = useState<number | null>(null);
 
   useEffect(() => {
     if (configInfo) {
@@ -48,26 +58,18 @@ export const RulesEditor: React.FC = () => {
 
     setIsSaving(true);
     try {
-      // Note: UpdateConfig will be available after rebuilding Wails
-      // For now, we'll just save the config file
-      // The backend will need to be rebuilt to expose UpdateConfig
-      try {
-        // @ts-ignore - UpdateConfig will be available after Wails rebuild
-        await App.UpdateConfig(rules);
-      } catch (e) {
-        // If UpdateConfig is not available, just save directly
-        console.warn("UpdateConfig not available, saving config directly");
-      }
-      // Save the config to file
-      await App.SaveConfig(configFile);
+      // Update the in-memory config first
+      await App.UpdateConfig(rules);
+      // Save the updated config to file (empty string uses current config file path)
+      await App.SaveConfig("");
       // Reload config info to reflect changes
       await loadConfigInfo();
-      addActivityLog("success", "Configuration saved successfully");
+      addActivityLog("success", "Rules saved successfully");
     } catch (error) {
-      console.error("Failed to save config:", error);
+      console.error("Failed to save rules:", error);
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      addActivityLog("error", `Failed to save config: ${errorMessage}`);
+      addActivityLog("error", `Failed to save rules: ${errorMessage}`);
     } finally {
       setIsSaving(false);
     }
@@ -113,6 +115,49 @@ export const RulesEditor: React.FC = () => {
       });
       return next;
     });
+  };
+
+  const handleRemoveRuleClick = (index: number) => {
+    setRuleToDelete(index);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmRemoveRule = async () => {
+    if (!rules || ruleToDelete === null) return;
+
+    const index = ruleToDelete;
+    const rule = rules.Rules[index];
+    const ruleName = rule.Name || `Rule ${index + 1}`;
+
+    // Remove the rule
+    removeRule(index);
+
+    // Save the updated rules
+    setIsSaving(true);
+    try {
+      // Create updated config without the removed rule
+      const updatedRules = config.Config.createFrom({
+        ...rules,
+        Rules: rules.Rules.filter((_, i) => i !== index),
+      });
+
+      // Update the in-memory config first
+      await App.UpdateConfig(updatedRules);
+      // Save the updated config to file (empty string uses current config file path)
+      await App.SaveConfig("");
+      // Reload config info to reflect changes
+      await loadConfigInfo();
+      addActivityLog("success", `Rule "${ruleName}" removed successfully`);
+    } catch (error) {
+      console.error("Failed to remove rule:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      addActivityLog("error", `Failed to remove rule: ${errorMessage}`);
+    } finally {
+      setIsSaving(false);
+      setDeleteDialogOpen(false);
+      setRuleToDelete(null);
+    }
   };
 
   const updateRule = (
@@ -167,7 +212,7 @@ export const RulesEditor: React.FC = () => {
                 Add Rule
               </Button>
               <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving ? "Saving..." : "Save Configuration"}
+                {isSaving ? "Saving..." : "Save Rules"}
               </Button>
             </div>
           </div>
@@ -197,11 +242,12 @@ export const RulesEditor: React.FC = () => {
                         <Button
                           onClick={(e) => {
                             e.stopPropagation();
-                            removeRule(index);
+                            handleRemoveRuleClick(index);
                           }}
                           variant="outline"
                           size="sm"
                           className="text-destructive hover:text-destructive"
+                          disabled={isSaving}
                         >
                           Remove
                         </Button>
@@ -334,6 +380,41 @@ export const RulesEditor: React.FC = () => {
           </ScrollArea>
         </CardContent>
       </Card>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Rule</DialogTitle>
+            <DialogDescription>
+              {ruleToDelete !== null && rules
+                ? `Are you sure you want to remove "${
+                    rules.Rules[ruleToDelete]?.Name ||
+                    `Rule ${ruleToDelete + 1}`
+                  }"? This action cannot be undone.`
+                : "Are you sure you want to remove this rule? This action cannot be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setRuleToDelete(null);
+              }}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmRemoveRule}
+              disabled={isSaving}
+            >
+              {isSaving ? "Removing..." : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

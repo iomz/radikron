@@ -386,7 +386,7 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 	// empty FileFormat
 	asset.OutputFormat = radigo.AudioFormatAAC
 	// default DownloadDir
-	asset.DownloadDir = "downloads"
+	asset.DownloadDir = "radiko"
 	// default concurrency values
 	asset.MaxDownloadingConcurrency = MaxDownloadingConcurrency
 	asset.MaxEncodingConcurrency = MaxEncodingConcurrency

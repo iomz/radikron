@@ -6,9 +6,13 @@ export function GetAvailableStations():Promise<Array<string>>;
 
 export function GetConfig():Promise<config.Config>;
 
+export function GetConfigFile():Promise<string>;
+
 export function GetMonitoringStatus():Promise<boolean>;
 
 export function LoadConfig(arg1:string):Promise<void>;
+
+export function OpenDirectory(arg1:string):Promise<void>;
 
 export function SaveConfig(arg1:string):Promise<void>;
 

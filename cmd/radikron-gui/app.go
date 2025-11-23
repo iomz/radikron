@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	goRuntime "runtime"
 	"sync"
 	"time"
 
@@ -11,6 +15,7 @@ import (
 	"github.com/iomz/radikron/internal/config"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/yyoshiki41/go-radiko"
+	"github.com/yyoshiki41/radigo"
 )
 
 const (
@@ -39,10 +44,77 @@ func NewApp() *App {
 	}
 }
 
+// getAppConfigDir returns the application config directory
+func getAppConfigDir() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user config dir: %w", err)
+	}
+	appConfigDir := filepath.Join(configDir, "Radikron")
+	return appConfigDir, nil
+}
+
+// createDefaultConfig creates a default configuration file
+func createDefaultConfig(configPath string) (*config.Config, error) {
+	// Get current area ID
+	currentAreaID, err := radiko.AreaID()
+	if err != nil {
+		currentAreaID = radikron.DefaultArea
+	}
+
+	// Get user's Downloads directory (cross-platform)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to "downloads" if we can't get home directory
+		homeDir = ""
+	}
+	var downloadDir string
+	if homeDir != "" {
+		downloadDir = filepath.Join(homeDir, "Downloads", "radiko")
+	} else {
+		downloadDir = "radiko"
+	}
+
+	// Create the download directory if it doesn't exist
+	if err := os.MkdirAll(downloadDir, radikron.DirPermissions); err != nil {
+		return nil, fmt.Errorf("failed to create download directory: %w", err)
+	}
+
+	// Create default config
+	cfg := &config.Config{
+		AreaID:                    currentAreaID,
+		ExtraStations:             []string{},
+		IgnoreStations:            []string{},
+		FileFormat:                radigo.AudioFormatAAC,
+		MinimumOutputSize:         radikron.DefaultMinimumOutputSize * radikron.Kilobytes * radikron.Kilobytes,
+		DownloadDir:               downloadDir,
+		Rules:                     radikron.Rules{},
+		MaxDownloadingConcurrency: radikron.MaxDownloadingConcurrency,
+		MaxEncodingConcurrency:    radikron.MaxEncodingConcurrency,
+	}
+
+	// Save the default config
+	if err := cfg.SaveConfig(configPath); err != nil {
+		return nil, fmt.Errorf("failed to save default config: %w", err)
+	}
+
+	return cfg, nil
+}
+
 // OnStartup is called when the app starts
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
-	a.configFile = "config.yml" // Default config file
+
+	// Get app config directory
+	appConfigDir, err := getAppConfigDir()
+	if err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("Failed to get app config directory: %v", err))
+		// Fallback to current directory
+		a.configFile = "config.yml"
+	} else {
+		// Use config.yml in app config directory
+		a.configFile = filepath.Join(appConfigDir, "config.yml")
+	}
 
 	// Initialize radiko client
 	client, err := radiko.New("")
@@ -60,12 +132,29 @@ func (a *App) OnStartup(ctx context.Context) {
 	}
 	a.asset = asset
 
-	// Load config if it exists
-	if cfg, err := config.LoadConfig(a.configFile); err == nil {
-		if err := cfg.ApplyToAsset(a.asset); err == nil {
-			a.config = cfg
+	// Try to load config
+	cfg, err := config.LoadConfig(a.configFile)
+	if err != nil {
+		// Config doesn't exist, create default config
+		runtime.LogInfo(ctx, fmt.Sprintf("Config file not found at %s, creating default config", a.configFile))
+		cfg, err = createDefaultConfig(a.configFile)
+		if err != nil {
+			runtime.LogError(ctx, fmt.Sprintf("Failed to create default config: %v", err))
+			// Continue with default values from asset
+			return
 		}
+		runtime.LogInfo(ctx, fmt.Sprintf("Created default config at %s", a.configFile))
 	}
+
+	// Apply config to asset
+	if err := cfg.ApplyToAsset(a.asset); err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("Failed to apply config to asset: %v", err))
+		// Continue with default values
+		return
+	}
+
+	a.config = cfg
+	runtime.LogInfo(ctx, fmt.Sprintf("Config loaded successfully from %s", a.configFile))
 }
 
 // OnShutdown is called when the app closes
@@ -84,6 +173,18 @@ func (a *App) GetConfig() (*config.Config, error) {
 		return nil, fmt.Errorf("config not loaded")
 	}
 	return a.config, nil
+}
+
+// GetConfigFile returns the current config file path
+func (a *App) GetConfigFile() (string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.configFile == "" {
+		return "", fmt.Errorf("config file not set")
+	}
+
+	return a.configFile, nil
 }
 
 // LoadConfig loads configuration from a file
@@ -147,12 +248,21 @@ func (a *App) UpdateConfig(newConfig *config.Config) error {
 }
 
 // SaveConfig saves the current configuration to a file
+// If filename is empty, uses the current config file path
 func (a *App) SaveConfig(filename string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if a.config == nil {
 		return fmt.Errorf("config not loaded")
+	}
+
+	// Use current config file if filename is not provided
+	if filename == "" {
+		if a.configFile == "" {
+			return fmt.Errorf("config file path not set")
+		}
+		filename = a.configFile
 	}
 
 	// Save config to file using the config package
@@ -182,6 +292,38 @@ func (a *App) GetAvailableStations() ([]string, error) {
 	}
 
 	return a.asset.AvailableStations, nil
+}
+
+// OpenDirectory opens the specified directory in the system's file browser
+func (a *App) OpenDirectory(dirPath string) error {
+	if dirPath == "" {
+		return fmt.Errorf("directory path is empty")
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		return fmt.Errorf("directory does not exist: %s", dirPath)
+	}
+
+	var cmd *exec.Cmd
+	switch goRuntime.GOOS {
+	case "darwin": // macOS
+		cmd = exec.Command("open", dirPath)
+	case "windows":
+		// Use explorer with the directory path
+		cmd = exec.Command("explorer", dirPath)
+	case "linux":
+		// Use xdg-open for Linux
+		cmd = exec.Command("xdg-open", dirPath)
+	default:
+		return fmt.Errorf("unsupported platform: %s", goRuntime.GOOS)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to open directory: %w", err)
+	}
+
+	return nil
 }
 
 // GetMonitoringStatus returns whether monitoring is active

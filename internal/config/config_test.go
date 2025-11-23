@@ -63,7 +63,6 @@ func TestLoadConfigWithDefaults(t *testing.T) {
 	// Change to temp directory to test default config loading
 	withCwd(t, tmpDir)
 
-	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)
@@ -97,7 +96,6 @@ func TestLoadConfigInvalidFormat(t *testing.T) {
 
 	withCwd(t, tmpDir)
 
-	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	_, err = LoadConfig("config.yml")
 	if err == nil {
 		t.Error("expected error for unsupported audio format")
@@ -363,7 +361,6 @@ extra-stations:
 
 	withCwd(t, tmpDir)
 
-	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)
@@ -411,7 +408,6 @@ ignore-stations:
 
 	withCwd(t, tmpDir)
 
-	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)
@@ -472,7 +468,6 @@ func TestLoadConfigMP3Format(t *testing.T) {
 
 	withCwd(t, tmpDir)
 
-	t.Setenv(radikron.EnvRadicronHome, filepath.Join(tmpDir, "radiko_home"))
 	cfg, err := LoadConfig("config.yml")
 	if err != nil {
 		t.Fatalf("expected no error loading config, got: %v", err)

@@ -10,12 +10,20 @@ export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
+export function GetConfigFile() {
+  return window['go']['main']['App']['GetConfigFile']();
+}
+
 export function GetMonitoringStatus() {
   return window['go']['main']['App']['GetMonitoringStatus']();
 }
 
 export function LoadConfig(arg1) {
   return window['go']['main']['App']['LoadConfig'](arg1);
+}
+
+export function OpenDirectory(arg1) {
+  return window['go']['main']['App']['OpenDirectory'](arg1);
 }
 
 export function SaveConfig(arg1) {

@@ -1,6 +1,6 @@
 area-id: JP13
 file-format: aac
-downloads: downloads
+downloads: /radiko # This is aligned with the docker-compose.yml
 # max-downloading-concurrency: 64  # Maximum concurrent download operations (default: 64)
 # max-encoding-concurrency: 2  # Maximum concurrent encoding operations for MP3 conversion (default: 2)
 rules:

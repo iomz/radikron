@@ -108,69 +108,69 @@ func TestGetURI_InvalidVariants(t *testing.T) {
 }
 
 func TestGetRadicronPath(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
-	// Test with empty env (default case)
-	os.Unsetenv(EnvRadicronHome)
-	path, err := getRadicronPath("downloads")
+	cwd, err := os.Getwd()
 	if err != nil {
-		t.Errorf("getRadicronPath with empty env failed: %v", err)
-	}
-	if path == "" {
-		t.Error("getRadicronPath returned empty path")
+		t.Fatalf("failed to get current directory: %v", err)
 	}
 
 	// Test with relative path
-	os.Setenv(EnvRadicronHome, "test-radiko")
-	path, err = getRadicronPath("downloads")
+	path, err := getRadikronPath("downloads")
 	if err != nil {
-		t.Errorf("getRadicronPath with relative env failed: %v", err)
+		t.Errorf("getRadikronPath with relative path failed: %v", err)
 	}
-	if path == "" {
-		t.Error("getRadicronPath returned empty path")
+	expected := filepath.Join(cwd, "downloads")
+	if path != expected {
+		t.Errorf("getRadikronPath => %v, want %v", path, expected)
 	}
 
 	// Test with absolute path
-	absPath, _ := filepath.Abs("/tmp")
-	os.Setenv(EnvRadicronHome, absPath)
-	path, err = getRadicronPath("downloads")
+	absPath := "/tmp/test-downloads"
+	path, err = getRadikronPath(absPath)
 	if err != nil {
-		t.Errorf("getRadicronPath with absolute env failed: %v", err)
+		t.Errorf("getRadikronPath with absolute path failed: %v", err)
 	}
-	expected := filepath.Join(absPath, "downloads")
-	if path != expected {
-		t.Errorf("getRadicronPath => %v, want %v", path, expected)
+	if path != absPath {
+		t.Errorf("getRadikronPath with absolute path => %v, want %v", path, absPath)
 	}
 
 	// Test with subdirectory
-	path, err = getRadicronPath(filepath.Join("downloads", "subfolder"))
+	path, err = getRadikronPath(filepath.Join("downloads", "subfolder"))
 	if err != nil {
-		t.Errorf("getRadicronPath with subdirectory failed: %v", err)
+		t.Errorf("getRadikronPath with subdirectory failed: %v", err)
 	}
-	expected = filepath.Join(absPath, "downloads", "subfolder")
+	expected = filepath.Join(cwd, "downloads", "subfolder")
 	if path != expected {
-		t.Errorf("getRadicronPath with subdirectory => %v, want %v", path, expected)
+		t.Errorf("getRadikronPath with subdirectory => %v, want %v", path, expected)
 	}
 
 	// Test path cleaning (with .. and .)
-	path, err = getRadicronPath(filepath.Join("downloads", "..", "downloads", ".", "sub"))
+	path, err = getRadikronPath(filepath.Join("downloads", "..", "downloads", ".", "sub"))
 	if err != nil {
-		t.Errorf("getRadicronPath with path cleaning failed: %v", err)
+		t.Errorf("getRadikronPath with path cleaning failed: %v", err)
 	}
-	expected = filepath.Join(absPath, "downloads", "sub")
+	expected = filepath.Join(cwd, "downloads", "sub")
 	if path != expected {
-		t.Errorf("getRadicronPath with path cleaning => %v, want %v", path, expected)
+		t.Errorf("getRadikronPath with path cleaning => %v, want %v", path, expected)
+	}
+
+	// Test with empty path (default case - should use $HOME/Downloads/radiko)
+	path, err = getRadikronPath("")
+	if err != nil {
+		t.Errorf("getRadikronPath with empty path failed: %v", err)
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to cwd/radiko if home directory can't be determined
+		expected = filepath.Join(cwd, "radiko")
+	} else {
+		expected = filepath.Join(homeDir, "Downloads", "radiko")
+	}
+	if path != expected {
+		t.Errorf("getRadikronPath with empty path => %v, want %v", path, expected)
 	}
 }
 
 func TestNewOutputConfig(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-	os.Unsetenv(EnvRadicronHome)
-
 	// Test without folder
 	output, err := newOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
 	if err != nil {
@@ -209,22 +209,7 @@ func TestNewOutputConfig(t *testing.T) {
 }
 
 func TestTempAACDir(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
-	// Set a test directory
-	testDir := filepath.Join(os.TempDir(), "radikron-test")
-	os.Setenv(EnvRadicronHome, testDir)
-	defer os.RemoveAll(testDir)
-
-	// Create the tmp directory structure
-	tmpDir := filepath.Join(testDir, "tmp")
-	err := os.MkdirAll(tmpDir, DirPermissions)
-	if err != nil {
-		t.Fatalf("Failed to create test tmp directory: %v", err)
-	}
-
+	// tempAACDir now uses system temp directory
 	dir, err := tempAACDir()
 	if err != nil {
 		t.Errorf("tempAACDir failed: %v", err)
@@ -238,27 +223,19 @@ func TestTempAACDir(t *testing.T) {
 		t.Errorf("tempAACDir did not create directory: %v", err)
 	}
 
+	// Verify it's in the system temp directory
+	tmpDir := os.TempDir()
+	if !strings.HasPrefix(dir, tmpDir) {
+		t.Errorf("tempAACDir should be in system temp directory, got: %v", dir)
+	}
+
+	// Verify it has the expected prefix
+	if !strings.Contains(filepath.Base(dir), "radikron-aac-") {
+		t.Errorf("tempAACDir should have radikron-aac- prefix, got: %v", filepath.Base(dir))
+	}
+
 	// Clean up
 	os.RemoveAll(dir)
-
-	// Test: tempAACDir creates directory if it doesn't exist
-	testDir2 := filepath.Join(os.TempDir(), "radikron-test-2")
-	os.Setenv(EnvRadicronHome, testDir2)
-	defer os.RemoveAll(testDir2)
-
-	// Don't create tmp directory - tempAACDir should create it
-	dir2, err := tempAACDir()
-	if err != nil {
-		t.Errorf("tempAACDir failed when creating directory: %v", err)
-	}
-	if dir2 == "" {
-		t.Error("tempAACDir returned empty path")
-	}
-	// Verify the directory was created
-	if _, err := os.Stat(dir2); os.IsNotExist(err) {
-		t.Errorf("tempAACDir did not create directory: %v", err)
-	}
-	os.RemoveAll(dir2)
 }
 
 // TestCheckDuplicate removed - checkDuplicate function was removed
@@ -267,15 +244,12 @@ func TestTempAACDir(t *testing.T) {
 // setupHandleDuplicateTest creates a test environment for handleDuplicate tests
 func setupHandleDuplicateTest(t *testing.T) (downloadsDir string, cleanup func()) {
 	t.Helper()
-	originalEnv := os.Getenv(EnvRadicronHome)
 	testDir := filepath.Join(os.TempDir(), "radikron-test-handle-dup")
-	os.Setenv(EnvRadicronHome, testDir)
 	downloadsDir = filepath.Join(testDir, "downloads")
 	if err := os.MkdirAll(downloadsDir, DirPermissions); err != nil {
 		t.Fatalf("Failed to create test downloads directory: %v", err)
 	}
 	cleanup = func() {
-		os.Setenv(EnvRadicronHome, originalEnv)
 		os.RemoveAll(testDir)
 	}
 	return downloadsDir, cleanup
@@ -339,13 +313,11 @@ func TestHandleDuplicate_MoveToConfiguredFolder(t *testing.T) {
 	}
 	file.Close()
 
-	output, err := newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
-	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
-	}
+	output := newOutputConfigFromPath(citypopDir, "move-test", radigo.AudioFormatAAC)
 	ctx := context.Background()
+	// Use absolute path for downloadDir to match the test directory
 	err = handleDuplicate(
-		ctx, "move-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		ctx, "move-test", radigo.AudioFormatAAC, downloadsDir, "citypop",
 		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	// errSkipAfterMove is a sentinel error indicating successful move, not a real error
 	if err != nil && !errors.Is(err, errSkipAfterMove) {
@@ -501,11 +473,8 @@ func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
 		t.Fatalf("Failed to create configured directory: %v", err)
 	}
 
-	// Create output config for configured folder
-	output, err := newOutputConfig("target-exists-test", radigo.AudioFormatAAC, "downloads", "citypop")
-	if err != nil {
-		t.Fatalf("Failed to create output config: %v", err)
-	}
+	// Create output config for configured folder using absolute path
+	output := newOutputConfigFromPath(configuredDir, "target-exists-test", radigo.AudioFormatAAC)
 
 	// Create target file in configured folder (simulating edge case where target exists)
 	// This tests the edge case handling at line 445-451 in handleDuplicate
@@ -1085,12 +1054,7 @@ func TestGetChunklistFromM3U8(t *testing.T) {
 }
 
 func TestValidateAndCleanupOutputFile(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-validate")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	downloadsDir := filepath.Join(testDir, "downloads")
@@ -1171,12 +1135,7 @@ func TestValidateAndCleanupOutputFile(t *testing.T) {
 }
 
 func TestWriteOutputFile(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-write")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	downloadsDir := filepath.Join(testDir, "downloads")
@@ -1246,12 +1205,7 @@ func TestWriteOutputFile(t *testing.T) {
 }
 
 func TestDownload_InvalidTimeFormat(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	// Create context with asset
@@ -1282,12 +1236,7 @@ func TestDownload_InvalidTimeFormat(t *testing.T) {
 }
 
 func TestDownload_FutureProgram(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	// Set current time to a fixed point
@@ -1331,12 +1280,7 @@ func TestDownload_FutureProgram(t *testing.T) {
 }
 
 func TestDownload_DuplicateProgram(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	// Set current time
@@ -1396,12 +1340,7 @@ func TestDownload_DuplicateProgram(t *testing.T) {
 }
 
 func TestDownload_InvalidEndTime(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-download")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	// Set current time
@@ -1741,11 +1680,7 @@ func TestTimeshiftProgM3U8_NoAsset(t *testing.T) {
 
 func TestDownloadProgram_ChunklistError(t *testing.T) {
 	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-download-prog")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	ctx := context.Background()
@@ -1779,12 +1714,7 @@ func TestDownloadProgram_ChunklistError(t *testing.T) {
 }
 
 func TestDownloadProgram_BulkDownloadError(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-
 	testDir := filepath.Join(os.TempDir(), "radikron-test-download-prog")
-	os.Setenv(EnvRadicronHome, testDir)
 	defer os.RemoveAll(testDir)
 
 	ctx := context.Background()
@@ -2075,10 +2005,7 @@ func TestHandleMoveFromDefaultFolder_TargetExists(t *testing.T) {
 	}
 
 	// Create target file (simulating race condition)
-	output, err := newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
-	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
-	}
+	output := newOutputConfigFromPath(citypopDir, "move-test", radigo.AudioFormatAAC)
 	targetFile := output.AbsPath()
 	err = os.WriteFile(targetFile, []byte("existing content"), 0600)
 	if err != nil {
@@ -2146,16 +2073,12 @@ func TestHandleMoveFromDefaultFolder_MoveErrorTargetAppears(t *testing.T) {
 func TestGetRadicronPath_GetwdError(t *testing.T) {
 	// This is hard to test directly, but we can verify the error path exists
 	// by checking the code handles Getwd errors
-	originalEnv := os.Getenv(EnvRadicronHome)
-	defer os.Setenv(EnvRadicronHome, originalEnv)
-	os.Unsetenv(EnvRadicronHome)
-
-	// getRadicronPath calls os.Getwd() which rarely fails, but the code should handle it
+	// getRadikronPath calls os.Getwd() which rarely fails, but the code should handle it
 	// We can't easily mock os.Getwd, but we verify the error handling exists
-	_, err := getRadicronPath("test")
+	_, err := getRadikronPath("test")
 	// Should succeed in normal cases
 	if err != nil {
-		t.Logf("getRadicronPath returned error (may be expected in some environments): %v", err)
+		t.Logf("getRadikronPath returned error (may be expected in some environments): %v", err)
 	}
 }
 
