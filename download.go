@@ -443,7 +443,7 @@ func downloadProgram(
 func writeOutputFile(ctx context.Context, concatedFile string, output *radigo.OutputConfig) error {
 	switch output.AudioFormat() {
 	case radigo.AudioFormatAAC:
-		return os.Rename(concatedFile, output.AbsPath())
+		return moveFile(concatedFile, output.AbsPath())
 	case radigo.AudioFormatMP3:
 		// Limit concurrent encoding operations to prevent resource exhaustion
 		encodingSem <- struct{}{}

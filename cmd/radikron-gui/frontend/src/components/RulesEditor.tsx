@@ -129,9 +129,6 @@ export const RulesEditor: React.FC = () => {
     const rule = rules.Rules[index];
     const ruleName = rule.Name || `Rule ${index + 1}`;
 
-    // Remove the rule
-    removeRule(index);
-
     // Save the updated rules
     setIsSaving(true);
     try {

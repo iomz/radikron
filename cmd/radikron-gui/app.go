@@ -73,7 +73,7 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 	// Get user's Downloads directory (cross-platform)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		// Fallback to "downloads" if we can't get home directory
+		// Fallback to "radiko" if we can't get home directory
 		homeDir = ""
 	}
 	var downloadDir string
@@ -140,10 +140,14 @@ func (a *App) OnStartup(ctx context.Context) {
 	}
 	a.asset = asset
 
-	// Try to load config
-	cfg, err := config.LoadConfig(a.configFile)
-	if err != nil {
-		// Config doesn't exist, create default config
+	// Check if config file exists before attempting to load
+	_, err = os.Stat(a.configFile)
+	configExists := err == nil
+	configNotFound := err != nil && os.IsNotExist(err)
+
+	var cfg *config.Config
+	if configNotFound {
+		// Config file doesn't exist, create default config
 		runtime.LogInfo(ctx, fmt.Sprintf("Config file not found at %s, creating default config", a.configFile))
 		cfg, err = createDefaultConfig(a.configFile)
 		if err != nil {
@@ -152,6 +156,20 @@ func (a *App) OnStartup(ctx context.Context) {
 			return
 		}
 		runtime.LogInfo(ctx, fmt.Sprintf("Created default config at %s", a.configFile))
+	} else if configExists {
+		// Config file exists, try to load it
+		cfg, err = config.LoadConfig(a.configFile)
+		if err != nil {
+			// File exists but failed to load (e.g., malformed YAML, permission issues)
+			runtime.LogError(ctx, fmt.Sprintf("Failed to load config file at %s: %v. Continuing with default values.", a.configFile, err))
+			// Continue with default values from asset, don't overwrite the existing file
+			return
+		}
+	} else {
+		// Error checking file existence (not IsNotExist)
+		runtime.LogError(ctx, fmt.Sprintf("Failed to check config file at %s: %v. Continuing with default values.", a.configFile, err))
+		// Continue with default values from asset
+		return
 	}
 
 	// Apply config to asset
@@ -316,13 +334,13 @@ func (a *App) OpenDirectory(dirPath string) error {
 	var cmd *exec.Cmd
 	switch goRuntime.GOOS {
 	case "darwin": // macOS
-		cmd = exec.Command("open", dirPath)
+		cmd = exec.CommandContext(a.ctx, "open", dirPath)
 	case "windows":
 		// Use explorer with the directory path
-		cmd = exec.Command("explorer", dirPath)
+		cmd = exec.CommandContext(a.ctx, "explorer", dirPath)
 	case "linux":
 		// Use xdg-open for Linux
-		cmd = exec.Command("xdg-open", dirPath)
+		cmd = exec.CommandContext(a.ctx, "xdg-open", dirPath)
 	default:
 		return fmt.Errorf("unsupported platform: %s", goRuntime.GOOS)
 	}

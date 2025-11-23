@@ -123,8 +123,9 @@ func TestGetRadicronPath(t *testing.T) {
 		t.Errorf("getRadikronPath => %v, want %v", path, expected)
 	}
 
-	// Test with absolute path
-	absPath := "/tmp/test-downloads"
+	// Test with absolute path (cross-platform)
+	tmpDir := os.TempDir()
+	absPath := filepath.Join(tmpDir, "test-downloads")
 	path, err = getRadikronPath(absPath)
 	if err != nil {
 		t.Errorf("getRadikronPath with absolute path failed: %v", err)

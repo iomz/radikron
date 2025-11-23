@@ -49,7 +49,7 @@ type Asset struct {
 	MinimumOutputSize int64
 	NextFetchTime     *time.Time
 	OutputFormat      string
-	DownloadDir       string // directory name for downloads (default: "downloads")
+	DownloadDir       string // directory name for downloads (default: "radiko")
 	Regions           Regions
 	Rules             Rules
 	Schedules         Schedules
