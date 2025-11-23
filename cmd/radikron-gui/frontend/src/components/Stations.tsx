@@ -14,7 +14,7 @@ export const Stations: React.FC = () => {
         <CardTitle>Stations</CardTitle>
         <CardDescription>Available radio stations</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 flex flex-col h-full">
         <div className="flex flex-wrap gap-2">
           {stations.length === 0 ? (
             <Badge variant="outline" aria-label="No stations available">
@@ -28,7 +28,7 @@ export const Stations: React.FC = () => {
             ))
           )}
         </div>
-        <Button variant="outline" onClick={refreshStations} className="w-full">
+        <Button variant="outline" onClick={refreshStations} className="w-full mt-auto">
           Refresh Stations
         </Button>
       </CardContent>

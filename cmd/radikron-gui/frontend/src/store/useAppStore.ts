@@ -55,11 +55,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLoading: (loading) => set({ loading }),
 
   addActivityLog: (type, message) => {
+    const now = new Date();
     const entry: ActivityLogEntry = {
       id: Date.now(),
       type,
       message,
-      timestamp: new Date().toLocaleTimeString(),
+      timestamp: now.toISOString(), // Store full date/time as ISO string for consistent formatting
     };
     set((state) => {
       const newLogs = [...state.activityLogs, entry];

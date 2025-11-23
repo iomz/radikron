@@ -117,6 +117,35 @@ func (a *App) LoadConfig(filename string) error {
 	return nil
 }
 
+// UpdateConfig updates the current configuration with new values
+func (a *App) UpdateConfig(newConfig *config.Config) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if newConfig == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
+	// Check if asset is initialized before applying config
+	if a.asset == nil {
+		return fmt.Errorf("asset not initialized")
+	}
+
+	// Apply config to asset
+	if err := newConfig.ApplyToAsset(a.asset); err != nil {
+		return fmt.Errorf("failed to apply config: %w", err)
+	}
+
+	a.config = newConfig
+
+	// Emit event to frontend
+	runtime.EventsEmit(a.ctx, "config-updated", map[string]any{
+		"success": true,
+	})
+
+	return nil
+}
+
 // SaveConfig saves the current configuration to a file
 func (a *App) SaveConfig(filename string) error {
 	a.mu.Lock()

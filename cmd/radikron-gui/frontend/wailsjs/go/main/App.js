@@ -29,3 +29,7 @@ export function StartMonitoring() {
 export function StopMonitoring() {
   return window['go']['main']['App']['StopMonitoring']();
 }
+
+export function UpdateConfig(arg1) {
+  return window['go']['main']['App']['UpdateConfig'](arg1);
+}
