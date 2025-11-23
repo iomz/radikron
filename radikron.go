@@ -26,7 +26,7 @@ type EventEmitter interface {
 	// EmitDownloadStarted emits when a download starts
 	EmitDownloadStarted(stationID, title, startTime, uri string)
 	// EmitDownloadCompleted emits when a download completes successfully (file written to disk)
-	EmitDownloadCompleted(stationID, title, filePath string)
+	EmitDownloadCompleted(stationID, title, startTime, filePath string)
 	// EmitFileSaved emits when a file is fully saved with metadata tags
 	EmitFileSaved(stationID, title, filePath string)
 	// EmitDownloadSkipped emits when a download is skipped (duplicate, already exists, etc.)

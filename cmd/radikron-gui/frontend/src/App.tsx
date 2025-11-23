@@ -132,7 +132,21 @@ const AppComponent: React.FC = () => {
     const unsubscribeDownloadCompleted = EventsOn(
       "download-completed",
       (data: DownloadEventData) => {
-        addActivityLog("success", `Completed: ${data.title} (${data.station})`);
+        let dateStr = "";
+        if (data.start && data.start.length === 14) {
+          // Format: YYYYMMDDHHmmss -> YYYY/MM/DD
+          const year = data.start.substring(0, 4);
+          const month = data.start.substring(4, 6);
+          const day = data.start.substring(6, 8);
+          const hour = data.start.substring(8, 10);
+          const minute = data.start.substring(10, 12);
+          const second = data.start.substring(12, 14);
+          dateStr = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+        }
+        const message = dateStr
+          ? `Completed: [${data.station}]${data.title} - ${dateStr}`
+          : `Completed: [${data.station}]${data.title}`;
+        addActivityLog("success", message);
       },
     );
 
@@ -160,6 +174,18 @@ const AppComponent: React.FC = () => {
     const unsubscribeLogMessage = EventsOn(
       "log-message",
       (data: LogMessageData) => {
+        // Filter out duplicate messages that are already handled by structured events
+        const message = data.message.toLowerCase();
+        // Skip messages that duplicate structured events
+        if (
+          message.includes("start downloading") ||
+          message.includes("download completed") ||
+          message.includes("+file saved") ||
+          message.includes("start encoding to mp3") ||
+          message.includes("finish encoding to mp3")
+        ) {
+          return; // Skip duplicate log messages
+        }
         addActivityLog(data.type, data.message);
       },
     );

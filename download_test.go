@@ -1837,7 +1837,7 @@ http://invalid-url-2.com/chunk2.aac
 // mockEventEmitter is a test implementation of EventEmitter
 type mockEventEmitter struct {
 	downloadStarted   []struct{ stationID, title, startTime, uri string }
-	downloadCompleted []struct{ stationID, title, filePath string }
+	downloadCompleted []struct{ stationID, title, startTime, filePath string }
 	fileSaved         []struct{ stationID, title, filePath string }
 	downloadSkipped   []struct{ reason, stationID, title, startTime string }
 	encodingStarted   []string
@@ -1849,8 +1849,13 @@ func (m *mockEventEmitter) EmitDownloadStarted(stationID, title, startTime, uri 
 	m.downloadStarted = append(m.downloadStarted, struct{ stationID, title, startTime, uri string }{stationID, title, startTime, uri})
 }
 
-func (m *mockEventEmitter) EmitDownloadCompleted(stationID, title, filePath string) {
-	m.downloadCompleted = append(m.downloadCompleted, struct{ stationID, title, filePath string }{stationID, title, filePath})
+func (m *mockEventEmitter) EmitDownloadCompleted(stationID, title, startTime, filePath string) {
+	m.downloadCompleted = append(
+		m.downloadCompleted,
+		struct{ stationID, title, startTime, filePath string }{
+			stationID, title, startTime, filePath,
+		},
+	)
 }
 
 func (m *mockEventEmitter) EmitFileSaved(stationID, title, filePath string) {
@@ -1898,7 +1903,7 @@ func TestEmitDownloadCompleted_WithEmitter(t *testing.T) {
 	emitter := &mockEventEmitter{}
 	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
 
-	emitDownloadCompleted(ctx, "FMT", "Test Program", "/path/to/file.aac")
+	emitDownloadCompleted(ctx, "FMT", "Test Program", "20230605100000", "/path/to/file.aac")
 
 	if len(emitter.downloadCompleted) != 1 {
 		t.Errorf("Expected 1 download completed event, got %d", len(emitter.downloadCompleted))
@@ -1908,7 +1913,7 @@ func TestEmitDownloadCompleted_WithEmitter(t *testing.T) {
 func TestEmitDownloadCompleted_WithoutEmitter(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	emitDownloadCompleted(ctx, "FMT", "Test Program", "/path/to/file.aac")
+	emitDownloadCompleted(ctx, "FMT", "Test Program", "20230605100000", "/path/to/file.aac")
 }
 
 func TestEmitFileSaved_WithEmitter(t *testing.T) {

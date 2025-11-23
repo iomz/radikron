@@ -37,9 +37,9 @@ func emitDownloadStarted(ctx context.Context, stationID, title, startTime, uri s
 }
 
 // emitDownloadCompleted emits a download completed event if emitter is available, otherwise logs it
-func emitDownloadCompleted(ctx context.Context, stationID, title, filePath string) {
+func emitDownloadCompleted(ctx context.Context, stationID, title, startTime, filePath string) {
 	if emitter := GetEventEmitter(ctx); emitter != nil {
-		emitter.EmitDownloadCompleted(stationID, title, filePath)
+		emitter.EmitDownloadCompleted(stationID, title, startTime, filePath)
 	} else {
 		log.Printf("download completed [%s]%s: %s", stationID, title, filePath)
 	}
@@ -131,56 +131,53 @@ func InitSemaphores(asset *Asset) {
 // so download should be skipped without logging "skip already exists"
 var errSkipAfterMove = errors.New("skip after move")
 
-func Download(
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	prog *Prog,
-) (err error) {
-	asset := GetAsset(ctx)
-	title := prog.Title
-	start := prog.Ft
-	var startTime, nextEndTime time.Time
+// checkFutureProgram checks if the program is in the future and handles it accordingly.
+// Returns true if the program is in the future (and was handled), false otherwise.
+func checkFutureProgram(ctx context.Context, asset *Asset, prog *Prog, startTime time.Time, title, start string) (bool, error) {
+	if !startTime.After(CurrentTime) {
+		return false, nil
+	}
 
-	startTime, err = time.ParseInLocation(DatetimeLayout, start, Location)
+	nextEndTime, err := time.ParseInLocation(DatetimeLayout, prog.To, Location)
 	if err != nil {
-		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to parse start time '%s': %v", start, err))
-		return fmt.Errorf("invalid start time format '%s': %w", start, err)
+		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to parse end time '%s': %v", prog.To, err))
+		return true, fmt.Errorf("invalid end time format '%s': %w", prog.To, err)
 	}
 
-	// the program is in the future
-	if startTime.After(CurrentTime) {
-		nextEndTime, err = time.ParseInLocation(DatetimeLayout, prog.To, Location)
-		if err != nil {
-			emitLogMessage(ctx, "error", fmt.Sprintf("Failed to parse end time '%s': %v", prog.To, err))
-			return fmt.Errorf("invalid end time format '%s': %w", prog.To, err)
-		}
-		// update the next fetching time
-		if asset.NextFetchTime == nil || asset.NextFetchTime.After(nextEndTime) {
-			next := nextEndTime.Add(BufferMinutes * time.Minute)
-			asset.NextFetchTime = &next
-		}
-		emitLogMessage(ctx, "info", fmt.Sprintf(
-			"skipping future program [%s]%s (starts at %s, current time %s)",
-			prog.StationID, title, start, CurrentTime.Format(DatetimeLayout)))
-		return nil
+	// update the next fetching time
+	if asset.NextFetchTime == nil || asset.NextFetchTime.After(nextEndTime) {
+		next := nextEndTime.Add(BufferMinutes * time.Minute)
+		asset.NextFetchTime = &next
 	}
 
-	// Check for duplicate in schedules (for direct calls to Download, e.g., in tests)
-	// Note: In normal flow, processProgram() checks duplicates before adding to schedules,
-	// so this check mainly helps when Download() is called directly
-	if asset.Schedules.HasDuplicate(prog) {
-		emitDownloadSkipped(ctx, "duplicate program", prog.StationID, title, start)
-		emitLogMessage(ctx, "info", fmt.Sprintf("duplicate program already in schedules, skipping [%s]%s (%s)", prog.StationID, title, start))
-		return nil
+	msg := fmt.Sprintf("skipping future program [%s]%s (starts at %s, current time %s)",
+		prog.StationID, title, start, CurrentTime.Format(DatetimeLayout))
+	emitLogMessage(ctx, "info", msg)
+	return true, nil
+}
+
+// checkDuplicateInSchedules checks if the program is already in schedules.
+// Returns true if duplicate (and was handled), false otherwise.
+func checkDuplicateInSchedules(ctx context.Context, asset *Asset, prog *Prog, title, start string) bool {
+	if !asset.Schedules.HasDuplicate(prog) {
+		return false
 	}
 
-	// the output config
+	msg := fmt.Sprintf("duplicate program already in schedules, skipping [%s]%s (%s)", prog.StationID, title, start)
+	emitDownloadSkipped(ctx, "duplicate program", prog.StationID, title, start)
+	emitLogMessage(ctx, "info", msg)
+	return true
+}
+
+// setupOutputConfig creates and sets up the output configuration.
+func setupOutputConfig(ctx context.Context, asset *Asset, prog *Prog, startTime time.Time) (*radigo.OutputConfig, error) {
 	fileBaseName := fmt.Sprintf(
 		"%s_%s_%s",
 		startTime.In(Location).Format(OutputDatetimeLayout),
 		prog.StationID,
-		title,
+		prog.Title,
 	)
+
 	output, err := newOutputConfig(
 		fileBaseName,
 		asset.OutputFormat,
@@ -189,20 +186,81 @@ func Download(
 	)
 	if err != nil {
 		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to configure output: %v", err))
-		return fmt.Errorf("failed to configure output: %w", err)
+		return nil, fmt.Errorf("failed to configure output: %w", err)
 	}
 
 	if err = output.SetupDir(); err != nil {
 		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to setup output dir: %v", err))
-		return fmt.Errorf("failed to setup the output dir: %w", err)
+		return nil, fmt.Errorf("failed to setup the output dir: %w", err)
 	}
 
-	// Final check: verify target location doesn't exist before proceeding with download
-	if output.IsExist() {
-		emitDownloadSkipped(ctx, "already exists", prog.StationID, title, start)
-		emitLogMessage(ctx, "info", fmt.Sprintf("file already exists at target, skipping [%s]%s: %s", prog.StationID, title, output.AbsPath()))
+	return output, nil
+}
+
+// checkFileExists checks if the output file already exists and handles it.
+// Returns true if file exists (and was handled), false otherwise.
+func checkFileExists(ctx context.Context, output *radigo.OutputConfig, prog *Prog, start string) bool {
+	if !output.IsExist() {
+		return false
+	}
+
+	msg := fmt.Sprintf("file already exists at target, skipping [%s]%s: %s", prog.StationID, prog.Title, output.AbsPath())
+	emitDownloadSkipped(ctx, "already exists", prog.StationID, prog.Title, start)
+	emitLogMessage(ctx, "info", msg)
+	return true
+}
+
+func Download(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	prog *Prog,
+) (err error) {
+	asset := GetAsset(ctx)
+	if asset == nil {
+		emitLogMessage(ctx, "error", "Asset is nil in Download context")
+		return fmt.Errorf("asset is nil in context")
+	}
+	title := prog.Title
+	start := prog.Ft
+	var startTime time.Time
+
+	startTime, err = time.ParseInLocation(DatetimeLayout, start, Location)
+	if err != nil {
+		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to parse start time '%s': %v", start, err))
+		return fmt.Errorf("invalid start time format '%s': %w", start, err)
+	}
+
+	// Check if program is in the future
+	if handled, err := checkFutureProgram(ctx, asset, prog, startTime, title, start); err != nil {
+		return err
+	} else if handled {
 		return nil
 	}
+
+	// Check for duplicate in schedules (for direct calls to Download, e.g., in CLI mode or tests)
+	// Note: In GUI mode, processProgram() adds programs to schedules before calling Download(),
+	// but we still need this check for CLI mode and tests where Download() is called directly.
+	if checkDuplicateInSchedules(ctx, asset, prog, title, start) {
+		return nil
+	}
+
+	// Setup output configuration
+	output, err := setupOutputConfig(ctx, asset, prog, startTime)
+	if err != nil {
+		return err
+	}
+
+	// Check if file already exists
+	if checkFileExists(ctx, output, prog, start) {
+		return nil
+	}
+
+	fileBaseName := fmt.Sprintf(
+		"%s_%s_%s",
+		startTime.In(Location).Format(OutputDatetimeLayout),
+		prog.StationID,
+		title,
+	)
 
 	// Check for duplicates and move from default folder to configured folder if needed
 	// handleDuplicate checks other locations and handles skip cases
@@ -220,7 +278,8 @@ func Download(
 	// fetch the recording m3u8 uri
 	uri, err := timeshiftProgM3U8(ctx, prog)
 	if err != nil {
-		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to fetch M3U8 URI: %v", err))
+		msg := fmt.Sprintf("Failed to fetch M3U8 URI: %v", err)
+		emitLogMessage(ctx, "error", msg)
 		return fmt.Errorf(
 			"playlist.m3u8 not available [%s]%s (%s): %s",
 			prog.StationID,
@@ -352,7 +411,7 @@ func downloadProgram(
 	}
 
 	// Download completed - tmp files are ready for concatenation and validation
-	emitDownloadCompleted(ctx, prog.StationID, prog.Title, output.AbsPath())
+	emitDownloadCompleted(ctx, prog.StationID, prog.Title, prog.Ft, output.AbsPath())
 
 	concatedFile, err := radigo.ConcatAACFilesFromList(ctx, aacDir)
 	if err != nil {

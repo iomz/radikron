@@ -86,7 +86,7 @@ export const Activity: React.FC = () => {
                     className={`p-1 text-sm ${getLogTypeColor(log.type)}`}
                   >
                     <div className="flex items-start gap-2">
-                      <span className="text-xs text-muted-foreground min-w-30">
+                      <span className="text-xs text-muted-foreground min-w-32">
                         {formatTimestamp(log.timestamp)}
                       </span>
                       <span className="text-xs flex-1">
