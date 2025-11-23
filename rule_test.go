@@ -922,3 +922,90 @@ func TestMatchSilent(t *testing.T) {
 		t.Error("MatchSilent should return false for rule with no criteria")
 	}
 }
+
+func TestHasRuleWithCriteria(t *testing.T) {
+	var hrwctests = []struct {
+		in  Rules
+		out bool
+	}{
+		{
+			// Empty rules
+			Rules{},
+			false,
+		},
+		{
+			// Rule with Title only
+			Rules{
+				&Rule{"test", "Title", []string{}, "", "", "FMT", "", ""},
+			},
+			true,
+		},
+		{
+			// Rule with Pfm only
+			Rules{
+				&Rule{"test", "", []string{}, "", "Pfm", "FMT", "", ""},
+			},
+			true,
+		},
+		{
+			// Rule with Keyword only
+			Rules{
+				&Rule{"test", "", []string{}, "Keyword", "", "FMT", "", ""},
+			},
+			true,
+		},
+		{
+			// Rule with Title and Pfm
+			Rules{
+				&Rule{"test", "Title", []string{}, "", "Pfm", "FMT", "", ""},
+			},
+			true,
+		},
+		{
+			// Rule with all criteria
+			Rules{
+				&Rule{"test", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+			},
+			true,
+		},
+		{
+			// Rule with no criteria
+			Rules{
+				&Rule{"test", "", []string{}, "", "", "FMT", "", ""},
+			},
+			false,
+		},
+		{
+			// Multiple rules, all without criteria
+			Rules{
+				&Rule{"test1", "", []string{}, "", "", "FMT", "", ""},
+				&Rule{"test2", "", []string{}, "", "", "TBS", "", ""},
+			},
+			false,
+		},
+		{
+			// Multiple rules, some with criteria
+			Rules{
+				&Rule{"test1", "", []string{}, "", "", "FMT", "", ""},
+				&Rule{"test2", "Title", []string{}, "", "", "TBS", "", ""},
+			},
+			true,
+		},
+		{
+			// Multiple rules, all with criteria
+			Rules{
+				&Rule{"test1", "Title1", []string{}, "", "", "FMT", "", ""},
+				&Rule{"test2", "", []string{}, "Keyword", "", "TBS", "", ""},
+				&Rule{"test3", "", []string{}, "", "Pfm", "MBS", "", ""},
+			},
+			true,
+		},
+	}
+
+	for _, tt := range hrwctests {
+		res := tt.in.HasRuleWithCriteria()
+		if tt.out != res {
+			t.Errorf("(%v).HasRuleWithCriteria() => %v, want %v", tt.in, res, tt.out)
+		}
+	}
+}
