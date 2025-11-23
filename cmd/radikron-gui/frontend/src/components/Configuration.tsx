@@ -5,6 +5,7 @@ import * as App from '../../wailsjs/go/main/App';
 
 export const Configuration: React.FC = () => {
   const configInfo = useAppStore((state) => state.configInfo);
+  const addActivityLog = useAppStore((state) => state.addActivityLog);
 
   const handleOpenDirectory = async (dirPath: string) => {
     if (!dirPath || dirPath === 'N/A') {
@@ -14,6 +15,9 @@ export const Configuration: React.FC = () => {
       await App.OpenDirectory(dirPath);
     } catch (error) {
       console.error('Failed to open directory:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      addActivityLog('error', `Failed to open directory: ${errorMessage}`);
     }
   };
 

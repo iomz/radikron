@@ -547,11 +547,15 @@ func getChunklistFromM3U8(uri string) ([]string, error) {
 	return getChunklist(resp.Body)
 }
 
-// getRadikronPath gets the path for the downloads directory
+// getRadikronPath resolves a provided path (or defaults to the user's Downloads/radiko directory).
+// If a relative path is provided, it's resolved relative to the current working directory.
+// If an absolute path is provided, it's used as-is.
+// If no path is provided, it defaults to the user's Downloads/radiko directory,
+// with a fallback to the current working directory/radiko if the home directory cannot be determined.
 func getRadikronPath(path string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("failed to get home directory and working directory: %w", err)
+		return "", fmt.Errorf("failed to get current working directory: %w", err)
 	}
 	switch {
 	case path != "" && !filepath.IsAbs(path):

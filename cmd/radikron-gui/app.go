@@ -21,6 +21,8 @@ import (
 const (
 	// assetRetryDelay is the delay before retrying when asset is nil
 	assetRetryDelay = 10 * time.Second
+	// defaultDirPerm is the default permission mode for directories (0755)
+	defaultDirPerm = 0755
 )
 
 // App struct represents the Wails application
@@ -51,6 +53,12 @@ func getAppConfigDir() (string, error) {
 		return "", fmt.Errorf("failed to get user config dir: %w", err)
 	}
 	appConfigDir := filepath.Join(configDir, "Radikron")
+
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(appConfigDir, defaultDirPerm); err != nil {
+		return "", fmt.Errorf("failed to create app config dir: %w", err)
+	}
+
 	return appConfigDir, nil
 }
 
