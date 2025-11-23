@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,25 +37,41 @@ export const WeeklyProgramBrowser: React.FC = () => {
   // Sort stations alphabetically
   const stations = [...stationsRaw].sort((a, b) => a.localeCompare(b));
   const [searchCriteria, setSearchCriteria] = useState({
-    title: '',
-    pfm: '',
     keyword: '',
     station: '',
   });
   const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
-  const handleSearch = async () => {
-    // At least one criteria must be provided
-    if (!searchCriteria.title && !searchCriteria.pfm && !searchCriteria.keyword && !searchCriteria.station) {
-      setError('Please provide at least one search criteria');
+  // Fetch program snapshots when component mounts
+  useEffect(() => {
+    const fetchSnapshots = async () => {
+      try {
+        setIsInitializing(true);
+        // @ts-ignore - FetchProgramSnapshots will be available after Wails rebuild
+        await App.FetchProgramSnapshots();
+      } catch (err) {
+        console.error('Failed to fetch program snapshots:', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(`Failed to load program data: ${errorMessage}`);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    fetchSnapshots();
+  }, []);
+
+  const performSearch = useCallback(async () => {
+    // Don't search while initializing
+    if (isInitializing) {
       return;
     }
 
     setIsLoading(true);
     setError(null);
-    setPrograms([]);
 
     try {
       // Convert "all" back to empty string for backend
@@ -63,8 +79,8 @@ export const WeeklyProgramBrowser: React.FC = () => {
       
       // @ts-ignore - SearchWeeklyPrograms will be available after Wails rebuild
       const results: any[] = await App.SearchWeeklyPrograms(
-        searchCriteria.title,
-        searchCriteria.pfm,
+        '', // title (not used)
+        '', // pfm (not used)
         searchCriteria.keyword,
         stationValue
       );
@@ -108,12 +124,27 @@ export const WeeklyProgramBrowser: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  }, [searchCriteria.keyword, searchCriteria.station, isInitializing]);
+
+  // Auto-search when criteria changes (debounced)
+  useEffect(() => {
+    if (isInitializing) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      performSearch();
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [performSearch, isInitializing]);
+
+  const handleSearch = () => {
+    performSearch();
   };
 
   const handleClear = () => {
     setSearchCriteria({
-      title: '',
-      pfm: '',
       keyword: '',
       station: '',
     });
@@ -175,10 +206,10 @@ export const WeeklyProgramBrowser: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleSearch} disabled={isLoading}>
+            <Button onClick={handleSearch} disabled={isLoading || isInitializing}>
               {isLoading ? 'Searching...' : 'Search'}
             </Button>
-            <Button onClick={handleClear} variant="outline" disabled={isLoading}>
+            <Button onClick={handleClear} variant="outline" disabled={isLoading || isInitializing}>
               Clear
             </Button>
           </div>
@@ -244,7 +275,13 @@ export const WeeklyProgramBrowser: React.FC = () => {
             </div>
           )}
 
-          {!error && programs.length === 0 && !isLoading && (
+          {isInitializing && (
+            <div className="flex-shrink-0 text-center py-8 text-muted-foreground">
+              <p>Loading program data...</p>
+            </div>
+          )}
+
+          {!error && !isInitializing && programs.length === 0 && !isLoading && (
             <div className="flex-shrink-0 text-center py-8 text-muted-foreground">
               <p>No programs found. Try adjusting your search criteria.</p>
             </div>

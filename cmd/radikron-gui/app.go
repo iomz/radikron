@@ -27,22 +27,24 @@ const (
 
 // App struct represents the Wails application
 type App struct {
-	ctx           context.Context
-	asset         *radikron.Asset
-	client        *radiko.Client
-	config        *config.Config
-	configFile    string
-	monitoring    bool
-	monitorDone   chan struct{}
-	monitorWg     *sync.WaitGroup
-	monitorCancel context.CancelFunc
-	mu            sync.RWMutex
+	ctx              context.Context
+	asset            *radikron.Asset
+	client           *radiko.Client
+	config           *config.Config
+	configFile       string
+	monitoring       bool
+	monitorDone      chan struct{}
+	monitorWg        *sync.WaitGroup
+	monitorCancel    context.CancelFunc
+	programSnapshots map[string]radikron.Progs // stationID -> programs snapshot
+	mu               sync.RWMutex
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		monitorWg: &sync.WaitGroup{},
+		monitorWg:        &sync.WaitGroup{},
+		programSnapshots: make(map[string]radikron.Progs),
 	}
 }
 
@@ -320,8 +322,41 @@ func (a *App) GetAvailableStations() ([]string, error) {
 	return a.asset.AvailableStations, nil
 }
 
+// FetchProgramSnapshots fetches program snapshots from all available stations
+// This function performs network I/O without holding the lock to avoid blocking
+func (a *App) FetchProgramSnapshots() error {
+	// Get list of stations to fetch (read lock only to get the list)
+	a.mu.RLock()
+	if a.asset == nil {
+		a.mu.RUnlock()
+		return fmt.Errorf("asset not initialized")
+	}
+	stations := make([]string, len(a.asset.AvailableStations))
+	copy(stations, a.asset.AvailableStations)
+	a.mu.RUnlock()
+
+	// Fetch programs from all stations without holding the lock
+	snapshots := make(map[string]radikron.Progs)
+	for _, stationID := range stations {
+		programs, err := radikron.FetchWeeklyPrograms(stationID)
+		if err != nil {
+			// Log error but continue with other stations
+			runtime.LogError(a.ctx, fmt.Sprintf("Failed to fetch programs for station %s: %v", stationID, err))
+			continue
+		}
+		snapshots[stationID] = programs
+	}
+
+	// Update snapshots with write lock (brief, no I/O)
+	a.mu.Lock()
+	a.programSnapshots = snapshots
+	a.mu.Unlock()
+
+	return nil
+}
+
 // SearchWeeklyPrograms searches weekly programs using rule criteria
-// It fetches programs from all available stations and filters them using the provided rule
+// It searches on the cached program snapshots instead of making network calls
 func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationID string) (radikron.Progs, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -356,13 +391,13 @@ func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationI
 		stationsToSearch = []string{ruleStationID}
 	}
 
-	// Fetch programs from all stations and filter
+	// Search on cached snapshots instead of making network calls
 	var matchingPrograms radikron.Progs
 	for _, stationID := range stationsToSearch {
-		programs, err := radikron.FetchWeeklyPrograms(stationID)
-		if err != nil {
-			// Log error but continue with other stations
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to fetch programs for station %s: %v", stationID, err))
+		programs, exists := a.programSnapshots[stationID]
+		if !exists {
+			// If snapshot doesn't exist for this station, skip it
+			runtime.LogError(a.ctx, fmt.Sprintf("No program snapshot available for station %s", stationID))
 			continue
 		}
 
