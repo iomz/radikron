@@ -71,6 +71,27 @@ var matchtests = []struct {
 		},
 		false,
 	},
+	{
+		// Rule with no optional criteria (Title, Pfm, Keyword) should not match
+		&Rule{"matchtests", "", []string{}, "", "", "FMT", "", ""},
+		"FMT",
+		&Prog{
+			"ID",
+			"FMT",
+			"20230625050000",
+			"20230625060000",
+			"Title",
+			"Keyword",
+			"",
+			"Pfm",
+			[]string{},
+			ProgGenre{},
+			"",
+			"",
+			"",
+		},
+		false,
+	},
 }
 
 func TestMatch(t *testing.T) {
@@ -763,5 +784,141 @@ func TestFindMatch(t *testing.T) {
 				t.Errorf("Rules.FindMatch(%s, %v) => rule with name %s, want %s", tt.stationID, tt.prog, got.Name, tt.expected.Name)
 			}
 		}
+	}
+}
+
+func TestFindMatchSilent(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
+	var findmatchsilenttests = []struct {
+		rules     Rules
+		stationID string
+		prog      *Prog
+		expected  *Rule
+	}{
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+		},
+		{
+			Rules{
+				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			},
+			"MBS",
+			&Prog{
+				"ID",
+				"MBS",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			nil,
+		},
+		{
+			Rules{},
+			"FMT",
+			&Prog{
+				"ID",
+				"FMT",
+				"20230625050000",
+				"20230625060000",
+				"Title",
+				"Keyword",
+				"",
+				"Pfm",
+				[]string{},
+				ProgGenre{},
+				"",
+				"",
+				"",
+			},
+			nil,
+		},
+	}
+
+	for _, tt := range findmatchsilenttests {
+		got := tt.rules.FindMatchSilent(tt.stationID, tt.prog)
+		if tt.expected == nil {
+			if got != nil {
+				t.Errorf("Rules.FindMatchSilent(%s, %v) => %v, want nil", tt.stationID, tt.prog, got)
+			}
+		} else {
+			if got == nil {
+				t.Errorf("Rules.FindMatchSilent(%s, %v) => nil, want %v", tt.stationID, tt.prog, tt.expected)
+			} else if got.Name != tt.expected.Name {
+				t.Errorf("Rules.FindMatchSilent(%s, %v) => rule with name %s, want %s", tt.stationID, tt.prog, got.Name, tt.expected.Name)
+			}
+		}
+	}
+}
+
+func TestMatchSilent(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Now().In(Location)
+
+	rule := &Rule{"silenttest", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""}
+	prog := &Prog{
+		"ID",
+		"FMT",
+		"20230625050000",
+		"20230625060000",
+		"Title",
+		"Keyword",
+		"",
+		"Pfm",
+		[]string{},
+		ProgGenre{},
+		"",
+		"",
+		"",
+	}
+
+	// Test that MatchSilent works like Match but without logging
+	got := rule.MatchSilent("FMT", prog)
+	if !got {
+		t.Error("MatchSilent should return true for matching rule")
+	}
+
+	// Test with non-matching rule
+	rule2 := &Rule{"silenttest", "OtherTitle", []string{}, "Keyword", "Pfm", "FMT", "", ""}
+	got = rule2.MatchSilent("FMT", prog)
+	if got {
+		t.Error("MatchSilent should return false for non-matching rule")
+	}
+
+	// Test with rule that has no criteria (should not match)
+	rule3 := &Rule{"silenttest", "", []string{}, "", "", "FMT", "", ""}
+	got = rule3.MatchSilent("FMT", prog)
+	if got {
+		t.Error("MatchSilent should return false for rule with no criteria")
 	}
 }

@@ -12,9 +12,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useAppStore } from '@/store/useAppStore';
 import * as App from '../../wailsjs/go/main/App';
 import { radikron } from '../../wailsjs/go/models';
+import { BrowserOpenURL } from '../../wailsjs/runtime/runtime';
 
 interface Program {
   ID: string;
@@ -44,6 +52,7 @@ export const WeeklyProgramBrowser: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
 
   // Fetch program snapshots when component mounts
   useEffect(() => {
@@ -67,6 +76,13 @@ export const WeeklyProgramBrowser: React.FC = () => {
   const performSearch = useCallback(async () => {
     // Don't search while initializing
     if (isInitializing) {
+      return;
+    }
+
+    // Don't search if keyword is empty
+    if (!searchCriteria.keyword.trim()) {
+      setPrograms([]);
+      setError(null);
       return;
     }
 
@@ -229,7 +245,11 @@ export const WeeklyProgramBrowser: React.FC = () => {
                 <ScrollArea className="h-full">
                   <div className="space-y-3 pr-4">
                   {programs.map((program) => (
-                    <Card key={program.ID} className="p-4">
+                    <Card
+                      key={program.ID}
+                      className="p-4 cursor-pointer hover:bg-accent transition-colors"
+                      onClick={() => setSelectedProgram(program)}
+                    >
                       <div className="space-y-2">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -288,6 +308,106 @@ export const WeeklyProgramBrowser: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={selectedProgram !== null} onOpenChange={(open) => !open && setSelectedProgram(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto [&>button]:text-foreground [&>button:hover]:text-foreground [&>button]:opacity-100 [&>button>svg]:text-foreground">
+          {selectedProgram && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{selectedProgram.Title}</DialogTitle>
+                <DialogDescription>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge variant="outline">{selectedProgram.StationID}</Badge>
+                    {selectedProgram.Pfm && (
+                      <span className="text-sm text-foreground">Host: {selectedProgram.Pfm}</span>
+                    )}
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Start Time</p>
+                    <p className="text-sm text-foreground">{formatDateTime(selectedProgram.Ft)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">End Time</p>
+                    <p className="text-sm text-foreground">{formatDateTime(selectedProgram.To)}</p>
+                  </div>
+                </div>
+
+                {selectedProgram.Desc && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-1">Description</p>
+                    <div
+                      className="text-sm text-foreground [&_*]:text-foreground [&_a]:text-primary [&_a]:underline [&_a:hover]:opacity-80"
+                      dangerouslySetInnerHTML={{ __html: selectedProgram.Desc }}
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        const link = target.closest('a');
+                        if (link && link.href) {
+                          e.preventDefault();
+                          BrowserOpenURL(link.href);
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {selectedProgram.Info && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-1">Info</p>
+                    <div
+                      className="text-sm text-foreground [&_*]:text-foreground [&_a]:text-primary [&_a]:underline [&_a:hover]:opacity-80"
+                      dangerouslySetInnerHTML={{ __html: selectedProgram.Info }}
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        const link = target.closest('a');
+                        if (link && link.href) {
+                          e.preventDefault();
+                          BrowserOpenURL(link.href);
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {selectedProgram.Genre && (selectedProgram.Genre.Personality || selectedProgram.Genre.Program) && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-2">Genre</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {selectedProgram.Genre.Personality && (
+                        <Badge variant="secondary">{selectedProgram.Genre.Personality}</Badge>
+                      )}
+                      {selectedProgram.Genre.Program && (
+                        <Badge variant="secondary">{selectedProgram.Genre.Program}</Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {selectedProgram.Tags && selectedProgram.Tags.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-2">Tags</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {selectedProgram.Tags.map((tag, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-1">Program ID</p>
+                  <p className="text-sm font-mono text-xs text-foreground">{selectedProgram.ID}</p>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

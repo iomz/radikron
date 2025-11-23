@@ -97,6 +97,10 @@ func (r *Rule) match(stationID string, p *Prog, suppressLogs bool) bool {
 	}
 
 	// 4. match
+	// If no optional criteria (Title, Pfm, Keyword) are set, match nothing
+	if !r.HasTitle() && !r.HasPfm() && !r.HasKeyword() {
+		return false
+	}
 	if r.matchPfm(p.Pfm, suppressLogs) && r.matchTitle(p.Title, suppressLogs) && r.matchKeyword(p, suppressLogs) {
 		return true
 	}
