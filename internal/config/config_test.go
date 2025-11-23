@@ -743,7 +743,8 @@ func TestLoadRulesFromViper(t *testing.T) {
 }
 
 func TestLoadRulesFromViperWithError(t *testing.T) {
-	t.Parallel()
+	t.Helper()
+	// Cannot run in parallel due to global viper instance
 	viper.Reset()
 	viper.SetConfigType("yaml")
 
@@ -810,7 +811,8 @@ func TestSetupViperWithCustomPath(t *testing.T) {
 }
 
 func TestSetupViperWithInvalidPath(t *testing.T) {
-	t.Parallel()
+	t.Helper()
+	// Cannot run in parallel due to global viper instance
 	// Test with a path that filepath.Abs can't handle
 	// On Unix systems, this is hard to trigger, but we can test the error path exists
 	// Note: filepath.Abs may not error on all systems, so we just verify the function handles it
@@ -821,7 +823,7 @@ func TestSetupViperWithInvalidPath(t *testing.T) {
 }
 
 func TestLoadConfigGetwdError(t *testing.T) {
-	t.Parallel()
+	t.Helper()
 	// This is hard to test directly, but we can verify the error path exists
 	// by checking the code handles Getwd errors
 	// In practice, Getwd rarely fails, but the code should handle it
@@ -831,7 +833,7 @@ func TestLoadConfigGetwdError(t *testing.T) {
 }
 
 func TestLoadConfigSetupViperError(t *testing.T) {
-	t.Parallel()
+	t.Helper()
 	// Test that setupViper errors are propagated
 	// We can't easily trigger setupViper to error without filepath.Abs failing
 	// which is tested separately
@@ -854,7 +856,7 @@ func TestLoadRulesWithMissingConfigFile(t *testing.T) {
 }
 
 func TestLoadRulesWithAccessError(t *testing.T) {
-	t.Parallel()
+	t.Helper()
 	// Test with a file that exists but can't be accessed
 	// This is platform-specific and hard to test portably
 	// We verify the error path exists in the code
