@@ -74,6 +74,7 @@ Create flexible rules to automatically capture your favorite programs using mult
 
 - **Custom Download Directories**: Configure where your files are saved
 - **Rule-Based Folders**: Automatically organize downloads into subfolders based on matching rules
+- **Rule Order Precedence**: When a program matches multiple rules, the first matching rule (by order in config) determines the destination folder
 - **Configurable File Formats**: Choose between AAC (default) or MP3 output formats
 
 ### 🏷️ Automatic ID3 Tagging
@@ -193,6 +194,8 @@ Each rule can use one or more of the following matching criteria (all support pa
 - **`folder`**: (Optional) Organize downloads for this rule into a subfolder
 
 Rules are evaluated with AND logic - a program must match all specified criteria in a rule.
+
+**Important**: Rule order matters! When a program matches multiple rules, the first matching rule (in the order they appear in your config file) determines which folder the file is saved to. This allows you to prioritize certain rules by placing them earlier in your configuration.
 
 ### Example Configuration
 

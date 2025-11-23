@@ -182,6 +182,8 @@ type configYAML struct {
 	MaxDownloadingConcurrency *int                 `yaml:"max-downloading-concurrency,omitempty"`
 	MaxEncodingConcurrency    *int                 `yaml:"max-encoding-concurrency,omitempty"`
 	Rules                     map[string]*ruleYAML `yaml:"rules,omitempty"`
+	// rulesOrder stores the order of rule names for custom marshaling
+	rulesOrder []string
 }
 
 // ruleYAML represents a rule in YAML format
@@ -195,12 +197,14 @@ type ruleYAML struct {
 	Folder    string   `yaml:"folder,omitempty"`
 }
 
-// convertRulesToYAML converts rules to YAML format
-func convertRulesToYAML(rules radikron.Rules) map[string]*ruleYAML {
+// convertRulesToYAML converts rules to YAML format, preserving order
+// Returns both the map and the order of rule names
+func convertRulesToYAML(rules radikron.Rules) (rulesMap map[string]*ruleYAML, order []string) {
 	if len(rules) == 0 {
-		return nil
+		return nil, nil
 	}
-	result := make(map[string]*ruleYAML)
+	rulesMap = make(map[string]*ruleYAML, len(rules))
+	order = make([]string, 0, len(rules))
 	for _, rule := range rules {
 		ruleYAMLObj := &ruleYAML{
 			Folder: rule.Folder,
@@ -223,9 +227,10 @@ func convertRulesToYAML(rules radikron.Rules) map[string]*ruleYAML {
 		if rule.HasWindow() {
 			ruleYAMLObj.Window = rule.Window
 		}
-		result[rule.Name] = ruleYAMLObj
+		rulesMap[rule.Name] = ruleYAMLObj
+		order = append(order, rule.Name)
 	}
-	return result
+	return rulesMap, order
 }
 
 // SaveConfig saves the configuration to a file in YAML format
@@ -260,11 +265,11 @@ func (c *Config) SaveConfig(filename string) error {
 		cfgYAML.MaxEncodingConcurrency = &c.MaxEncodingConcurrency
 	}
 
-	// Convert rules to YAML format
-	cfgYAML.Rules = convertRulesToYAML(c.Rules)
+	// Convert rules to YAML format, preserving order
+	cfgYAML.Rules, cfgYAML.rulesOrder = convertRulesToYAML(c.Rules)
 
-	// Marshal to YAML
-	data, err := yaml.Marshal(&cfgYAML)
+	// Marshal to YAML using custom marshaler to preserve order
+	data, err := marshalConfigWithOrder(&cfgYAML)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -279,6 +284,98 @@ func (c *Config) SaveConfig(filename string) error {
 		return fmt.Errorf("failed to rename config file: %w", err)
 	}
 	return nil
+}
+
+// marshalConfigWithOrder marshals config to YAML while preserving the order of rules
+func marshalConfigWithOrder(cfg *configYAML) ([]byte, error) {
+	// First, marshal the config without rules to get the base structure
+	cfgWithoutRules := *cfg
+	cfgWithoutRules.Rules = nil
+	cfgWithoutRules.rulesOrder = nil
+
+	baseData, err := yaml.Marshal(&cfgWithoutRules)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the base YAML to get a node structure
+	var baseNode yaml.Node
+	if err := yaml.Unmarshal(baseData, &baseNode); err != nil {
+		return nil, fmt.Errorf("failed to parse base YAML: %w", err)
+	}
+
+	// Find the root mapping node
+	var rootMapping *yaml.Node
+	if baseNode.Kind == yaml.DocumentNode && len(baseNode.Content) > 0 {
+		rootMapping = baseNode.Content[0]
+	} else {
+		rootMapping = &baseNode
+	}
+
+	if rootMapping.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("expected mapping node")
+	}
+
+	// Add rules section with preserved order
+	if len(cfg.Rules) > 0 {
+		// Create key node for "rules"
+		rulesKeyNode := &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Value: "rules",
+		}
+
+		// Create mapping node for rules
+		rulesMappingNode := &yaml.Node{
+			Kind: yaml.MappingNode,
+		}
+
+		// Add rules in order
+		for _, ruleName := range cfg.rulesOrder {
+			rule, exists := cfg.Rules[ruleName]
+			if !exists {
+				continue
+			}
+
+			// Create key node for rule name
+			ruleKeyNode := &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Value: ruleName,
+			}
+
+			// Marshal rule to get its node structure
+			ruleData, err := yaml.Marshal(rule)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal rule %s: %w", ruleName, err)
+			}
+
+			var ruleDocNode yaml.Node
+			if err := yaml.Unmarshal(ruleData, &ruleDocNode); err != nil {
+				return nil, fmt.Errorf("failed to parse rule %s: %w", ruleName, err)
+			}
+
+			// Get the mapping node from the rule document
+			var ruleMapping *yaml.Node
+			if ruleDocNode.Kind == yaml.DocumentNode && len(ruleDocNode.Content) > 0 {
+				ruleMapping = ruleDocNode.Content[0]
+			} else {
+				ruleMapping = &ruleDocNode
+			}
+
+			// Ensure it's a mapping node
+			if ruleMapping.Kind != yaml.MappingNode {
+				return nil, fmt.Errorf("expected mapping node for rule %s", ruleName)
+			}
+
+			// Add key-value pair to rules mapping
+			rulesMappingNode.Content = append(rulesMappingNode.Content, ruleKeyNode, ruleMapping)
+		}
+
+		// Add rules key-value pair to root mapping
+		rootMapping.Content = append(rootMapping.Content, rulesKeyNode, rulesMappingNode)
+	}
+
+	// Marshal the complete node structure
+	return yaml.Marshal(&baseNode)
 }
 
 // findRulesNode finds the "rules" mapping node in the YAML document.
