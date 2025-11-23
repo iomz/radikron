@@ -56,6 +56,16 @@ func (rs Rules) HasRuleForStationID(stationID string) bool {
 	return false
 }
 
+// HasRuleWithCriteria returns true if at least one rule has optional criteria (Title, Pfm, or Keyword)
+func (rs Rules) HasRuleWithCriteria() bool {
+	for _, r := range rs {
+		if r.HasTitle() || r.HasPfm() || r.HasKeyword() {
+			return true
+		}
+	}
+	return false
+}
+
 type Rule struct {
 	Name      string   `mapstructure:"name"`       // required
 	Title     string   `mapstructure:"title"`      // required if pfm and keyword are unset

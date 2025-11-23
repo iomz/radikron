@@ -769,8 +769,13 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 			}
 		}
 	} else {
-		// Default sleep if no next fetch time
-		time.Sleep(1 * time.Hour)
+		// Default sleep if no next fetch time - use timer with context cancellation
+		timer := time.NewTimer(1 * time.Hour)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
+		}
 	}
 }
 
@@ -840,6 +845,18 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 
 		// Check if rules are configured
 		a.checkAndLogRulesCount(asset)
+
+		// Skip processing if no rules or all rules have no criteria
+		if len(asset.Rules) == 0 || !asset.Rules.HasRuleWithCriteria() {
+			log.Printf("skipping program collection: no rules with criteria configured")
+			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+				"type":    "warning",
+				"message": "No rules with criteria configured - skipping program collection",
+			})
+			// Sleep until next fetch time
+			a.logAndSleepUntilNextFetch(asset, ctx)
+			continue
+		}
 
 		// Collect and process programs
 		a.processAllPrograms(asset, fetcher, downloadCtx, downloader)
