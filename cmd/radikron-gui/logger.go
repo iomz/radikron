@@ -19,9 +19,13 @@ const (
 	minFilenameParts = 3 // date, time, station (title is optional)
 )
 
+// DownloadCompletedCallback is called when a download completes
+type DownloadCompletedCallback func(stationID, title, startTime string)
+
 // WailsEventEmitter implements radikron.EventEmitter interface using Wails runtime events
 type WailsEventEmitter struct {
-	ctx context.Context
+	ctx                 context.Context
+	onDownloadCompleted DownloadCompletedCallback
 }
 
 // Ensure WailsEventEmitter implements radikron.EventEmitter at compile time
@@ -30,6 +34,11 @@ var _ radikron.EventEmitter = (*WailsEventEmitter)(nil)
 // NewWailsEventEmitter creates a new WailsEventEmitter
 func NewWailsEventEmitter(ctx context.Context) *WailsEventEmitter {
 	return &WailsEventEmitter{ctx: ctx}
+}
+
+// SetDownloadCompletedCallback sets the callback for download completion
+func (e *WailsEventEmitter) SetDownloadCompletedCallback(callback DownloadCompletedCallback) {
+	e.onDownloadCompleted = callback
 }
 
 // EmitDownloadStarted implements radikron.EventEmitter
@@ -56,6 +65,11 @@ func (e *WailsEventEmitter) EmitDownloadCompleted(stationID, title, startTime, f
 		"title":   title,
 		"start":   startTime,
 	})
+
+	// Call callback if set (for handling manual injections)
+	if e.onDownloadCompleted != nil {
+		e.onDownloadCompleted(stationID, title, startTime)
+	}
 }
 
 // EmitFileSaved implements radikron.EventEmitter

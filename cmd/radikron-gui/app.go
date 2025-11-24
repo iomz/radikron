@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -23,28 +24,48 @@ const (
 	assetRetryDelay = 10 * time.Second
 	// defaultDirPerm is the default permission mode for directories (0755)
 	defaultDirPerm = 0755
+	// loggerCleanupDelay is the delay before cleaning up the logger after download starts
+	loggerCleanupDelay = 10 * time.Minute
+	// manualInjectionsFilePerm is the file permission mode for manual injections file (0600 = read/write for owner only)
+	manualInjectionsFilePerm = 0600
 )
+
+// manualInjection represents a manually injected program
+type manualInjection struct {
+	ProgramID  string `json:"program_id"`
+	StationID  string `json:"station_id"`
+	Ft         string `json:"ft"`
+	To         string `json:"to"`
+	Title      string `json:"title"`
+	RuleName   string `json:"rule_name,omitempty"`
+	RuleFolder string `json:"rule_folder,omitempty"`
+}
 
 // App struct represents the Wails application
 type App struct {
-	ctx              context.Context
-	asset            *radikron.Asset
-	client           *radiko.Client
-	config           *config.Config
-	configFile       string
-	monitoring       bool
-	monitorDone      chan struct{}
-	monitorWg        *sync.WaitGroup
-	monitorCancel    context.CancelFunc
-	programSnapshots map[string]radikron.Progs // stationID -> programs snapshot
-	mu               sync.RWMutex
+	ctx                    context.Context
+	asset                  *radikron.Asset
+	client                 *radiko.Client
+	config                 *config.Config
+	configFile             string
+	manualInjectionsFile   string
+	monitoring             bool
+	monitorDone            chan struct{}
+	monitorWg              *sync.WaitGroup
+	monitorCancel          context.CancelFunc
+	programSnapshots       map[string]radikron.Progs   // stationID -> programs snapshot
+	manualInjections       map[string]*manualInjection // program ID -> injection data
+	pendingManualDownloads map[string]string           // program ID -> program ID (for tracking downloads in progress)
+	mu                     sync.RWMutex
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		monitorWg:        &sync.WaitGroup{},
-		programSnapshots: make(map[string]radikron.Progs),
+		monitorWg:              &sync.WaitGroup{},
+		programSnapshots:       make(map[string]radikron.Progs),
+		manualInjections:       make(map[string]*manualInjection),
+		pendingManualDownloads: make(map[string]string),
 	}
 }
 
@@ -121,9 +142,11 @@ func (a *App) OnStartup(ctx context.Context) {
 		runtime.LogError(ctx, fmt.Sprintf("Failed to get app config directory: %v", err))
 		// Fallback to current directory
 		a.configFile = "config.yml"
+		a.manualInjectionsFile = "manual-injections.json"
 	} else {
 		// Use config.yml in app config directory
 		a.configFile = filepath.Join(appConfigDir, "config.yml")
+		a.manualInjectionsFile = filepath.Join(appConfigDir, "manual-injections.json")
 	}
 
 	// Initialize radiko client
@@ -183,6 +206,287 @@ func (a *App) OnStartup(ctx context.Context) {
 
 	a.config = cfg
 	runtime.LogInfo(ctx, fmt.Sprintf("Config loaded successfully from %s", a.configFile))
+
+	// Load manually injected programs
+	if err := a.loadManualInjections(); err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("Failed to load manual injections: %v", err))
+		// Continue without manual injections
+	}
+}
+
+// fetchProgramDetailsForStations fetches weekly programs for given stations and returns a map of program IDs to full program details
+func (a *App) fetchProgramDetailsForStations(stationIDs []string) map[string]*radikron.Prog {
+	programDetailsMap := make(map[string]*radikron.Prog)
+	fetcher := &radikronProgramFetcher{}
+
+	for _, stationID := range stationIDs {
+		weeklyPrograms, err := fetcher.FetchWeeklyPrograms(stationID)
+		if err != nil {
+			runtime.LogError(a.ctx, fmt.Sprintf(
+				"Failed to fetch weekly programs for station %s to update manual injection details: %v",
+				stationID, err))
+			continue
+		}
+
+		for _, p := range weeklyPrograms {
+			programDetailsMap[p.ID] = p
+		}
+	}
+
+	return programDetailsMap
+}
+
+// updateProgWithDetails updates a program with full details if available
+func updateProgWithDetails(prog *radikron.Prog, programDetailsMap map[string]*radikron.Prog) {
+	if fullProg, exists := programDetailsMap[prog.ID]; exists {
+		prog.Desc = fullProg.Desc
+		prog.Info = fullProg.Info
+		prog.Pfm = fullProg.Pfm
+		prog.Tags = fullProg.Tags
+		prog.Genre = fullProg.Genre
+		prog.M3U8 = fullProg.M3U8
+	}
+}
+
+// setupDownloadForPastProgram sets up and starts download for a past program
+func (a *App) setupDownloadForPastProgram(prog *radikron.Prog) error {
+	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
+
+	emitEvent := func(ctx context.Context, eventName string, data any) {
+		runtime.EventsEmit(ctx, eventName, data)
+	}
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, emitEvent)
+	programID := prog.ID
+	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
+		a.HandleDownloadCompletedByID(programID, stationID, title, startTime)
+	})
+	ctx = context.WithValue(ctx, radikron.ContextKey("eventEmitter"), eventEmitter)
+
+	go func() {
+		time.Sleep(loggerCleanupDelay)
+		cleanupLogger()
+	}()
+
+	wg := &sync.WaitGroup{}
+	err := radikron.Download(ctx, wg, prog)
+	if err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to download past program [%s]%s immediately: %v", prog.StationID, prog.Title, err))
+		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			"type":    "error",
+			"message": fmt.Sprintf("Failed to download past program [%s]%s immediately: %v", prog.StationID, prog.Title, err),
+		})
+		return err
+	}
+
+	return nil
+}
+
+// processLoadedInjection processes a single loaded injection (past or future)
+func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, programDetailsMap map[string]*radikron.Prog) {
+	updateProgWithDetails(prog, programDetailsMap)
+
+	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
+	if err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to parse start time for loaded program %s: %v", prog.ID, err))
+		if !a.asset.Schedules.HasDuplicate(prog) {
+			a.asset.Schedules = append(a.asset.Schedules, prog)
+		}
+		return
+	}
+
+	if !startTime.After(radikron.CurrentTime) {
+		// Past program - check if file exists
+		fileBaseName := fmt.Sprintf(
+			"%s_%s_%s",
+			startTime.In(radikron.Location).Format(radikron.OutputDatetimeLayout),
+			prog.StationID,
+			prog.Title,
+		)
+
+		output, err := radikron.NewOutputConfig(
+			fileBaseName,
+			a.asset.OutputFormat,
+			a.asset.DownloadDir,
+			prog.RuleFolder,
+		)
+		if err == nil && output.IsExist() {
+			delete(a.manualInjections, inj.ProgramID)
+			runtime.LogInfo(a.ctx, fmt.Sprintf("Skipping loaded program [%s]%s - file already exists", prog.StationID, prog.Title))
+			return
+		}
+
+		// Setup and start download (error is already logged in setupDownloadForPastProgram)
+		_ = a.setupDownloadForPastProgram(prog)
+
+		if !a.asset.Schedules.HasDuplicate(prog) {
+			a.asset.Schedules = append(a.asset.Schedules, prog)
+		}
+		a.pendingManualDownloads[prog.ID] = prog.ID
+	} else {
+		// Future program
+		if !a.asset.Schedules.HasDuplicate(prog) {
+			a.asset.Schedules = append(a.asset.Schedules, prog)
+		}
+		endTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.To, radikron.Location)
+		if err == nil {
+			next := endTime.Add(radikron.BufferMinutes * time.Minute)
+			if a.asset.NextFetchTime == nil || a.asset.NextFetchTime.After(next) {
+				a.asset.NextFetchTime = &next
+			}
+		}
+	}
+}
+
+// loadManualInjections loads manually injected programs from disk
+func (a *App) loadManualInjections() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.manualInjectionsFile == "" {
+		return nil
+	}
+
+	// Check if file exists
+	_, err := os.Stat(a.manualInjectionsFile)
+	if os.IsNotExist(err) {
+		// File doesn't exist yet, that's okay
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to stat manual injections file: %w", err)
+	}
+
+	// Read file
+	data, err := os.ReadFile(a.manualInjectionsFile)
+	if err != nil {
+		return fmt.Errorf("failed to read manual injections file: %w", err)
+	}
+
+	// Parse JSON
+	var injections []*manualInjection
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &injections); err != nil {
+			return fmt.Errorf("failed to parse manual injections JSON: %w", err)
+		}
+	}
+
+	// Update current time
+	radikron.CurrentTime = time.Now().In(radikron.Location)
+
+	// Group injections by station ID to fetch programs efficiently
+	stationInjectionMap := make(map[string][]*manualInjection)
+	stationIDs := make([]string, 0, len(injections))
+	for _, inj := range injections {
+		if _, exists := stationInjectionMap[inj.StationID]; !exists {
+			stationIDs = append(stationIDs, inj.StationID)
+		}
+		stationInjectionMap[inj.StationID] = append(stationInjectionMap[inj.StationID], inj)
+	}
+
+	// Fetch weekly programs for each station and update program details
+	programDetailsMap := a.fetchProgramDetailsForStations(stationIDs)
+
+	// Store in map and add to schedules
+	for _, inj := range injections {
+		a.manualInjections[inj.ProgramID] = inj
+
+		prog := &radikron.Prog{
+			ID:         inj.ProgramID,
+			StationID:  inj.StationID,
+			Ft:         inj.Ft,
+			To:         inj.To,
+			Title:      inj.Title,
+			RuleName:   inj.RuleName,
+			RuleFolder: inj.RuleFolder,
+		}
+
+		a.processLoadedInjection(inj, prog, programDetailsMap)
+	}
+
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Loaded %d manually injected programs", len(injections)))
+	return nil
+}
+
+// saveManualInjections saves manually injected programs to disk
+func (a *App) saveManualInjections() error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.manualInjectionsFile == "" {
+		return fmt.Errorf("manual injections file path not set")
+	}
+
+	// Convert map to slice
+	injections := make([]*manualInjection, 0, len(a.manualInjections))
+	for _, inj := range a.manualInjections {
+		injections = append(injections, inj)
+	}
+
+	// Marshal to JSON
+	data, err := json.MarshalIndent(injections, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal manual injections: %w", err)
+	}
+
+	// Write to file atomically
+	tmpFile := a.manualInjectionsFile + ".tmp"
+	if err := os.WriteFile(tmpFile, data, manualInjectionsFilePerm); err != nil {
+		return fmt.Errorf("failed to write manual injections file: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, a.manualInjectionsFile); err != nil {
+		return fmt.Errorf("failed to rename manual injections file: %w", err)
+	}
+
+	return nil
+}
+
+// IsManualInjection checks if a program is manually injected
+func (a *App) IsManualInjection(programID string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	_, exists := a.manualInjections[programID]
+	return exists
+}
+
+// DeleteManualInjection removes a manually injected program from schedules and persistence
+func (a *App) DeleteManualInjection(programID string) error {
+	a.mu.Lock()
+
+	// Check if it's a manual injection
+	if _, exists := a.manualInjections[programID]; !exists {
+		a.mu.Unlock()
+		return fmt.Errorf("program %s is not a manual injection", programID)
+	}
+
+	// Remove from schedules
+	if a.asset != nil {
+		newSchedules := make(radikron.Schedules, 0, len(a.asset.Schedules))
+		for _, prog := range a.asset.Schedules {
+			if prog.ID != programID {
+				newSchedules = append(newSchedules, prog)
+			}
+		}
+		a.asset.Schedules = newSchedules
+	}
+
+	// Remove from pending manual downloads
+	delete(a.pendingManualDownloads, programID)
+
+	// Remove from manual injections map
+	delete(a.manualInjections, programID)
+
+	// Release lock before saving to avoid deadlock (saveManualInjections acquires its own lock)
+	a.mu.Unlock()
+
+	// Save to disk
+	if err := a.saveManualInjections(); err != nil {
+		return fmt.Errorf("failed to save manual injections: %w", err)
+	}
+
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Deleted manual injection: %s", programID))
+	return nil
 }
 
 // OnShutdown is called when the app closes
@@ -260,6 +564,344 @@ func (a *App) GetSchedules() (radikron.Progs, error) {
 	}
 
 	return pendingSchedules, nil
+}
+
+// GetDesignatedFolder returns the full path where a program will be saved
+func (a *App) GetDesignatedFolder(prog *radikron.Prog, ruleFolder, downloadDir string) (string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.asset == nil {
+		return "", fmt.Errorf("asset not initialized")
+	}
+
+	// Parse start time
+	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse start time: %w", err)
+	}
+
+	// Create file base name
+	fileBaseName := fmt.Sprintf(
+		"%s_%s_%s",
+		startTime.In(radikron.Location).Format(radikron.OutputDatetimeLayout),
+		prog.StationID,
+		prog.Title,
+	)
+
+	// Use provided ruleFolder or empty string
+	folder := ruleFolder
+	if folder == "" {
+		folder = ""
+	}
+
+	// Create output config to get the full path
+	output, err := radikron.NewOutputConfig(
+		fileBaseName,
+		a.asset.OutputFormat,
+		downloadDir,
+		folder,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to create output config: %w", err)
+	}
+
+	// Return the directory path (not the file path)
+	return output.DirFullPath, nil
+}
+
+// findMatchingRuleForInjection finds a matching rule for program injection
+func (a *App) findMatchingRuleForInjection(prog *radikron.Prog, ruleName string) *radikron.Rule {
+	if ruleName != "" {
+		for _, rule := range a.asset.Rules {
+			if rule.Name == ruleName {
+				return rule
+			}
+		}
+	}
+	return a.asset.Rules.FindMatchSilent(prog.StationID, prog)
+}
+
+// handleDuplicateCheckForInjection checks if program is duplicate and handles it
+func (a *App) handleDuplicateCheckForInjection(prog *radikron.Prog, startTime time.Time) error {
+	if !a.asset.Schedules.HasDuplicate(prog) {
+		return nil
+	}
+
+	fileBaseName := fmt.Sprintf(
+		"%s_%s_%s",
+		startTime.In(radikron.Location).Format(radikron.OutputDatetimeLayout),
+		prog.StationID,
+		prog.Title,
+	)
+
+	output, err := radikron.NewOutputConfig(
+		fileBaseName,
+		a.asset.OutputFormat,
+		a.asset.DownloadDir,
+		prog.RuleFolder,
+	)
+	if err == nil && output.IsExist() {
+		return fmt.Errorf("program is already scheduled and file exists")
+	}
+
+	// File doesn't exist - remove from schedules to allow re-injection
+	for i, s := range a.asset.Schedules {
+		if s.ID == prog.ID {
+			a.asset.Schedules = append(a.asset.Schedules[:i], a.asset.Schedules[i+1:]...)
+			break
+		}
+	}
+
+	return nil
+}
+
+// downloadPastInjectedProgram sets up and downloads a past injected program
+func (a *App) downloadPastInjectedProgram(prog *radikron.Prog) error {
+	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
+
+	emitEvent := func(ctx context.Context, eventName string, data any) {
+		runtime.EventsEmit(ctx, eventName, data)
+	}
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, emitEvent)
+	programID := prog.ID
+	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
+		a.HandleDownloadCompletedByID(programID, stationID, title, startTime)
+	})
+	ctx = context.WithValue(ctx, radikron.ContextKey("eventEmitter"), eventEmitter)
+
+	go func() {
+		time.Sleep(loggerCleanupDelay)
+		cleanupLogger()
+	}()
+
+	wg := &sync.WaitGroup{}
+	err := radikron.Download(ctx, wg, prog)
+	if err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to download past program immediately: %v", err))
+		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			"type":    "error",
+			"message": fmt.Sprintf("Failed to download past program immediately: %v", err),
+		})
+		return err
+	}
+
+	return nil
+}
+
+// InjectProgram adds a program to scheduled downloads
+func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
+	a.mu.Lock()
+	// Note: We release the lock before calling saveManualInjections() to avoid deadlock
+
+	if a.asset == nil {
+		return fmt.Errorf("asset not initialized")
+	}
+
+	// Update current time
+	radikron.CurrentTime = time.Now().In(radikron.Location)
+
+	// Parse start time to check if program is in the past
+	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
+	if err != nil {
+		return fmt.Errorf("failed to parse start time: %w", err)
+	}
+
+	// Find matching rule
+	matchedRule := a.findMatchingRuleForInjection(prog, ruleName)
+	if matchedRule != nil {
+		prog.RuleName = matchedRule.Name
+		prog.RuleFolder = matchedRule.Folder
+	} else {
+		prog.RuleName = ""
+		prog.RuleFolder = ""
+	}
+
+	// Check for duplicates
+	if err := a.handleDuplicateCheckForInjection(prog, startTime); err != nil {
+		a.mu.Unlock()
+		return err
+	}
+
+	// Handle past vs future programs
+	if !startTime.After(radikron.CurrentTime) {
+		// Past program - download immediately (error is already logged in downloadPastInjectedProgram)
+		_ = a.downloadPastInjectedProgram(prog)
+		a.asset.Schedules = append(a.asset.Schedules, prog)
+	} else {
+		// Future program - add to schedules and update next fetch time
+		a.asset.Schedules = append(a.asset.Schedules, prog)
+		endTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.To, radikron.Location)
+		if err == nil {
+			next := endTime.Add(radikron.BufferMinutes * time.Minute)
+			if a.asset.NextFetchTime == nil || a.asset.NextFetchTime.After(next) {
+				a.asset.NextFetchTime = &next
+			}
+		}
+	}
+
+	// Save as manual injection
+	inj := &manualInjection{
+		ProgramID:  prog.ID,
+		StationID:  prog.StationID,
+		Ft:         prog.Ft,
+		To:         prog.To,
+		Title:      prog.Title,
+		RuleName:   prog.RuleName,
+		RuleFolder: prog.RuleFolder,
+	}
+	a.manualInjections[prog.ID] = inj
+	a.mu.Unlock() // Release lock before saving to avoid deadlock
+
+	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
+	if err := a.saveManualInjections(); err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
+		// Continue anyway - the program is in schedules
+	}
+
+	// Reload monitoring to recalculate next fetch timer
+	// This is done by triggering a reload of the monitoring loop
+	// Since we can't directly trigger it, we'll emit an event
+	// The monitoring loop will pick up the change on its next iteration
+	runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
+		"program": prog.Title,
+		"station": prog.StationID,
+	})
+
+	return nil
+}
+
+// findProgramIDFromPendingDownloads finds program ID from pending manual downloads
+func (a *App) findProgramIDFromPendingDownloads(stationID, title, startTime string) string {
+	for id := range a.pendingManualDownloads {
+		for _, s := range a.asset.Schedules {
+			if s.ID == id && s.StationID == stationID && s.Title == title && s.Ft == startTime {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+// findProgramIDFromManualInjections finds program ID from manual injections by matching metadata
+func (a *App) findProgramIDFromManualInjections(stationID, title, startTime string) string {
+	for id, inj := range a.manualInjections {
+		if inj.StationID == stationID && inj.Title == title && inj.Ft == startTime {
+			return id
+		}
+	}
+	return ""
+}
+
+// removeManualInjectionAndSave removes a program from manual injections and saves to disk
+func (a *App) removeManualInjectionAndSave(programID, stationID, title string) {
+	if programID == "" {
+		return
+	}
+
+	delete(a.manualInjections, programID)
+	delete(a.pendingManualDownloads, programID)
+
+	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
+	if err := a.saveManualInjections(); err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after download: %v", err))
+	} else {
+		runtime.LogInfo(a.ctx, fmt.Sprintf("Removed manually injected program [%s]%s after download completion", stationID, title))
+	}
+}
+
+// HandleDownloadCompleted is called when a download completes
+// It checks if the program was manually injected and removes it if so
+// This version matches by station, title, and start time (for backward compatibility)
+func (a *App) HandleDownloadCompleted(stationID, title, startTime string) {
+	a.mu.Lock()
+
+	// First check if this is a pending manual download by checking schedules
+	programID := a.findProgramIDFromPendingDownloads(stationID, title, startTime)
+
+	// If not found in pending, try matching by station, title, and start time
+	if programID == "" {
+		programID = a.findProgramIDFromManualInjections(stationID, title, startTime)
+	}
+
+	a.mu.Unlock()
+
+	// Remove and save outside the lock
+	a.removeManualInjectionAndSave(programID, stationID, title)
+}
+
+// HandleDownloadCompletedByID is called when a download completes with a known program ID
+// This is more reliable than matching by station/title/time
+func (a *App) HandleDownloadCompletedByID(programID, stationID, title, _ string) {
+	a.mu.Lock()
+
+	// Check if this program ID is in manual injections
+	_, exists := a.manualInjections[programID]
+	if exists {
+		// Remove from manual injections and pending downloads
+		delete(a.manualInjections, programID)
+		delete(a.pendingManualDownloads, programID)
+	}
+	a.mu.Unlock()
+
+	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
+	if exists {
+		if err := a.saveManualInjections(); err != nil {
+			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after download: %v", err))
+		} else {
+			runtime.LogInfo(a.ctx, fmt.Sprintf(
+				"Removed manually injected program [%s]%s (ID: %s) after download completion",
+				stationID, title, programID))
+		}
+	}
+}
+
+// checkAndCleanupManualInjections checks if manually injected programs are still available
+// in the weekly program list and removes them if they're no longer available
+func (a *App) checkAndCleanupManualInjections() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if len(a.manualInjections) == 0 {
+		return
+	}
+
+	// Build a set of available program IDs from snapshots
+	availableProgramIDs := make(map[string]bool)
+	for _, programs := range a.programSnapshots {
+		for _, prog := range programs {
+			availableProgramIDs[prog.ID] = true
+		}
+	}
+
+	// Check each manual injection
+	removed := false
+	for id, inj := range a.manualInjections {
+		// Check if program is still available
+		if !availableProgramIDs[id] {
+			// Program is no longer available - remove it
+			delete(a.manualInjections, id)
+
+			// Also remove from schedules
+			for i, s := range a.asset.Schedules {
+				if s.ID == id {
+					a.asset.Schedules = append(a.asset.Schedules[:i], a.asset.Schedules[i+1:]...)
+					break
+				}
+			}
+
+			removed = true
+			runtime.LogInfo(a.ctx, fmt.Sprintf(
+				"Removed manually injected program [%s]%s - no longer available in weekly programs",
+				inj.StationID, inj.Title))
+		}
+	}
+
+	if removed {
+		if err := a.saveManualInjections(); err != nil {
+			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after cleanup: %v", err))
+		}
+	}
 }
 
 // LoadConfig loads configuration from a file
@@ -607,18 +1249,22 @@ type programWithStation struct {
 // collectProgramsFromStations collects and deduplicates programs from all stations
 func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikronProgramFetcher) []*programWithStation {
 	allPrograms := make(map[string]*programWithStation) // key: program ID
+	snapshots := make(map[string]radikron.Progs)        // stationID -> programs for snapshot update
 
 	// Process all stations and collect programs
 	for _, stationID := range asset.AvailableStations {
-		// Skip if no rules match this station
-		if !asset.Rules.HasRuleWithoutStationID() && !asset.Rules.HasRuleForStationID(stationID) {
-			continue
-		}
-
-		// Fetch weekly programs
+		// Fetch weekly programs for all stations (needed for manual injection cleanup)
 		weeklyPrograms, err := fetcher.FetchWeeklyPrograms(stationID)
 		if err != nil {
 			log.Printf("failed to fetch the %s program: %v", stationID, err)
+			continue
+		}
+
+		// Update snapshots for cleanup check
+		snapshots[stationID] = weeklyPrograms
+
+		// Skip if no rules match this station (for processing, but we still have snapshots)
+		if !asset.Rules.HasRuleWithoutStationID() && !asset.Rules.HasRuleForStationID(stationID) {
 			continue
 		}
 
@@ -633,12 +1279,101 @@ func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikr
 		}
 	}
 
+	// Update program snapshots for manual injection cleanup
+	a.mu.Lock()
+	for stationID, programs := range snapshots {
+		a.programSnapshots[stationID] = programs
+	}
+	a.mu.Unlock()
+
 	// Convert map to slice for deterministic iteration order
 	programList := make([]*programWithStation, 0, len(allPrograms))
 	for _, pws := range allPrograms {
 		programList = append(programList, pws)
 	}
 	return programList
+}
+
+// checkManualInjectionFileExists checks if the file for a manually injected program already exists
+func (a *App) checkManualInjectionFileExists(p *radikron.Prog, asset *radikron.Asset) bool {
+	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, p.Ft, radikron.Location)
+	if err != nil {
+		return false
+	}
+
+	fileBaseName := fmt.Sprintf(
+		"%s_%s_%s",
+		startTime.In(radikron.Location).Format(radikron.OutputDatetimeLayout),
+		p.StationID,
+		p.Title,
+	)
+	output, err := radikron.NewOutputConfig(
+		fileBaseName,
+		asset.OutputFormat,
+		asset.DownloadDir,
+		p.RuleFolder,
+	)
+	return err == nil && output.IsExist()
+}
+
+// findMatchingRuleForProcessProgram finds a matching rule for a program during processing
+func (a *App) findMatchingRuleForProcessProgram(
+	p *radikron.Prog,
+	stationID string,
+	asset *radikron.Asset,
+	isManualInjection bool,
+) *radikron.Rule {
+	if isManualInjection && p.RuleName != "" {
+		// Find the rule by name for manual injections
+		for _, r := range asset.Rules {
+			if r.Name == p.RuleName {
+				return r
+			}
+		}
+		// If rule not found by name, still proceed (manual injection might not need a rule)
+		return nil
+	}
+	// Normal rule matching
+	return asset.Rules.FindMatchSilent(stationID, p)
+}
+
+// setupManualInjectionForProcess sets up rule info for manually injected programs
+func (a *App) setupManualInjectionForProcess(p *radikron.Prog) bool {
+	if inj, exists := a.manualInjections[p.ID]; exists {
+		p.RuleName = inj.RuleName
+		p.RuleFolder = inj.RuleFolder
+		return true
+	}
+	return false
+}
+
+// checkDuplicateForProcessProgram checks if program is duplicate and handles manual injection cases
+func (a *App) checkDuplicateForProcessProgram(p *radikron.Prog, asset *radikron.Asset, isManualInjection bool) bool {
+	if !a.asset.Schedules.HasDuplicate(p) {
+		return false
+	}
+	if !isManualInjection {
+		return true
+	}
+	// For manual injections, check if file exists
+	return a.checkManualInjectionFileExists(p, asset)
+}
+
+// applyRuleToProgram applies rule information to program if not already set by manual injection
+func (a *App) applyRuleToProgram(p *radikron.Prog, matchedRule *radikron.Rule, isManualInjection bool) {
+	if matchedRule != nil && !isManualInjection {
+		p.RuleName = matchedRule.Name
+		p.RuleFolder = matchedRule.Folder
+	}
+}
+
+// checkAlreadyLogged checks if program was already logged in this iteration
+func (a *App) checkAlreadyLogged(processedInThisIteration map[string]bool, programID string) bool {
+	alreadyLogged := processedInThisIteration[programID+"_logged"]
+	if !alreadyLogged {
+		processedInThisIteration[programID+"_logged"] = true
+	}
+	return alreadyLogged
 }
 
 // processProgram handles a single program: checks duplicates, matches rules, and downloads if needed
@@ -659,41 +1394,39 @@ func (a *App) processProgram(
 		a.mu.Unlock()
 		return false, true
 	}
-	if a.asset.Schedules.HasDuplicate(p) {
+
+	// Check if this is a manually injected program
+	isManualInjection := a.setupManualInjectionForProcess(p)
+
+	// Check for duplicates
+	if a.checkDuplicateForProcessProgram(p, asset, isManualInjection) {
 		a.mu.Unlock()
 		return false, true
 	}
+
 	processedInThisIteration[p.ID] = true
-	// Don't add to schedules yet - Download() will check for duplicates
-	// We'll add to schedules after Download() confirms it will proceed
 	a.mu.Unlock()
 
 	// Check if rule matches using the asset snapshot
-	matchedRule := asset.Rules.FindMatchSilent(stationID, p)
-	if matchedRule == nil {
-		// Rule didn't match - remove from processed tracking
+	matchedRule := a.findMatchingRuleForProcessProgram(p, stationID, asset, isManualInjection)
+	if matchedRule == nil && !isManualInjection {
 		a.mu.Lock()
 		delete(processedInThisIteration, p.ID)
 		a.mu.Unlock()
 		return false, false
 	}
 
-	// Check if we've already logged this program in this iteration
-	// (to prevent duplicate log messages for the same program)
+	// Apply rule information if needed
+	a.applyRuleToProgram(p, matchedRule, isManualInjection)
+
+	// Check if already logged
 	a.mu.Lock()
-	alreadyLogged := processedInThisIteration[p.ID+"_logged"]
-	if !alreadyLogged {
-		processedInThisIteration[p.ID+"_logged"] = true
+	if a.checkAlreadyLogged(processedInThisIteration, p.ID) {
 		a.mu.Unlock()
-		// First time processing this program - continue to download attempt
-	} else {
-		a.mu.Unlock()
-		// Already processed this program in this iteration - skip
 		return true, false
 	}
+	a.mu.Unlock()
 
-	p.RuleName = matchedRule.Name
-	p.RuleFolder = matchedRule.Folder
 	// Ensure StationID is set correctly (it should be set from XML, but ensure it matches)
 	if p.StationID == "" {
 		p.StationID = stationID
@@ -840,9 +1573,26 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 	// Setup logger to capture radikron log messages and emit events
 	emitEvent := func(ctx context.Context, eventName string, data any) {
 		runtime.EventsEmit(ctx, eventName, data)
+		// Also check for manual injection removal on download-completed events
+		// This is a fallback in case the callback doesn't work
+		if eventName == "download-completed" {
+			if dataMap, ok := data.(map[string]any); ok {
+				stationID, _ := dataMap["station"].(string)
+				title, _ := dataMap["title"].(string)
+				startTime, _ := dataMap["start"].(string)
+				// Try to match by pending downloads first, then by station/title/time
+				a.HandleDownloadCompleted(stationID, title, startTime)
+			}
+		}
 	}
 	eventEmitter, cleanupLogger := SetupLogger(a.ctx, emitEvent)
 	defer cleanupLogger()
+
+	// Set callback to handle download completion for manual injections
+	// Use the matching by station/title/time for monitoring loop (programs from rules)
+	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
+		a.HandleDownloadCompleted(stationID, title, startTime)
+	})
 
 	fetcher := &radikronProgramFetcher{}
 	downloader := &radikronDownloader{}
@@ -907,6 +1657,9 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 
 		// Collect and process programs
 		a.processAllPrograms(asset, fetcher, downloadCtx, downloader)
+
+		// Check and cleanup manually injected programs that are no longer available
+		a.checkAndCleanupManualInjections()
 
 		// Sleep until next fetch time
 		a.logAndSleepUntilNextFetch(asset, ctx)
