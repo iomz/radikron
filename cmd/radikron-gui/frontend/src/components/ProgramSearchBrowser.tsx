@@ -213,9 +213,17 @@ export const ProgramSearchBrowser: React.FC = () => {
       setDesignatedFolder(fullPath);
     } catch (err) {
       console.error('Failed to get designated folder:', err);
-      // Fallback calculation
-      const cfg = await App.GetConfig();
-      const downloadDir = cfg.DownloadDir || 'radiko';
+      // Fallback calculation with protected config access
+      let downloadDir = 'radiko';
+      try {
+        const cfg = await App.GetConfig();
+        downloadDir = cfg.DownloadDir || 'radiko';
+      } catch (configErr) {
+        console.error('Failed to get config in fallback:', configErr);
+        // Use safe default 'radiko' already set above
+      }
+      
+      // Compute rule/folder and fullPath before calling setDesignatedFolder
       const rule = rules.find((r) => r.name === ruleName);
       const folder = rule?.folder || '';
       const fullPath = folder ? `${downloadDir}/${folder}` : downloadDir;

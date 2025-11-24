@@ -51,7 +51,6 @@ export const ScheduledDownloads: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedProgram, setSelectedProgram] = useState<radikron.Prog | null>(null);
-  const [manualInjections, setManualInjections] = useState<Set<string>>(new Set());
   const [programToDelete, setProgramToDelete] = useState<radikron.Prog | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const isFetchingRef = useRef(false);
@@ -61,44 +60,54 @@ export const ScheduledDownloads: React.FC = () => {
     isFetchingRef.current = true;
     setIsLoading(true);
     setError(null);
-      try {
-        const results: any[] = await App.GetSchedules();
-        const convertedSchedules: radikron.Prog[] = results.map((prog: any) =>
-          radikron.Prog.createFrom(prog)
-        );
-        
-        // Sort programs by start date (Ft field) - format is YYYYMMDDHHmmss, so string comparison works
-        const sortedSchedules = convertedSchedules.sort((a, b) => {
-          if (!a.Ft && !b.Ft) return 0;
-          if (!a.Ft) return 1;
-          if (!b.Ft) return -1;
-          return a.Ft.localeCompare(b.Ft);
-        });
-        
-        setSchedules(sortedSchedules);
-        
-        // Check which programs are manually injected
-        const manualSet = new Set<string>();
-        for (const prog of sortedSchedules) {
-          try {
-            // @ts-ignore - IsManualInjection will be available after Wails rebuild
-            const isManual = await App.IsManualInjection(prog.ID);
-            if (isManual) {
-              manualSet.add(prog.ID);
-            }
-          } catch (err) {
-            console.error(`Failed to check if program ${prog.ID} is manual injection:`, err);
-          }
-        }
-        setManualInjections(manualSet);
+    
+    let sortedSchedules: radikron.Prog[] = [];
+    
+    try {
+      const results: any[] = await App.GetSchedules();
+      const convertedSchedules: radikron.Prog[] = results.map((prog: any) =>
+        radikron.Prog.createFrom(prog)
+      );
+      
+      // Sort programs by start date (Ft field) - format is YYYYMMDDHHmmss, so string comparison works
+      sortedSchedules = convertedSchedules.sort((a, b) => {
+        if (!a.Ft && !b.Ft) return 0;
+        if (!a.Ft) return 1;
+        if (!b.Ft) return -1;
+        return a.Ft.localeCompare(b.Ft);
+      });
+      
+      setSchedules(sortedSchedules);
     } catch (err) {
       console.error('Failed to load schedules:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(`Failed to load scheduled downloads: ${errorMessage}`);
-    } finally {
       isFetchingRef.current = false;
       setIsLoading(false);
+      return;
     }
+    
+    // Check which programs are manually injected (separate try-catch to avoid blocking schedule updates)
+    try {
+      for (const prog of sortedSchedules) {
+        try {
+          // @ts-ignore - IsManualInjection will be available after Wails rebuild
+          const isManual = await App.IsManualInjection(prog.ID);
+          if (isManual) {
+            prog.IsManualInjection = true;
+          }
+        } catch (err) {
+          console.error(`Failed to check if program ${prog.ID} is manual injection:`, err);
+        }
+      }
+      // Update schedules with manual injection flags
+      setSchedules([...sortedSchedules]);
+    } catch (err) {
+      console.error('Failed to check manual injections:', err);
+    }
+    
+    isFetchingRef.current = false;
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -193,7 +202,7 @@ export const ScheduledDownloads: React.FC = () => {
                 <ScrollArea className="h-full">
                   <div className="space-y-3 pr-4">
                     {schedules.map((program) => {
-                      const isManual = manualInjections.has(program.ID);
+                      const isManual = program.IsManualInjection || false;
                       return (
                         <Card
                           key={program.ID}
