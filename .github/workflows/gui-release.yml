@@ -26,14 +26,6 @@ jobs:
             goos: windows
             goarch: arm64
             platform: windows_arm64
-          - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-            platform: linux_amd64
-          - os: ubuntu-latest
-            goos: linux
-            goarch: arm64
-            platform: linux_arm64
     runs-on: ${{ matrix.os }}
     env:
       GO111MODULE: on
@@ -57,18 +49,6 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10
-
-      - name: Install Linux dependencies
-        if: matrix.goos == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libgtk-3-dev \
-            libwebkit2gtk-4.0-dev \
-            libglib2.0-dev \
-            libgdk-pixbuf2.0-dev \
-            libpango1.0-dev
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -113,15 +93,6 @@ jobs:
             fi
             # Check for NSIS installer (if generated)
             find build/bin -name "*.exe" -type f ! -name "radikron-gui.exe" -exec cp {} ../artifacts/ \;
-          # Linux: binary
-          else
-            if [ -f "build/bin/radikron-gui" ]; then
-              cp build/bin/radikron-gui ../artifacts/radikron-gui_${{ matrix.platform }}
-              chmod +x ../artifacts/radikron-gui_${{ matrix.platform }}
-            fi
-            # Check for AppImage or DEB (if generated)
-            find build/bin -name "*.AppImage" -type f -exec cp {} ../artifacts/ \;
-            find build/bin -name "*.deb" -type f -exec cp {} ../artifacts/ \;
           fi
 
       - name: Upload artifacts
