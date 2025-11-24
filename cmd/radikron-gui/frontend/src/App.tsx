@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import { toast } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -207,6 +208,7 @@ const AppComponent: React.FC = () => {
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <Toaster />
       {loading ? (
         <div className="flex items-center justify-center min-h-screen bg-background">
           <p className="text-muted-foreground">Loading...</p>

@@ -300,11 +300,17 @@ export const ProgramSearchBrowser: React.FC = () => {
     try {
       // @ts-ignore - InjectProgram will be available after Wails rebuild
       await App.InjectProgram(selectedProgram, selectedRule);
+      
+      // Capture values before clearing state
+      const stationId = selectedProgram.StationID;
+      const title = selectedProgram.Title;
+      const successMessage = `Program [${stationId}]${title} added to schedule`;
+      
       setShowInjectionDialog(false);
       setSelectedProgram(null);
       setSelectedRule('');
+      
       // Show success message
-      const successMessage = `Program [${selectedProgram.StationID}]${selectedProgram.Title} added to schedule`;
       addActivityLog("success", successMessage);
       toast.success(successMessage);
     } catch (err) {

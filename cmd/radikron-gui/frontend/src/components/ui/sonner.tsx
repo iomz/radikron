@@ -11,8 +11,7 @@ import { useThemeStore } from "@/store/useThemeStore"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const getEffectiveTheme = useThemeStore((state) => state.getEffectiveTheme)
-  const effectiveTheme = getEffectiveTheme()
+  const effectiveTheme = useThemeStore((state) => state.getEffectiveTheme())
 
   return (
     <Sonner
