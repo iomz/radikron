@@ -11,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import { useAppStore } from '@/store/useAppStore';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import * as App from '../../wailsjs/go/main/App';
 import { radikron } from '../../wailsjs/go/models';
@@ -47,6 +49,7 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
 };
 
 export const ScheduledDownloads: React.FC = () => {
+  const addActivityLog = useAppStore((state) => state.addActivityLog);
   const [schedules, setSchedules] = useState<radikron.Prog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +87,7 @@ export const ScheduledDownloads: React.FC = () => {
       setError(`Failed to load scheduled downloads: ${errorMessage}`);
       isFetchingRef.current = false;
       setIsLoading(false);
-      return;
+      throw err; // Re-throw to allow callers to handle failures
     }
     
     // Check which programs are manually injected (separate try-catch to avoid blocking schedule updates)
@@ -111,19 +114,31 @@ export const ScheduledDownloads: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadSchedules();
+    loadSchedules().catch(() => {
+      // Errors are already handled in loadSchedules
+    });
     // Refresh schedules every 5 seconds
-    const interval = setInterval(loadSchedules, 5000);
+    const interval = setInterval(() => {
+      loadSchedules().catch(() => {
+        // Errors are already handled in loadSchedules
+      });
+    }, 5000);
     
     // Listen for download events to refresh schedules
     const unsubscribeDownloadStarted = EventsOn('download-started', () => {
-      loadSchedules();
+      loadSchedules().catch(() => {
+        // Errors are already handled in loadSchedules
+      });
     });
     const unsubscribeDownloadCompleted = EventsOn('download-completed', () => {
-      loadSchedules();
+      loadSchedules().catch(() => {
+        // Errors are already handled in loadSchedules
+      });
     });
     const unsubscribeFileSaved = EventsOn('file-saved', () => {
-      loadSchedules();
+      loadSchedules().catch(() => {
+        // Errors are already handled in loadSchedules
+      });
     });
     
     return () => {
@@ -161,6 +176,10 @@ export const ScheduledDownloads: React.FC = () => {
       setProgramToDelete(null);
       // Reload schedules to reflect the deletion
       await loadSchedules();
+      // Only show success if reload succeeded
+      const successMessage = `Program [${programToDelete.StationID}] ${programToDelete.Title} deleted successfully`;
+      addActivityLog("success", successMessage);
+      toast.success(successMessage);
     } catch (err) {
       console.error('Failed to delete manual injection:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -168,7 +187,7 @@ export const ScheduledDownloads: React.FC = () => {
     } finally {
       setIsDeleting(false);
     }
-  }, [programToDelete, loadSchedules]);
+  }, [programToDelete, loadSchedules, addActivityLog]);
 
   return (
     <div className="flex items-center justify-center px-4 py-8">
@@ -181,7 +200,15 @@ export const ScheduledDownloads: React.FC = () => {
                 Programs queued for download based on matching rules
               </CardDescription>
             </div>
-            <Button onClick={loadSchedules} disabled={isLoading} variant="outline">
+            <Button 
+              onClick={() => {
+                loadSchedules().catch(() => {
+                  // Errors are already handled in loadSchedules
+                });
+              }} 
+              disabled={isLoading} 
+              variant="outline"
+            >
               {isLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
