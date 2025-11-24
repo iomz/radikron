@@ -362,6 +362,68 @@ func (a *App) shouldRetryDownload(inj *manualInjection) bool {
 	return timeSinceFailure >= nextRetryDelay
 }
 
+// findProgramInSchedules finds a program in schedules by ID.
+func (a *App) findProgramInSchedules(programID string) *radikron.Prog {
+	for _, prog := range a.asset.Schedules {
+		if prog.ID == programID {
+			return prog
+		}
+	}
+	return nil
+}
+
+// isPastProgram checks if a program is in the past based on its start time.
+func isPastProgram(prog *radikron.Prog) bool {
+	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
+	if err != nil {
+		return false
+	}
+	return !startTime.After(radikron.CurrentTime)
+}
+
+// collectNewInjectionForDownload collects a new injection (no failure time) if it's a past program.
+func (a *App) collectNewInjectionForDownload(
+	id string,
+	inj *manualInjection,
+	retryList *[]*radikron.Prog,
+	injectionMap map[string]*manualInjection,
+) {
+	foundProg := a.findProgramInSchedules(id)
+	if foundProg == nil {
+		return
+	}
+
+	if !isPastProgram(foundProg) {
+		return
+	}
+
+	// Past program - add to download list
+	progCopy := *foundProg // copy to decouple from shared slice
+	*retryList = append(*retryList, &progCopy)
+	injectionMap[id] = inj
+}
+
+// collectFailedInjectionForRetry collects a failed injection if it's ready for retry.
+func (a *App) collectFailedInjectionForRetry(
+	id string,
+	inj *manualInjection,
+	retryList *[]*radikron.Prog,
+	injectionMap map[string]*manualInjection,
+) {
+	if !a.shouldRetryDownload(inj) {
+		return
+	}
+
+	foundProg := a.findProgramInSchedules(id)
+	if foundProg == nil {
+		return
+	}
+
+	progCopy := *foundProg // copy to decouple from shared slice
+	*retryList = append(*retryList, &progCopy)
+	injectionMap[id] = inj
+}
+
 // retryFailedDownloads retries downloads for manual injections that have failed and are ready for retry.
 // It also handles new injections (those that haven't been tried yet) for past programs.
 // It checks each manual injection and attempts to download programs that meet the retry criteria.
@@ -372,48 +434,10 @@ func (a *App) retryFailedDownloads() {
 	injectionMap := make(map[string]*manualInjection)
 
 	for id, inj := range a.manualInjections {
-		// Check if this is a new injection (no failure time) or a failed one ready for retry
 		if inj.LastFailureTime == nil {
-			// New injection - check if it's a past program that needs download
-			// Look up the program in current schedules
-			var foundProg *radikron.Prog
-			for _, prog := range a.asset.Schedules {
-				if prog.ID == id {
-					foundProg = prog
-					break
-				}
-			}
-
-			if foundProg != nil {
-				// Check if it's a past program
-				startTime, err := time.ParseInLocation(radikron.DatetimeLayout, foundProg.Ft, radikron.Location)
-				if err == nil && !startTime.After(radikron.CurrentTime) {
-					// Past program - add to download list
-					progCopy := *foundProg // copy to decouple from shared slice
-					retryList = append(retryList, &progCopy)
-					injectionMap[id] = inj
-				}
-			}
+			a.collectNewInjectionForDownload(id, inj, &retryList, injectionMap)
 		} else {
-			// Failed injection - check if ready for retry
-			if !a.shouldRetryDownload(inj) {
-				continue
-			}
-
-			// Look up the program in current schedules
-			var foundProg *radikron.Prog
-			for _, prog := range a.asset.Schedules {
-				if prog.ID == id {
-					foundProg = prog
-					break
-				}
-			}
-
-			if foundProg != nil {
-				progCopy := *foundProg // copy to decouple from shared slice
-				retryList = append(retryList, &progCopy)
-				injectionMap[id] = inj
-			}
+			a.collectFailedInjectionForRetry(id, inj, &retryList, injectionMap)
 		}
 	}
 	a.mu.RUnlock()
@@ -830,9 +854,6 @@ func (a *App) GetDesignatedFolder(prog *radikron.Prog, ruleFolder, downloadDir s
 
 	// Use provided ruleFolder or empty string
 	folder := ruleFolder
-	if folder == "" {
-		folder = ""
-	}
 
 	// Create output config to get the full path
 	output, err := radikron.NewOutputConfig(
@@ -914,6 +935,7 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 	// Note: We release the lock before calling saveManualInjections() to avoid deadlock
 
 	if a.asset == nil {
+		a.mu.Unlock()
 		return fmt.Errorf("asset not initialized")
 	}
 
@@ -923,6 +945,7 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 	// Parse start time to check if program is in the past
 	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
 	if err != nil {
+		a.mu.Unlock()
 		return fmt.Errorf("failed to parse start time: %w", err)
 	}
 
@@ -944,18 +967,46 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 
 	// Handle past vs future programs
 	if !startTime.After(radikron.CurrentTime) {
-		// Past program - download immediately
+		// Past program - prepare for download outside the lock
+		// Create a copy of prog to avoid issues after releasing the lock
+		progCopy := *prog
+		a.mu.Unlock() // Release lock before download to avoid deadlock
+
+		// Download outside the lock (downloadProgramImmediately will acquire its own lock)
+		downloadErr := a.downloadPastInjectedProgram(&progCopy)
+
+		// Re-acquire lock to update schedules
+		a.mu.Lock()
 		// Even if download fails, we add to schedules so user can see what failed
 		// The failure is tracked in the manual injection for retry logic
-		downloadErr := a.downloadPastInjectedProgram(prog)
-		a.asset.Schedules = append(a.asset.Schedules, prog)
+		if !a.asset.Schedules.HasDuplicate(&progCopy) {
+			a.asset.Schedules = append(a.asset.Schedules, &progCopy)
+		}
+
+		// Save as manual injection
+		inj := &manualInjection{
+			ProgramID:  progCopy.ID,
+			StationID:  progCopy.StationID,
+			Ft:         progCopy.Ft,
+			To:         progCopy.To,
+			Title:      progCopy.Title,
+			RuleName:   progCopy.RuleName,
+			RuleFolder: progCopy.RuleFolder,
+		}
+		a.manualInjections[progCopy.ID] = inj
+		a.mu.Unlock()
+
+		// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
+		if err := a.saveManualInjections(); err != nil {
+			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
+			// Continue anyway - the program is in schedules
+		}
 
 		// If download failed, the failure is already tracked in downloadPastInjectedProgram
-		// We still add to schedules for user visibility
 		if downloadErr != nil {
 			runtime.LogInfo(a.ctx, fmt.Sprintf(
 				"Past program [%s]%s download failed, will be retried automatically",
-				prog.StationID, prog.Title))
+				progCopy.StationID, progCopy.Title))
 		}
 	} else {
 		// Future program - add to schedules and update next fetch time
@@ -967,35 +1018,35 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 				a.asset.NextFetchTime = &next
 			}
 		}
-	}
 
-	// Save as manual injection
-	inj := &manualInjection{
-		ProgramID:  prog.ID,
-		StationID:  prog.StationID,
-		Ft:         prog.Ft,
-		To:         prog.To,
-		Title:      prog.Title,
-		RuleName:   prog.RuleName,
-		RuleFolder: prog.RuleFolder,
-	}
-	a.manualInjections[prog.ID] = inj
-	a.mu.Unlock() // Release lock before saving to avoid deadlock
+		// Save as manual injection
+		inj := &manualInjection{
+			ProgramID:  prog.ID,
+			StationID:  prog.StationID,
+			Ft:         prog.Ft,
+			To:         prog.To,
+			Title:      prog.Title,
+			RuleName:   prog.RuleName,
+			RuleFolder: prog.RuleFolder,
+		}
+		a.manualInjections[prog.ID] = inj
+		a.mu.Unlock() // Release lock before saving to avoid deadlock
 
-	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
-	if err := a.saveManualInjections(); err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
-		// Continue anyway - the program is in schedules
-	}
+		// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
+		if err := a.saveManualInjections(); err != nil {
+			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
+			// Continue anyway - the program is in schedules
+		}
 
-	// Reload monitoring to recalculate next fetch timer
-	// This is done by triggering a reload of the monitoring loop
-	// Since we can't directly trigger it, we'll emit an event
-	// The monitoring loop will pick up the change on its next iteration
-	runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
-		"program": prog.Title,
-		"station": prog.StationID,
-	})
+		// Reload monitoring to recalculate next fetch timer
+		// This is done by triggering a reload of the monitoring loop
+		// Since we can't directly trigger it, we'll emit an event
+		// The monitoring loop will pick up the change on its next iteration
+		runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
+			"program": prog.Title,
+			"station": prog.StationID,
+		})
+	}
 
 	return nil
 }
