@@ -251,7 +251,15 @@ export const ProgramSearchBrowser: React.FC = () => {
                     <Card
                       key={program.ID}
                       className="p-4 cursor-pointer hover:bg-accent transition-colors"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedProgram(program)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedProgram(program);
+                        }
+                      }}
                     >
                       <div className="space-y-2">
                         <div className="flex items-start justify-between">
