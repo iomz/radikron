@@ -56,93 +56,60 @@ radikron is a powerful, automated radio program downloader for [radiko](https://
 
 ### 🖥️ Dual Interface Support
 
-- **CLI Version**: Lightweight command-line interface perfect for servers and automation
+- **CLI Version**: Lightweight command-line interface for servers and automation
 - **GUI Version**: Modern graphical interface built with Wails v2 for desktop users
-- **Shared Core**: Both versions use the same underlying engine, so bug fixes and features benefit both interfaces
+- **Shared Core**: Both versions use the same engine, ensuring consistent behavior
 
 ### 🎯 Smart Rule-Based Matching
 
-Create flexible rules to automatically capture your favorite programs using multiple matching criteria:
-
-- **Title Matching**: Match programs by title (supports partial matching)
-- **Keyword Search**: Find programs containing specific keywords in title or description
-- **Personality/Performer Matching**: Filter by program host or performer (`pfm`)
-- **Station Filtering**: Target specific radio stations or include stations from other regions
-- **Day of Week Filtering**: Download programs only on specific days (e.g., every Wednesday and Thursday)
-- **Time Window Filtering**: Only download programs within a specified time window (e.g., last 48 hours)
+Flexible rules to automatically capture programs using multiple criteria: title/keyword matching, performer filtering, station selection, day-of-week and time-window filters.
 
 ### 📁 Flexible File Organization
 
-- **Custom Download Directories**: Configure where your files are saved
-- **Rule-Based Folders**: Automatically organize downloads into subfolders based on matching rules
-- **Rule Order Precedence**: When a program matches multiple rules, the first matching rule (by order in config) determines the destination folder
-- **Configurable File Formats**: Choose between AAC (default) or MP3 output formats
-
-### 🏷️ Automatic ID3 Tagging
-
-All downloaded files are automatically tagged with rich metadata:
-
-- Program title, artist, album, and year
-- Program information and comments
-- Rule name as Album Artist for easy organization
-- Works with both AAC and MP3 formats
+- Rule-based folder organization with configurable download directories
+- Support for AAC (default) and MP3 formats
+- Automatic ID3 tagging with program metadata
 
 ### 🛡️ Intelligent Download Management
 
-- **Duplicate Detection**: Automatically skips files that already exist (checks both default and rule-specific folders)
-- **Minimum File Size Validation**: Rejects corrupted or incomplete downloads below a specified size
-- **Automatic Retry**: Built-in retry mechanism with exponential backoff (1h, 2h, 4h, 8h, 16h) for failed downloads, up to 5 retry attempts
-- **Concurrent Downloads**: Downloads multiple programs simultaneously for efficiency
-- **Failed Download Cleanup**: Automatically removes stale failed downloads after 7 days or when max retries are exceeded
+- Duplicate detection and file size validation
+- Automatic retry with exponential backoff for failed downloads
+- Concurrent downloads and automatic cleanup of stale failures
 
 ### ➕ Manual Program Injection
 
-- **Manual Downloads**: Manually add any program to the download queue, even if it doesn't match your rules
-- **Past Programs**: Download programs that have already aired (if still available on radiko)
-- **Future Programs**: Schedule downloads for upcoming programs
-- **Persistent Storage**: Manual injections are saved to disk and persist across application restarts
-- **Automatic Retry**: Failed manual downloads are automatically retried with exponential backoff
-- **Easy Management**: View and delete manual injections through the GUI interface
-- **Rule Assignment**: Assign specific rules to manual injections for proper file organization
+Manually add any program to the download queue (past or future), with persistent storage and automatic retry. GUI users can easily manage injections through the interface.
 
-### 🌐 Multi-Region Support
+### 🌐 Multi-Region & Continuous Monitoring
 
-- **Area-Based Filtering**: Automatically filters stations based on your region
-- **Extra Stations**: Include stations from other regions not available in your area
-- **Station Blacklist**: Ignore specific stations you don't want to monitor
-
-### 🔄 Continuous Monitoring
-
-- **Scheduled Fetching**: Automatically checks for new programs at optimal intervals
-- **Background Operation**: Runs continuously, monitoring and downloading programs as they become available
-- **Graceful Shutdown**: Waits for downloads to complete before exiting
+- Area-based station filtering with support for extra stations from other regions
+- Continuous background monitoring with scheduled fetching
+- Graceful shutdown that waits for active downloads
 
 ### 🖱️ GUI Features
 
-The GUI version provides a user-friendly interface with:
-
-- **Configuration Management**: Load and manage configuration files through an intuitive interface
-- **Station Browser**: View all available radio stations in your region
-- **Program Search**: Search and browse weekly programs across all stations with advanced filtering
-- **Manual Injection**: Manually add programs to download queue (supports both past and future programs)
-- **Scheduled Downloads View**: View all scheduled downloads with manual injection indicators
-- **Monitoring Control**: Start and stop automatic monitoring with a single click
-- **Real-Time Activity Log**: Monitor download progress, completions, and errors in real-time
-- **Event System**: Real-time updates via Wails events for instant feedback
+Configuration management, station browser, program search with filtering, scheduled downloads view, monitoring control, and real-time activity logs.
 
 ### 🐳 Docker Support
 
-- Pre-built Docker images for easy deployment
-- No need to install FFmpeg or other dependencies manually
-- Ready-to-use Docker Compose configuration
+Pre-built Docker images with all dependencies included, ready for easy deployment.
 
 ## Requirements
 
-radikron requires [FFmpeg](https://ffmpeg.org/download.html) to combine m3u8 chunks to a single aac file (or convert to mp3).
+### Common Requirements
 
-Make sure `ffmpeg` exists in your `$PATH`.
+- **[FFmpeg](https://ffmpeg.org/download.html)**: Required to combine m3u8 chunks to a single AAC file (or convert to MP3). Make sure `ffmpeg` exists in your `$PATH`.
+  - The [docker image](#try-with-docker) already contains all the requirements including FFmpeg.
 
-The [docker image](#try-with-docker) already contains all the requirements including ffmpeg.
+### GUI-Specific Requirements (for building from source)
+
+If you're building the GUI version from source (Linux users), you'll also need:
+
+- **Go 1.20+**
+- **Node.js and pnpm**
+- **Wails v2**: Install with `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+
+**Note**: macOS and Windows users can download pre-built binaries and don't need these build tools.
 
 ## Installation
 
@@ -156,9 +123,18 @@ go install github.com/iomz/radikron/cmd/radikron@latest
 
 ### GUI Version
 
-The GUI version requires building from source. See the [GUI README](cmd/radikron-gui/README.md) for detailed setup instructions.
+#### macOS and Windows Users
 
-**Quick start for GUI development**:
+Pre-built binaries are available for macOS and Windows. Download the latest release from the [Releases page](https://github.com/iomz/radikron/releases):
+
+- **macOS**: Download the `.dmg` file for your architecture (Intel or Apple Silicon)
+- **Windows**: Download the `.exe` file for your architecture (x64 or ARM64)
+
+#### Linux Users
+
+Linux users need to build from source. See the [GUI README](cmd/radikron-gui/README.md) for detailed setup instructions.
+
+**Quick start for building on Linux**:
 
 ```bash
 # Install frontend dependencies
@@ -174,12 +150,6 @@ wails dev
 # Or build for production
 wails build
 ```
-
-**Prerequisites for GUI**:
-
-- Go 1.20+
-- Node.js and pnpm
-- Wails v2 (install with `go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 
 ## Configuration
 

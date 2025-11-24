@@ -1,5 +1,5 @@
 ---
-name: gui-release
+name: release
 on:
   release:
     types: [published]
@@ -50,6 +50,12 @@ jobs:
         with:
           version: 10
 
+      - name: Install create-dmg (macOS only)
+        if: matrix.goos == 'darwin'
+        run: |
+          # Homebrew is pre-installed on GitHub Actions macOS runners
+          brew install create-dmg
+
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
@@ -83,13 +89,21 @@ jobs:
             echo "Checking for macOS build output..."
             ls -la build/bin/ || echo "build/bin/ does not exist"
             if [ -d "build/bin/Radikron.app" ]; then
-              echo "Found Radikron.app, creating DMG..."
-              # Create DMG using hdiutil (built-in macOS tool)
-              # -volname: Volume name shown when DMG is mounted
-              # -srcfolder: Source folder (.app bundle)
-              # -ov: Overwrite if exists
-              # -format UDZO: Compressed DMG format
-              hdiutil create -volname "Radikron" -srcfolder build/bin/Radikron.app -ov -format UDZO "$ARTIFACTS_DIR/Radikron_${{ matrix.platform }}.dmg"
+              echo "Found Radikron.app, creating DMG with drag-and-drop interface..."
+              # Create DMG using create-dmg for better user experience
+              # --volname: Volume name shown when DMG is mounted
+              # --window-size: Size of the DMG window
+              # --icon-size: Size of icons in the DMG
+              # --app-drop-link: Creates a link to Applications folder at specified position
+              # --hdiutil-quiet: Suppress verbose output
+              create-dmg \
+                --volname "Radikron" \
+                --window-size 600 400 \
+                --icon-size 100 \
+                --app-drop-link 450 185 \
+                --hdiutil-quiet \
+                "$ARTIFACTS_DIR/Radikron_${{ matrix.platform }}.dmg" \
+                build/bin/Radikron.app
             elif [ -f "build/bin/radikron-gui" ]; then
               echo "Found radikron-gui binary, copying..."
               cp build/bin/radikron-gui "$ARTIFACTS_DIR/radikron-gui_${{ matrix.platform }}"
