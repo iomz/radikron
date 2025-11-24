@@ -1,0 +1,145 @@
+---
+name: gui-release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  build-gui:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            platform: darwin_amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            platform: darwin_arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            platform: windows_amd64
+          - os: windows-latest
+            goos: windows
+            goarch: arm64
+            platform: windows_arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            platform: linux_amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            platform: linux_arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      GO111MODULE: on
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: cmd/radikron-gui/frontend
+
+      - name: Build frontend
+        run: pnpm run build
+        working-directory: cmd/radikron-gui/frontend
+
+      - name: Build GUI application
+        working-directory: cmd/radikron-gui
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          # Wails builds natively for the runner's architecture
+          # For cross-compilation (e.g., Windows ARM64), GOOS and GOARCH are set via env
+          wails build -clean
+
+      - name: Prepare artifacts
+        shell: bash
+        working-directory: cmd/radikron-gui
+        run: |
+          mkdir -p ../artifacts
+          # Wails outputs to build/bin/ directory
+          # macOS: .app bundle
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            if [ -d "build/bin/Radikron.app" ]; then
+              # Create a zip for easier distribution
+              cd build/bin
+              zip -r ../../../artifacts/Radikron_${{ matrix.platform }}.zip Radikron.app
+            elif [ -f "build/bin/radikron-gui" ]; then
+              cp build/bin/radikron-gui ../artifacts/radikron-gui_${{ matrix.platform }}
+            fi
+          # Windows: .exe file
+          elif [ "${{ matrix.goos }}" = "windows" ]; then
+            if [ -f "build/bin/radikron-gui.exe" ]; then
+              cp build/bin/radikron-gui.exe ../artifacts/radikron-gui_${{ matrix.platform }}.exe
+            fi
+            # Check for NSIS installer (if generated)
+            find build/bin -name "*.exe" -type f ! -name "radikron-gui.exe" -exec cp {} ../artifacts/ \;
+          # Linux: binary
+          else
+            if [ -f "build/bin/radikron-gui" ]; then
+              cp build/bin/radikron-gui ../artifacts/radikron-gui_${{ matrix.platform }}
+              chmod +x ../artifacts/radikron-gui_${{ matrix.platform }}
+            fi
+            # Check for AppImage or DEB (if generated)
+            find build/bin -name "*.AppImage" -type f -exec cp {} ../artifacts/ \;
+            find build/bin -name "*.deb" -type f -exec cp {} ../artifacts/ \;
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: radikron-gui-${{ matrix.platform }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  upload-release:
+    needs: build-gui
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find release-artifacts -type f -exec cp {} release-assets/ \;
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          tag_name: ${{ github.event.release.tag_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
