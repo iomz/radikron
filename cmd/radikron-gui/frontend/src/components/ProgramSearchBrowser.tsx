@@ -55,7 +55,7 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
   );
 };
 
-export const WeeklyProgramBrowser: React.FC = () => {
+export const ProgramSearchBrowser: React.FC = () => {
   const stationsRaw = useAppStore((state) => state.stations);
   // Sort stations alphabetically
   const stations = [...stationsRaw].sort((a, b) => a.localeCompare(b));

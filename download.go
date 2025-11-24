@@ -178,7 +178,7 @@ func setupOutputConfig(ctx context.Context, asset *Asset, prog *Prog, startTime 
 		prog.Title,
 	)
 
-	output, err := newOutputConfig(
+	output, err := NewOutputConfig(
 		fileBaseName,
 		asset.OutputFormat,
 		asset.DownloadDir,
@@ -547,12 +547,12 @@ func getChunklistFromM3U8(uri string) ([]string, error) {
 	return getChunklist(resp.Body)
 }
 
-// getRadikronPath resolves a provided path (or defaults to the user's Downloads/radiko directory).
+// GetRadikronPath resolves a provided path (or defaults to the user's Downloads/radiko directory).
 // If a relative path is provided, it's resolved relative to the current working directory.
 // If an absolute path is provided, it's used as-is.
 // If no path is provided, it defaults to the user's Downloads/radiko directory,
 // with a fallback to the current working directory/radiko if the home directory cannot be determined.
-func getRadikronPath(path string) (string, error) {
+func GetRadikronPath(path string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current working directory: %w", err)
@@ -660,7 +660,7 @@ func checkConfiguredFoldersForDuplicate(
 	downloadDir, fileBaseName, fileFormat, targetPath string,
 ) (exists bool, existingPath string) {
 	for folder := range configuredFolders {
-		configuredPath, err := getRadikronPath(filepath.Join(downloadDir, folder))
+		configuredPath, err := GetRadikronPath(filepath.Join(downloadDir, folder))
 		if err != nil {
 			continue
 		}
@@ -733,7 +733,7 @@ func handleDuplicate(
 	}
 
 	// Check in default download directory
-	defaultPath, err := getRadikronPath(downloadDir)
+	defaultPath, err := GetRadikronPath(downloadDir)
 	if err != nil {
 		return nil
 	}
@@ -755,13 +755,13 @@ func handleDuplicate(
 	return nil
 }
 
-// newOutputConfig prepares the outputdir
-func newOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*radigo.OutputConfig, error) {
+// NewOutputConfig prepares the outputdir
+func NewOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*radigo.OutputConfig, error) {
 	basePath := downloadDir
 	if folder != "" {
 		basePath = filepath.Join(downloadDir, folder)
 	}
-	fullPath, err := getRadikronPath(basePath)
+	fullPath, err := GetRadikronPath(basePath)
 	if err != nil {
 		return nil, err
 	}

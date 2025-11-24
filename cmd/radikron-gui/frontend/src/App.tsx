@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dashboard } from "@/components/Dashboard";
 import { RulesEditor } from "@/components/RulesEditor";
-import { WeeklyProgramBrowser } from "@/components/WeeklyProgramBrowser";
+import { ScheduledDownloads } from "@/components/ScheduledDownloads";
+import { ProgramSearchBrowser } from "@/components/ProgramSearchBrowser";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppStore } from "@/store/useAppStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -222,7 +223,8 @@ const AppComponent: React.FC = () => {
                 <TabsList>
                   <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
                   <TabsTrigger value="rules">Rules Editor</TabsTrigger>
-                  <TabsTrigger value="programs">Weekly Programs</TabsTrigger>
+                  <TabsTrigger value="scheduled">Scheduled Downloads</TabsTrigger>
+                  <TabsTrigger value="programs">Program Search</TabsTrigger>
                 </TabsList>
 
                 <div className="flex items-center gap-4">
@@ -255,8 +257,11 @@ const AppComponent: React.FC = () => {
               <TabsContent value="rules">
                 <RulesEditor />
               </TabsContent>
+              <TabsContent value="scheduled">
+                <ScheduledDownloads />
+              </TabsContent>
               <TabsContent value="programs">
-                <WeeklyProgramBrowser />
+                <ProgramSearchBrowser />
               </TabsContent>
             </div>
           </main>
