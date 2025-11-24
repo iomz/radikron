@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -11,7 +12,41 @@ import { useThemeStore } from "@/store/useThemeStore"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const effectiveTheme = useThemeStore((state) => state.getEffectiveTheme())
+  const theme = useThemeStore((state) => state.theme)
+  const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">(() => {
+    if (theme === "system") {
+      if (typeof window === "undefined") return "light"
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+    }
+    return theme
+  })
+
+  useEffect(() => {
+    const computeEffectiveTheme = () => {
+      if (theme === "system") {
+        if (typeof window === "undefined") return "light"
+        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+      }
+      return theme
+    }
+
+    setEffectiveTheme(computeEffectiveTheme())
+
+    if (theme === "system" && typeof window !== "undefined") {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+      const handleChange = () => {
+        setEffectiveTheme(computeEffectiveTheme())
+      }
+
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener("change", handleChange)
+        return () => mediaQuery.removeEventListener("change", handleChange)
+      } else {
+        mediaQuery.addListener(handleChange)
+        return () => mediaQuery.removeListener(handleChange)
+      }
+    }
+  }, [theme])
 
   return (
     <Sonner
