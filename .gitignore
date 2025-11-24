@@ -31,6 +31,10 @@ config.yaml
 # downloads
 /radiko
 
+# tests
+/coverage.txt
+/coverage.html
+
 # misc
 *.bak
 .DS_Store

@@ -13,6 +13,8 @@ export function GetConfigFile():Promise<string>;
 
 export function GetMonitoringStatus():Promise<boolean>;
 
+export function GetSchedules():Promise<radikron.Progs>;
+
 export function LoadConfig(arg1:string):Promise<void>;
 
 export function OpenDirectory(arg1:string):Promise<void>;

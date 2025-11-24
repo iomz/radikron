@@ -114,50 +114,50 @@ func TestGetRadicronPath(t *testing.T) {
 	}
 
 	// Test with relative path
-	path, err := getRadikronPath("downloads")
+	path, err := GetRadikronPath("downloads")
 	if err != nil {
-		t.Errorf("getRadikronPath with relative path failed: %v", err)
+		t.Errorf("GetRadikronPath with relative path failed: %v", err)
 	}
 	expected := filepath.Join(cwd, "downloads")
 	if path != expected {
-		t.Errorf("getRadikronPath => %v, want %v", path, expected)
+		t.Errorf("GetRadikronPath => %v, want %v", path, expected)
 	}
 
 	// Test with absolute path (cross-platform)
 	tmpDir := os.TempDir()
 	absPath := filepath.Join(tmpDir, "test-downloads")
-	path, err = getRadikronPath(absPath)
+	path, err = GetRadikronPath(absPath)
 	if err != nil {
-		t.Errorf("getRadikronPath with absolute path failed: %v", err)
+		t.Errorf("GetRadikronPath with absolute path failed: %v", err)
 	}
 	if path != absPath {
-		t.Errorf("getRadikronPath with absolute path => %v, want %v", path, absPath)
+		t.Errorf("GetRadikronPath with absolute path => %v, want %v", path, absPath)
 	}
 
 	// Test with subdirectory
-	path, err = getRadikronPath(filepath.Join("downloads", "subfolder"))
+	path, err = GetRadikronPath(filepath.Join("downloads", "subfolder"))
 	if err != nil {
-		t.Errorf("getRadikronPath with subdirectory failed: %v", err)
+		t.Errorf("GetRadikronPath with subdirectory failed: %v", err)
 	}
 	expected = filepath.Join(cwd, "downloads", "subfolder")
 	if path != expected {
-		t.Errorf("getRadikronPath with subdirectory => %v, want %v", path, expected)
+		t.Errorf("GetRadikronPath with subdirectory => %v, want %v", path, expected)
 	}
 
 	// Test path cleaning (with .. and .)
-	path, err = getRadikronPath(filepath.Join("downloads", "..", "downloads", ".", "sub"))
+	path, err = GetRadikronPath(filepath.Join("downloads", "..", "downloads", ".", "sub"))
 	if err != nil {
-		t.Errorf("getRadikronPath with path cleaning failed: %v", err)
+		t.Errorf("GetRadikronPath with path cleaning failed: %v", err)
 	}
 	expected = filepath.Join(cwd, "downloads", "sub")
 	if path != expected {
-		t.Errorf("getRadikronPath with path cleaning => %v, want %v", path, expected)
+		t.Errorf("GetRadikronPath with path cleaning => %v, want %v", path, expected)
 	}
 
 	// Test with empty path (default case - should use $HOME/Downloads/radiko)
-	path, err = getRadikronPath("")
+	path, err = GetRadikronPath("")
 	if err != nil {
-		t.Errorf("getRadikronPath with empty path failed: %v", err)
+		t.Errorf("GetRadikronPath with empty path failed: %v", err)
 	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -167,45 +167,45 @@ func TestGetRadicronPath(t *testing.T) {
 		expected = filepath.Join(homeDir, "Downloads", "radiko")
 	}
 	if path != expected {
-		t.Errorf("getRadikronPath with empty path => %v, want %v", path, expected)
+		t.Errorf("GetRadikronPath with empty path => %v, want %v", path, expected)
 	}
 }
 
 func TestNewOutputConfig(t *testing.T) {
 	// Test without folder
-	output, err := newOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
+	output, err := NewOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
 	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
+		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	if output == nil {
-		t.Fatal("newOutputConfig returned nil")
+		t.Fatal("NewOutputConfig returned nil")
 	}
 	if output.FileBaseName != "test-file" {
-		t.Errorf("newOutputConfig FileBaseName => %v, want test-file", output.FileBaseName)
+		t.Errorf("NewOutputConfig FileBaseName => %v, want test-file", output.FileBaseName)
 	}
 	if output.FileFormat != radigo.AudioFormatAAC {
-		t.Errorf("newOutputConfig FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatAAC)
+		t.Errorf("NewOutputConfig FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatAAC)
 	}
 
 	// Test with folder
-	output, err = newOutputConfig("test-file", radigo.AudioFormatMP3, "downloads", "citypop")
+	output, err = NewOutputConfig("test-file", radigo.AudioFormatMP3, "downloads", "citypop")
 	if err != nil {
-		t.Fatalf("newOutputConfig with folder failed: %v", err)
+		t.Fatalf("NewOutputConfig with folder failed: %v", err)
 	}
 	if output == nil {
-		t.Fatal("newOutputConfig with folder returned nil")
+		t.Fatal("NewOutputConfig with folder returned nil")
 	}
 	if output.FileFormat != radigo.AudioFormatMP3 {
-		t.Errorf("newOutputConfig FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatMP3)
+		t.Errorf("NewOutputConfig FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatMP3)
 	}
 
 	// Test with custom download directory
-	output, err = newOutputConfig("test-file", radigo.AudioFormatAAC, "my-downloads", "")
+	output, err = NewOutputConfig("test-file", radigo.AudioFormatAAC, "my-downloads", "")
 	if err != nil {
-		t.Errorf("newOutputConfig with custom dir failed: %v", err)
+		t.Errorf("NewOutputConfig with custom dir failed: %v", err)
 	}
 	if output == nil {
-		t.Error("newOutputConfig with custom dir returned nil")
+		t.Error("NewOutputConfig with custom dir returned nil")
 	}
 }
 
@@ -260,9 +260,9 @@ func TestHandleDuplicate_NonexistentFile(t *testing.T) {
 	_, cleanup := setupHandleDuplicateTest(t)
 	defer cleanup()
 
-	output, err := newOutputConfig("nonexistent-file", radigo.AudioFormatAAC, "downloads", "")
+	output, err := NewOutputConfig("nonexistent-file", radigo.AudioFormatAAC, "downloads", "")
 	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
+		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
@@ -284,9 +284,9 @@ func TestHandleDuplicate_ExistingInDefaultFolder(t *testing.T) {
 	}
 	file.Close()
 
-	output, err := newOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
+	output, err := NewOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
 	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
+		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(ctx, "test-file", radigo.AudioFormatAAC, "downloads", "", output, Rules{}, "TEST", "Test Program", "20230605100000")
@@ -350,9 +350,9 @@ func TestHandleDuplicate_ExistingInConfiguredFolder(t *testing.T) {
 	}
 	file.Close()
 
-	output, err := newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
+		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
@@ -389,9 +389,9 @@ func TestHandleDuplicate_ConflictBothLocations(t *testing.T) {
 	}
 	file.Close()
 
-	output, err := newOutputConfig("conflict-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("conflict-test", radigo.AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
+		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
@@ -439,9 +439,9 @@ func TestHandleDuplicate_ChecksAllConfiguredFolders(t *testing.T) {
 	}
 
 	// Try to handle duplicate with citypop as configured folder, but file exists in jazz
-	output, err := newOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
+		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
@@ -2042,9 +2042,9 @@ func TestHandleMoveFromDefaultFolder_MoveErrorTargetAppears(t *testing.T) {
 		t.Fatalf("Failed to create default file: %v", err)
 	}
 
-	output, err := newOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
-		t.Fatalf("newOutputConfig failed: %v", err)
+		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	targetFile := output.AbsPath()
 
@@ -2074,12 +2074,12 @@ func TestHandleMoveFromDefaultFolder_MoveErrorTargetAppears(t *testing.T) {
 func TestGetRadicronPath_GetwdError(t *testing.T) {
 	// This is hard to test directly, but we can verify the error path exists
 	// by checking the code handles Getwd errors
-	// getRadikronPath calls os.Getwd() which rarely fails, but the code should handle it
+	// GetRadikronPath calls os.Getwd() which rarely fails, but the code should handle it
 	// We can't easily mock os.Getwd, but we verify the error handling exists
-	_, err := getRadikronPath("test")
+	_, err := GetRadikronPath("test")
 	// Should succeed in normal cases
 	if err != nil {
-		t.Logf("getRadikronPath returned error (may be expected in some environments): %v", err)
+		t.Logf("GetRadikronPath returned error (may be expected in some environments): %v", err)
 	}
 }
 

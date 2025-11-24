@@ -215,6 +215,53 @@ func (a *App) GetConfigFile() (string, error) {
 	return a.configFile, nil
 }
 
+// GetSchedules returns the current scheduled programs that haven't been downloaded yet
+func (a *App) GetSchedules() (radikron.Progs, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.asset == nil {
+		return nil, fmt.Errorf("asset not initialized")
+	}
+
+	// Filter out programs whose files already exist
+	pendingSchedules := make(radikron.Progs, 0, len(a.asset.Schedules))
+	for _, prog := range a.asset.Schedules {
+		// Check if the file already exists
+		startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
+		if err != nil {
+			// Skip programs with invalid start time
+			continue
+		}
+
+		fileBaseName := fmt.Sprintf(
+			"%s_%s_%s",
+			startTime.In(radikron.Location).Format(radikron.OutputDatetimeLayout),
+			prog.StationID,
+			prog.Title,
+		)
+
+		// Create output config using the exported function
+		output, err := radikron.NewOutputConfig(
+			fileBaseName,
+			a.asset.OutputFormat,
+			a.asset.DownloadDir,
+			prog.RuleFolder,
+		)
+		if err != nil {
+			// Skip programs where we can't create output config
+			continue
+		}
+
+		// Only include programs whose files don't exist yet
+		if !output.IsExist() {
+			pendingSchedules = append(pendingSchedules, prog)
+		}
+	}
+
+	return pendingSchedules, nil
+}
+
 // LoadConfig loads configuration from a file
 func (a *App) LoadConfig(filename string) error {
 	a.mu.Lock()

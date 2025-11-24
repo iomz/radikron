@@ -22,6 +22,10 @@ export function GetMonitoringStatus() {
   return window['go']['main']['App']['GetMonitoringStatus']();
 }
 
+export function GetSchedules() {
+  return window['go']['main']['App']['GetSchedules']();
+}
+
 export function LoadConfig(arg1) {
   return window['go']['main']['App']['LoadConfig'](arg1);
 }
