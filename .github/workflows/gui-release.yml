@@ -75,6 +75,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
+          ARTIFACTS_DIR="${{ github.workspace }}/artifacts"
           cd cmd/radikron-gui
           # Wails outputs to build/bin/ directory
           # macOS: .app bundle
@@ -83,14 +84,12 @@ jobs:
             ls -la build/bin/ || echo "build/bin/ does not exist"
             if [ -d "build/bin/Radikron.app" ]; then
               echo "Found Radikron.app, creating DMG..."
-              cd build/bin
               # Create DMG using hdiutil (built-in macOS tool)
               # -volname: Volume name shown when DMG is mounted
               # -srcfolder: Source folder (.app bundle)
               # -ov: Overwrite if exists
               # -format UDZO: Compressed DMG format
-              hdiutil create -volname "Radikron" -srcfolder Radikron.app -ov -format UDZO ../../../artifacts/Radikron_${{ matrix.platform }}.dmg
-              cd ../../..
+              hdiutil create -volname "Radikron" -srcfolder build/bin/Radikron.app -ov -format UDZO "$ARTIFACTS_DIR/Radikron_${{ matrix.platform }}.dmg"
             elif [ -f "build/bin/radikron-gui" ]; then
               echo "Found radikron-gui binary, copying..."
               cp build/bin/radikron-gui ../artifacts/radikron-gui_${{ matrix.platform }}
