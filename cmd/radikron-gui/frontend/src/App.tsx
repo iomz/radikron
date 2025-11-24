@@ -50,7 +50,7 @@ const ErrorFallback: React.FC<{
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground mb-2">
             Error details
           </summary>
-          <pre className="mt-2 p-3 bg-muted rounded text-xs overflow-auto">
+          <pre className="mt-2 p-3 bg-muted rounded text-xs text-foreground overflow-auto">
             {error.message}
           </pre>
         </details>

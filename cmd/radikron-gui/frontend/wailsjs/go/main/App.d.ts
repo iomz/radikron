@@ -3,6 +3,8 @@
 import {config} from '../models';
 import {radikron} from '../models';
 
+export function DeleteManualInjection(arg1:string):Promise<void>;
+
 export function FetchProgramSnapshots():Promise<void>;
 
 export function GetAvailableStations():Promise<Array<string>>;
@@ -11,9 +13,19 @@ export function GetConfig():Promise<config.Config>;
 
 export function GetConfigFile():Promise<string>;
 
+export function GetDesignatedFolder(arg1:radikron.Prog,arg2:string,arg3:string):Promise<string>;
+
 export function GetMonitoringStatus():Promise<boolean>;
 
 export function GetSchedules():Promise<radikron.Progs>;
+
+export function HandleDownloadCompleted(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function HandleDownloadCompletedByID(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
+export function InjectProgram(arg1:radikron.Prog,arg2:string):Promise<void>;
+
+export function IsManualInjection(arg1:string):Promise<boolean>;
 
 export function LoadConfig(arg1:string):Promise<void>;
 

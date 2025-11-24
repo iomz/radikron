@@ -51,6 +51,9 @@ export const ScheduledDownloads: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedProgram, setSelectedProgram] = useState<radikron.Prog | null>(null);
+  const [manualInjections, setManualInjections] = useState<Set<string>>(new Set());
+  const [programToDelete, setProgramToDelete] = useState<radikron.Prog | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const isFetchingRef = useRef(false);
 
   const loadSchedules = useCallback(async () => {
@@ -58,12 +61,36 @@ export const ScheduledDownloads: React.FC = () => {
     isFetchingRef.current = true;
     setIsLoading(true);
     setError(null);
-    try {
-      const results: any[] = await App.GetSchedules();
-      const convertedSchedules: radikron.Prog[] = results.map((prog: any) =>
-        radikron.Prog.createFrom(prog)
-      );
-      setSchedules(convertedSchedules);
+      try {
+        const results: any[] = await App.GetSchedules();
+        const convertedSchedules: radikron.Prog[] = results.map((prog: any) =>
+          radikron.Prog.createFrom(prog)
+        );
+        
+        // Sort programs by start date (Ft field) - format is YYYYMMDDHHmmss, so string comparison works
+        const sortedSchedules = convertedSchedules.sort((a, b) => {
+          if (!a.Ft && !b.Ft) return 0;
+          if (!a.Ft) return 1;
+          if (!b.Ft) return -1;
+          return a.Ft.localeCompare(b.Ft);
+        });
+        
+        setSchedules(sortedSchedules);
+        
+        // Check which programs are manually injected
+        const manualSet = new Set<string>();
+        for (const prog of sortedSchedules) {
+          try {
+            // @ts-ignore - IsManualInjection will be available after Wails rebuild
+            const isManual = await App.IsManualInjection(prog.ID);
+            if (isManual) {
+              manualSet.add(prog.ID);
+            }
+          } catch (err) {
+            console.error(`Failed to check if program ${prog.ID} is manual injection:`, err);
+          }
+        }
+        setManualInjections(manualSet);
     } catch (err) {
       console.error('Failed to load schedules:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -110,6 +137,30 @@ export const ScheduledDownloads: React.FC = () => {
     return `${year}-${month}-${day} ${hour}:${minute}`;
   };
 
+  const handleDeleteClick = (e: React.MouseEvent, program: radikron.Prog) => {
+    e.stopPropagation();
+    setProgramToDelete(program);
+  };
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!programToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      // @ts-ignore - DeleteManualInjection will be available after Wails rebuild
+      await App.DeleteManualInjection(programToDelete.ID);
+      setProgramToDelete(null);
+      // Reload schedules to reflect the deletion
+      await loadSchedules();
+    } catch (err) {
+      console.error('Failed to delete manual injection:', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`Failed to delete program: ${errorMessage}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [programToDelete, loadSchedules]);
+
   return (
     <div className="flex items-center justify-center px-4 py-8">
       <Card className="w-full max-w-6xl flex flex-col h-[600px]">
@@ -141,42 +192,60 @@ export const ScheduledDownloads: React.FC = () => {
               <div className="flex-1 min-h-0 overflow-hidden">
                 <ScrollArea className="h-full">
                   <div className="space-y-3 pr-4">
-                    {schedules.map((program) => (
-                      <Card
-                        key={program.ID}
-                        className="p-4 cursor-pointer hover:bg-accent"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setSelectedProgram(program)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedProgram(program);
-                          }
-                        }}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-lg mb-1">{program.Title}</h3>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline">{program.StationID}</Badge>
-                              {program.Pfm && (
-                                <span className="text-sm text-muted-foreground">
-                                  Host: {program.Pfm}
-                                </span>
-                              )}
-                              {program.RuleName && (
-                                <Badge variant="secondary">Rule: {program.RuleName}</Badge>
-                              )}
+                    {schedules.map((program) => {
+                      const isManual = manualInjections.has(program.ID);
+                      return (
+                        <Card
+                          key={program.ID}
+                          className="p-4 cursor-pointer hover:bg-accent"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedProgram(program)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedProgram(program);
+                            }
+                          }}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-lg mb-1">{program.Title}</h3>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline">{program.StationID}</Badge>
+                                {program.Pfm && (
+                                  <span className="text-sm text-muted-foreground">
+                                    Host: {program.Pfm}
+                                  </span>
+                                )}
+                                {program.RuleName && (
+                                  <Badge variant="secondary">Rule: {program.RuleName}</Badge>
+                                )}
+                                {isManual && (
+                                  <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                                    Manual
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="mt-2 text-sm text-muted-foreground">
+                                <p>Start: {formatDateTime(program.Ft)}</p>
+                                <p>End: {formatDateTime(program.To)}</p>
+                              </div>
                             </div>
-                            <div className="mt-2 text-sm text-muted-foreground">
-                              <p>Start: {formatDateTime(program.Ft)}</p>
-                              <p>End: {formatDateTime(program.To)}</p>
-                            </div>
+                            {isManual && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={(e) => handleDeleteClick(e, program)}
+                                className="ml-2"
+                              >
+                                Delete
+                              </Button>
+                            )}
                           </div>
-                        </div>
-                      </Card>
-                    ))}
+                        </Card>
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               </div>
@@ -256,6 +325,42 @@ export const ScheduledDownloads: React.FC = () => {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={programToDelete !== null} onOpenChange={(open) => !open && setProgramToDelete(null)}>
+        <DialogContent className="max-w-md [&>button]:text-foreground [&>button:hover]:text-foreground [&>button]:opacity-100 [&>button>svg]:text-foreground">
+          <DialogHeader>
+            <DialogTitle>Delete Manual Injection</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this manually injected program? This will remove it from scheduled downloads and the manual injection list.
+            </DialogDescription>
+          </DialogHeader>
+          {programToDelete && (
+            <div className="py-4">
+              <p className="text-sm font-medium text-foreground mb-2">{programToDelete.Title}</p>
+              <p className="text-sm text-muted-foreground">
+                [{programToDelete.StationID}] {formatDateTime(programToDelete.Ft)}
+              </p>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setProgramToDelete(null)}
+              disabled={isDeleting}
+              className="border-foreground/20 text-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

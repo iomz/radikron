@@ -68,6 +68,11 @@ export const ProgramSearchBrowser: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [selectedProgram, setSelectedProgram] = useState<radikron.Prog | null>(null);
+  const [showInjectionDialog, setShowInjectionDialog] = useState(false);
+  const [selectedRule, setSelectedRule] = useState<string>('');
+  const [availableRules, setAvailableRules] = useState<Array<{ name: string; folder: string }>>([]);
+  const [designatedFolder, setDesignatedFolder] = useState<string>('');
+  const [isInjecting, setIsInjecting] = useState(false);
 
   // Fetch program snapshots when component mounts
   useEffect(() => {
@@ -181,6 +186,122 @@ export const ProgramSearchBrowser: React.FC = () => {
     const minute = dateTimeStr.substring(10, 12);
     return `${year}-${month}-${day} ${hour}:${minute}`;
   };
+
+  const updateDesignatedFolder = useCallback(async (prog: radikron.Prog | null, rules: Array<{ name: string; folder: string }>, ruleName: string) => {
+    if (!prog) {
+      setDesignatedFolder('');
+      return;
+    }
+
+    try {
+      // Get config to access DownloadDir
+      const cfg = await App.GetConfig();
+      const downloadDir = cfg.DownloadDir || 'radiko';
+      
+      // Find the selected rule's folder
+      let folder = '';
+      if (ruleName) {
+        const rule = rules.find((r) => r.name === ruleName);
+        if (rule) {
+          folder = rule.folder || '';
+        }
+      }
+      
+      // Calculate the full path
+      // @ts-ignore - GetDesignatedFolder will be available after Wails rebuild
+      const fullPath = await App.GetDesignatedFolder(prog, folder, downloadDir);
+      setDesignatedFolder(fullPath);
+    } catch (err) {
+      console.error('Failed to get designated folder:', err);
+      // Fallback calculation
+      const cfg = await App.GetConfig();
+      const downloadDir = cfg.DownloadDir || 'radiko';
+      const rule = rules.find((r) => r.name === ruleName);
+      const folder = rule?.folder || '';
+      const fullPath = folder ? `${downloadDir}/${folder}` : downloadDir;
+      setDesignatedFolder(fullPath);
+    }
+  }, []);
+
+  const loadRulesAndShowDialog = useCallback(async () => {
+    try {
+      const cfg = await App.GetConfig();
+      const rules = cfg.Rules || [];
+      const rulesList = rules.map((rule: any) => ({
+        name: rule.Name || '',
+        folder: rule.Folder || '',
+      }));
+      setAvailableRules(rulesList);
+      
+      // Try to find a matching rule
+      let initialRule = '';
+      if (selectedProgram) {
+        const matchingRule = rules.find((rule: any) => {
+          // Simple matching logic - check if rule matches the program
+          if (rule.StationID && rule.StationID !== selectedProgram.StationID) {
+            return false;
+          }
+          if (rule.Title && !selectedProgram.Title.includes(rule.Title)) {
+            return false;
+          }
+          if (rule.Pfm && rule.Pfm !== selectedProgram.Pfm) {
+            return false;
+          }
+          if (rule.Keyword && !selectedProgram.Title.includes(rule.Keyword) && 
+              !selectedProgram.Desc?.includes(rule.Keyword)) {
+            return false;
+          }
+          return true;
+        });
+        
+        if (matchingRule) {
+          initialRule = matchingRule.Name || '';
+        }
+      }
+      
+      setSelectedRule(initialRule);
+      setShowInjectionDialog(true);
+      
+      // Update folder after dialog is shown
+      if (selectedProgram) {
+        updateDesignatedFolder(selectedProgram, rulesList, initialRule);
+      }
+    } catch (err) {
+      console.error('Failed to load rules:', err);
+      setError('Failed to load rules');
+    }
+  }, [selectedProgram, updateDesignatedFolder]);
+
+  const handleRuleChange = useCallback((value: string) => {
+    // Convert __default__ back to empty string
+    const ruleName = value === '__default__' ? '' : value;
+    setSelectedRule(ruleName);
+    if (selectedProgram) {
+      updateDesignatedFolder(selectedProgram, availableRules, ruleName);
+    }
+  }, [selectedProgram, availableRules, updateDesignatedFolder]);
+
+  const handleInjectProgram = useCallback(async () => {
+    if (!selectedProgram) return;
+
+    setIsInjecting(true);
+    setError(null);
+
+    try {
+      // @ts-ignore - InjectProgram will be available after Wails rebuild
+      await App.InjectProgram(selectedProgram, selectedRule);
+      setShowInjectionDialog(false);
+      setSelectedProgram(null);
+      setSelectedRule('');
+      // Optionally show success message
+    } catch (err) {
+      console.error('Failed to inject program:', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`Failed to add program to schedule: ${errorMessage}`);
+    } finally {
+      setIsInjecting(false);
+    }
+  }, [selectedProgram, selectedRule]);
 
   return (
     <div className="flex items-center justify-center px-4 py-8">
@@ -404,8 +525,83 @@ export const ProgramSearchBrowser: React.FC = () => {
                   <p className="text-sm font-medium text-muted-foreground mb-1">Program ID</p>
                   <p className="text-sm font-mono text-xs text-foreground">{selectedProgram.ID}</p>
                 </div>
+
+                <div className="flex justify-end pt-4 border-t">
+                  <Button
+                    onClick={() => {
+                      loadRulesAndShowDialog();
+                    }}
+                    disabled={isInjecting}
+                  >
+                    Add to Scheduled Downloads
+                  </Button>
+                </div>
               </div>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Injection Dialog */}
+      <Dialog open={showInjectionDialog} onOpenChange={setShowInjectionDialog}>
+        <DialogContent className="max-w-2xl [&>button]:text-foreground [&>button:hover]:text-foreground [&>button]:opacity-100 [&>button>svg]:text-foreground">
+          <DialogHeader>
+            <DialogTitle>Add to Scheduled Downloads</DialogTitle>
+            <DialogDescription>
+              Select a rule to determine the download folder, or use the default folder.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedProgram && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-1">Program</p>
+                <p className="text-sm text-foreground font-semibold">{selectedProgram.Title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedProgram.StationID} • {formatDateTime(selectedProgram.Ft)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rule-select">Rule (for folder organization)</Label>
+                <Select value={selectedRule || '__default__'} onValueChange={handleRuleChange}>
+                  <SelectTrigger id="rule-select" className="text-foreground">
+                    <SelectValue placeholder="Select a rule or use default" className="text-foreground placeholder:text-muted-foreground" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">Default (no rule)</SelectItem>
+                    {availableRules.map((rule) => (
+                      <SelectItem key={rule.name} value={rule.name}>
+                        {rule.name} {rule.folder ? `(${rule.folder})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-1">Designated Folder</p>
+                <p className="text-sm font-mono text-xs text-foreground bg-muted p-2 rounded">
+                  {designatedFolder || 'Calculating...'}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowInjectionDialog(false);
+                    setSelectedRule('');
+                  }}
+                  disabled={isInjecting}
+                  className="border-foreground/20 text-foreground hover:bg-accent hover:text-accent-foreground"
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleInjectProgram} disabled={isInjecting}>
+                  {isInjecting ? 'Adding...' : 'Add to Schedule'}
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
