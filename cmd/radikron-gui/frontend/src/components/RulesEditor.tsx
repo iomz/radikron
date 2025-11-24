@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 import { useAppStore } from "@/store/useAppStore";
 import * as App from "../../wailsjs/go/main/App";
 import { config, radikron } from "../../wailsjs/go/models";
@@ -65,6 +66,7 @@ export const RulesEditor: React.FC = () => {
       // Reload config info to reflect changes
       await loadConfigInfo();
       addActivityLog("success", "Rules saved successfully");
+      toast.success("Rules saved successfully");
     } catch (error) {
       console.error("Failed to save rules:", error);
       const errorMessage =
@@ -145,6 +147,7 @@ export const RulesEditor: React.FC = () => {
       // Reload config info to reflect changes
       await loadConfigInfo();
       addActivityLog("success", `Rule "${ruleName}" removed successfully`);
+      toast.success(`Rule "${ruleName}" removed successfully`);
     } catch (error) {
       console.error("Failed to remove rule:", error);
       const errorMessage =

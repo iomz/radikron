@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { EventsOn } from "../wailsjs/runtime/runtime";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -148,6 +149,7 @@ const AppComponent: React.FC = () => {
           ? `Completed: [${data.station}]${data.title} - ${dateStr}`
           : `Completed: [${data.station}]${data.title}`;
         addActivityLog("success", message);
+        toast.success(message);
       },
     );
 

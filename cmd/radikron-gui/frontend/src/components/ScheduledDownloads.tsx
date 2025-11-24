@@ -11,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import { useAppStore } from '@/store/useAppStore';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import * as App from '../../wailsjs/go/main/App';
 import { radikron } from '../../wailsjs/go/models';
@@ -47,6 +49,7 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
 };
 
 export const ScheduledDownloads: React.FC = () => {
+  const addActivityLog = useAppStore((state) => state.addActivityLog);
   const [schedules, setSchedules] = useState<radikron.Prog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +164,9 @@ export const ScheduledDownloads: React.FC = () => {
       setProgramToDelete(null);
       // Reload schedules to reflect the deletion
       await loadSchedules();
+      const successMessage = `Program [${programToDelete.StationID}]${programToDelete.Title} deleted successfully`;
+      addActivityLog("success", successMessage);
+      toast.success(successMessage);
     } catch (err) {
       console.error('Failed to delete manual injection:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);

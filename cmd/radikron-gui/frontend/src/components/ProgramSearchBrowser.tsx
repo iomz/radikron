@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import * as App from '../../wailsjs/go/main/App';
 import { radikron } from '../../wailsjs/go/models';
@@ -57,6 +58,7 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
 
 export const ProgramSearchBrowser: React.FC = () => {
   const stationsRaw = useAppStore((state) => state.stations);
+  const addActivityLog = useAppStore((state) => state.addActivityLog);
   // Sort stations alphabetically
   const stations = [...stationsRaw].sort((a, b) => a.localeCompare(b));
   const [searchCriteria, setSearchCriteria] = useState({
@@ -301,7 +303,10 @@ export const ProgramSearchBrowser: React.FC = () => {
       setShowInjectionDialog(false);
       setSelectedProgram(null);
       setSelectedRule('');
-      // Optionally show success message
+      // Show success message
+      const successMessage = `Program [${selectedProgram.StationID}]${selectedProgram.Title} added to schedule`;
+      addActivityLog("success", successMessage);
+      toast.success(successMessage);
     } catch (err) {
       console.error('Failed to inject program:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
