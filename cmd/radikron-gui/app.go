@@ -358,7 +358,7 @@ func (a *App) shouldRetryDownload(inj *manualInjection) bool {
 		return true
 	}
 	timeSinceFailure := time.Since(*inj.LastFailureTime)
-	nextRetryDelay := calculateRetryDelay(inj.RetryCount)
+	nextRetryDelay := calculateRetryDelay(inj.RetryCount - 1)
 	return timeSinceFailure >= nextRetryDelay
 }
 
