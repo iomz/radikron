@@ -28,17 +28,30 @@ const (
 	loggerCleanupDelay = 10 * time.Minute
 	// manualInjectionsFilePerm is the file permission mode for manual injections file (0600 = read/write for owner only)
 	manualInjectionsFilePerm = 0600
+	// maxDownloadRetries is the maximum number of retry attempts for failed downloads
+	maxDownloadRetries = 5
+	// failedDownloadCleanupThreshold is the time after which failed downloads are cleaned up
+	failedDownloadCleanupThreshold = 7 * 24 * time.Hour // 7 days
+	// initialRetryDelay is the initial delay before first retry
+	initialRetryDelay = 1 * time.Hour
+	// maxRetryDelay is the maximum delay between retries
+	maxRetryDelay = 24 * time.Hour
+	// maxSafeBitShift is the maximum safe value for bit shift operations (uint64 max is 63)
+	maxSafeBitShift = 63
 )
 
 // manualInjection represents a manually injected program
 type manualInjection struct {
-	ProgramID  string `json:"program_id"`
-	StationID  string `json:"station_id"`
-	Ft         string `json:"ft"`
-	To         string `json:"to"`
-	Title      string `json:"title"`
-	RuleName   string `json:"rule_name,omitempty"`
-	RuleFolder string `json:"rule_folder,omitempty"`
+	ProgramID       string     `json:"program_id"`
+	StationID       string     `json:"station_id"`
+	Ft              string     `json:"ft"`
+	To              string     `json:"to"`
+	Title           string     `json:"title"`
+	RuleName        string     `json:"rule_name,omitempty"`
+	RuleFolder      string     `json:"rule_folder,omitempty"`
+	LastFailureTime *time.Time `json:"last_failure_time,omitempty"` // When the last download attempt failed
+	RetryCount      int        `json:"retry_count,omitempty"`       // Number of retry attempts
+	LastError       string     `json:"last_error,omitempty"`        // Last error message
 }
 
 // App struct represents the Wails application
@@ -248,8 +261,32 @@ func updateProgWithDetails(prog *radikron.Prog, programDetailsMap map[string]*ra
 	}
 }
 
-// setupDownloadForPastProgram sets up and starts download for a past program
-func (a *App) setupDownloadForPastProgram(prog *radikron.Prog) error {
+// calculateRetryDelay calculates the delay before the next retry attempt using exponential backoff
+func calculateRetryDelay(retryCount int) time.Duration {
+	// Clamp retryCount to prevent overflow
+	// maxDownloadRetries is 5, so max retryCount is 4, making max multiplier 16 (safe)
+	if retryCount < 0 {
+		retryCount = 0
+	}
+	if retryCount > maxSafeBitShift {
+		retryCount = maxSafeBitShift
+	}
+	// Use multiplication instead of bit shift to avoid int->uint conversion warning
+	// This calculates 2^retryCount: 1, 2, 4, 8, 16, 32, ...
+	multiplier := 1
+	for i := 0; i < retryCount; i++ {
+		multiplier *= 2
+	}
+	delay := initialRetryDelay * time.Duration(multiplier) // Exponential backoff: 1h, 2h, 4h, 8h, 16h
+	if delay > maxRetryDelay {
+		delay = maxRetryDelay
+	}
+	return delay
+}
+
+// downloadProgramImmediately sets up and starts download for a program immediately
+// It handles context setup, logger configuration, and error reporting
+func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix string) error {
 	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
 
 	emitEvent := func(ctx context.Context, eventName string, data any) {
@@ -270,18 +307,179 @@ func (a *App) setupDownloadForPastProgram(prog *radikron.Prog) error {
 	wg := &sync.WaitGroup{}
 	err := radikron.Download(ctx, wg, prog)
 	if err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to download past program [%s]%s immediately: %v", prog.StationID, prog.Title, err))
+		errMsg := fmt.Sprintf("%s [%s]%s: %v", errorMsgPrefix, prog.StationID, prog.Title, err)
+		runtime.LogError(a.ctx, errMsg)
 		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 			"type":    "error",
-			"message": fmt.Sprintf("Failed to download past program [%s]%s immediately: %v", prog.StationID, prog.Title, err),
+			"message": errMsg,
 		})
+
+		// Track failure in manual injection
+		a.mu.Lock()
+		if inj, exists := a.manualInjections[programID]; exists {
+			now := time.Now()
+			inj.LastFailureTime = &now
+			inj.RetryCount++
+			inj.LastError = err.Error()
+		}
+		a.mu.Unlock()
+
+		// Save failure state (outside lock to avoid deadlock)
+		go func() {
+			if saveErr := a.saveManualInjections(); saveErr != nil {
+				runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection failure state: %v", saveErr))
+			}
+		}()
+
 		return err
 	}
+
+	// Clear failure state on success
+	a.mu.Lock()
+	if inj, exists := a.manualInjections[programID]; exists {
+		inj.LastFailureTime = nil
+		inj.RetryCount = 0
+		inj.LastError = ""
+	}
+	a.mu.Unlock()
 
 	return nil
 }
 
-// processLoadedInjection processes a single loaded injection (past or future)
+// setupDownloadForPastProgram sets up and starts download for a past program
+
+// shouldRetryDownload checks if a download should be retried based on retry count and time since last failure.
+// It returns true if the retry count is below the maximum and enough time has passed since the last failure.
+func (a *App) shouldRetryDownload(inj *manualInjection) bool {
+	if inj.RetryCount >= maxDownloadRetries {
+		return false
+	}
+	if inj.LastFailureTime == nil {
+		return true
+	}
+	timeSinceFailure := time.Since(*inj.LastFailureTime)
+	nextRetryDelay := calculateRetryDelay(inj.RetryCount)
+	return timeSinceFailure >= nextRetryDelay
+}
+
+// retryFailedDownloads retries downloads for manual injections that have failed and are ready for retry.
+// It checks each manual injection and attempts to download programs that meet the retry criteria.
+func (a *App) retryFailedDownloads() {
+	a.mu.Lock()
+
+	// Collect programs that need retry
+	retryList := make([]*radikron.Prog, 0)
+	injectionMap := make(map[string]*manualInjection)
+
+	for id, inj := range a.manualInjections {
+		// Only retry entries that have failed at least once
+		if inj.LastFailureTime == nil {
+			continue
+		}
+
+		if a.shouldRetryDownload(inj) {
+			// Find the program in schedules
+			a.mu.Unlock()
+			a.mu.RLock()
+			var foundProg *radikron.Prog
+			for _, prog := range a.asset.Schedules {
+				if prog.ID == id {
+					foundProg = prog
+					break
+				}
+			}
+			a.mu.RUnlock()
+			a.mu.Lock()
+
+			if foundProg != nil {
+				// Create a copy to avoid issues with locking
+				progCopy := *foundProg
+				retryList = append(retryList, &progCopy)
+				injectionMap[id] = inj
+			}
+		}
+	}
+
+	a.mu.Unlock()
+
+	// Retry downloads outside the lock
+	for _, prog := range retryList {
+		inj := injectionMap[prog.ID]
+		if inj == nil {
+			continue
+		}
+
+		runtime.LogInfo(a.ctx, fmt.Sprintf(
+			"Retrying download for [%s]%s (attempt %d/%d)",
+			prog.StationID, prog.Title, inj.RetryCount+1, maxDownloadRetries))
+
+		// Retry the download
+		err := a.setupDownloadForPastProgram(prog)
+		if err != nil {
+			runtime.LogInfo(a.ctx, fmt.Sprintf(
+				"Retry failed for [%s]%s: %v (will retry again later)",
+				prog.StationID, prog.Title, err))
+		}
+	}
+}
+
+// cleanupStaleFailedDownloads removes manual injections that have exceeded max retries or time threshold.
+// It removes entries that have failed more than maxDownloadRetries times or have been failing for longer
+// than failedDownloadCleanupThreshold.
+func (a *App) cleanupStaleFailedDownloads() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	removed := false
+
+	for id, inj := range a.manualInjections {
+		// Only clean up entries that have failed at least once
+		if inj.LastFailureTime == nil {
+			continue
+		}
+
+		shouldRemove := false
+		reason := ""
+
+		// Check if max retries exceeded
+		if inj.RetryCount >= maxDownloadRetries {
+			shouldRemove = true
+			reason = fmt.Sprintf("exceeded max retries (%d)", maxDownloadRetries)
+		} else if time.Since(*inj.LastFailureTime) > failedDownloadCleanupThreshold {
+			// Check if time threshold exceeded
+			shouldRemove = true
+			reason = fmt.Sprintf("exceeded cleanup threshold (%v)", failedDownloadCleanupThreshold)
+		}
+
+		if shouldRemove {
+			delete(a.manualInjections, id)
+			delete(a.pendingManualDownloads, id)
+			removed = true
+			runtime.LogInfo(a.ctx, fmt.Sprintf(
+				"Cleaned up stale failed manual injection [%s]%s (ID: %s) - %s",
+				inj.StationID, inj.Title, id, reason))
+		}
+	}
+
+	if removed {
+		// Save outside the lock to avoid deadlock
+		go func() {
+			if err := a.saveManualInjections(); err != nil {
+				runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after cleanup: %v", err))
+			}
+		}()
+	}
+}
+
+// setupDownloadForPastProgram sets up and starts download for a past program.
+// It delegates to downloadProgramImmediately with an appropriate error message prefix.
+func (a *App) setupDownloadForPastProgram(prog *radikron.Prog) error {
+	return a.downloadProgramImmediately(prog, "Failed to download past program")
+}
+
+// processLoadedInjection processes a single loaded injection (past or future).
+// For past programs, it checks if the file exists and attempts to download if needed.
+// For future programs, it adds them to schedules and updates the next fetch time.
 func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, programDetailsMap map[string]*radikron.Prog) {
 	updateProgWithDetails(prog, programDetailsMap)
 
@@ -315,13 +513,35 @@ func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, 
 			return
 		}
 
-		// Setup and start download (error is already logged in setupDownloadForPastProgram)
-		_ = a.setupDownloadForPastProgram(prog)
+		// Check if this injection should be retried
+		shouldRetry := false
+		if inj, exists := a.manualInjections[inj.ProgramID]; exists {
+			shouldRetry = a.shouldRetryDownload(inj)
+		} else {
+			// New injection, should try
+			shouldRetry = true
+		}
 
-		if !a.asset.Schedules.HasDuplicate(prog) {
+		if shouldRetry {
+			// Setup and start download (error is already logged in setupDownloadForPastProgram)
+			downloadErr := a.setupDownloadForPastProgram(prog)
+
+			// Even if download fails, we add to schedules so user can see what failed
+			// The failure is tracked in the manual injection for retry logic
+			if !a.asset.Schedules.HasDuplicate(prog) {
+				a.asset.Schedules = append(a.asset.Schedules, prog)
+			}
+			a.pendingManualDownloads[prog.ID] = prog.ID
+
+			if downloadErr != nil {
+				runtime.LogInfo(a.ctx, fmt.Sprintf(
+					"Past program [%s]%s download failed, will be retried automatically",
+					prog.StationID, prog.Title))
+			}
+		} else if !a.asset.Schedules.HasDuplicate(prog) {
+			// Not ready for retry yet, but still add to schedules for visibility
 			a.asset.Schedules = append(a.asset.Schedules, prog)
 		}
-		a.pendingManualDownloads[prog.ID] = prog.ID
 	} else {
 		// Future program
 		if !a.asset.Schedules.HasDuplicate(prog) {
@@ -337,12 +557,14 @@ func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, 
 	}
 }
 
-// loadManualInjections loads manually injected programs from disk
+// loadManualInjections loads manually injected programs from disk.
+// It reads the manual injections file, fetches program details, and processes each injection.
+// The lock is released before network I/O to avoid blocking other operations.
 func (a *App) loadManualInjections() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	if a.manualInjectionsFile == "" {
+		a.mu.Unlock()
 		return nil
 	}
 
@@ -350,15 +572,18 @@ func (a *App) loadManualInjections() error {
 	_, err := os.Stat(a.manualInjectionsFile)
 	if os.IsNotExist(err) {
 		// File doesn't exist yet, that's okay
+		a.mu.Unlock()
 		return nil
 	}
 	if err != nil {
+		a.mu.Unlock()
 		return fmt.Errorf("failed to stat manual injections file: %w", err)
 	}
 
 	// Read file
 	data, err := os.ReadFile(a.manualInjectionsFile)
 	if err != nil {
+		a.mu.Unlock()
 		return fmt.Errorf("failed to read manual injections file: %w", err)
 	}
 
@@ -366,14 +591,12 @@ func (a *App) loadManualInjections() error {
 	var injections []*manualInjection
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &injections); err != nil {
+			a.mu.Unlock()
 			return fmt.Errorf("failed to parse manual injections JSON: %w", err)
 		}
 	}
 
-	// Update current time
-	radikron.CurrentTime = time.Now().In(radikron.Location)
-
-	// Group injections by station ID to fetch programs efficiently
+	// Group injections by station ID (no lock needed)
 	stationInjectionMap := make(map[string][]*manualInjection)
 	stationIDs := make([]string, 0, len(injections))
 	for _, inj := range injections {
@@ -382,9 +605,17 @@ func (a *App) loadManualInjections() error {
 		}
 		stationInjectionMap[inj.StationID] = append(stationInjectionMap[inj.StationID], inj)
 	}
+	a.mu.Unlock()
 
-	// Fetch weekly programs for each station and update program details
+	// Fetch weekly programs for each station WITHOUT holding the lock
 	programDetailsMap := a.fetchProgramDetailsForStations(stationIDs)
+
+	// Re-acquire lock to update state
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Update current time
+	radikron.CurrentTime = time.Now().In(radikron.Location)
 
 	// Store in map and add to schedules
 	for _, inj := range injections {
@@ -407,7 +638,8 @@ func (a *App) loadManualInjections() error {
 	return nil
 }
 
-// saveManualInjections saves manually injected programs to disk
+// saveManualInjections saves manually injected programs to disk.
+// It writes the manual injections map to a JSON file atomically using a temporary file.
 func (a *App) saveManualInjections() error {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -441,7 +673,8 @@ func (a *App) saveManualInjections() error {
 	return nil
 }
 
-// IsManualInjection checks if a program is manually injected
+// IsManualInjection checks if a program is manually injected.
+// It returns true if the program ID exists in the manual injections map.
 func (a *App) IsManualInjection(programID string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -450,7 +683,9 @@ func (a *App) IsManualInjection(programID string) bool {
 	return exists
 }
 
-// DeleteManualInjection removes a manually injected program from schedules and persistence
+// DeleteManualInjection removes a manually injected program from schedules and persistence.
+// It removes the program from schedules, pending downloads, and the manual injections map,
+// then saves the updated state to disk.
 func (a *App) DeleteManualInjection(programID string) error {
 	a.mu.Lock()
 
@@ -519,7 +754,8 @@ func (a *App) GetConfigFile() (string, error) {
 	return a.configFile, nil
 }
 
-// GetSchedules returns the current scheduled programs that haven't been downloaded yet
+// GetSchedules returns the current scheduled programs that haven't been downloaded yet.
+// It filters out programs whose files already exist and marks manual injections.
 func (a *App) GetSchedules() (radikron.Progs, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -559,6 +795,8 @@ func (a *App) GetSchedules() (radikron.Progs, error) {
 
 		// Only include programs whose files don't exist yet
 		if !output.IsExist() {
+			// Set IsManualInjection flag based on whether program is in manualInjections map
+			prog.IsManualInjection = a.manualInjections[prog.ID] != nil
 			pendingSchedules = append(pendingSchedules, prog)
 		}
 	}
@@ -566,7 +804,8 @@ func (a *App) GetSchedules() (radikron.Progs, error) {
 	return pendingSchedules, nil
 }
 
-// GetDesignatedFolder returns the full path where a program will be saved
+// GetDesignatedFolder returns the full path where a program will be saved.
+// It constructs the output path based on the program metadata, rule folder, and download directory.
 func (a *App) GetDesignatedFolder(prog *radikron.Prog, ruleFolder, downloadDir string) (string, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -610,7 +849,9 @@ func (a *App) GetDesignatedFolder(prog *radikron.Prog, ruleFolder, downloadDir s
 	return output.DirFullPath, nil
 }
 
-// findMatchingRuleForInjection finds a matching rule for program injection
+// findMatchingRuleForInjection finds a matching rule for program injection.
+// If ruleName is provided, it searches for a rule with that name.
+// Otherwise, it uses silent rule matching to find the first matching rule.
 func (a *App) findMatchingRuleForInjection(prog *radikron.Prog, ruleName string) *radikron.Rule {
 	if ruleName != "" {
 		for _, rule := range a.asset.Rules {
@@ -622,7 +863,9 @@ func (a *App) findMatchingRuleForInjection(prog *radikron.Prog, ruleName string)
 	return a.asset.Rules.FindMatchSilent(prog.StationID, prog)
 }
 
-// handleDuplicateCheckForInjection checks if program is duplicate and handles it
+// handleDuplicateCheckForInjection checks if program is duplicate and handles it.
+// If the program is a duplicate and the file exists, it returns an error.
+// If the program is a duplicate but the file doesn't exist, it removes the duplicate from schedules.
 func (a *App) handleDuplicateCheckForInjection(prog *radikron.Prog, startTime time.Time) error {
 	if !a.asset.Schedules.HasDuplicate(prog) {
 		return nil
@@ -656,40 +899,16 @@ func (a *App) handleDuplicateCheckForInjection(prog *radikron.Prog, startTime ti
 	return nil
 }
 
-// downloadPastInjectedProgram sets up and downloads a past injected program
+// downloadPastInjectedProgram sets up and downloads a past injected program.
+// It delegates to downloadProgramImmediately with an appropriate error message prefix.
 func (a *App) downloadPastInjectedProgram(prog *radikron.Prog) error {
-	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
-
-	emitEvent := func(ctx context.Context, eventName string, data any) {
-		runtime.EventsEmit(ctx, eventName, data)
-	}
-	eventEmitter, cleanupLogger := SetupLogger(a.ctx, emitEvent)
-	programID := prog.ID
-	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
-		a.HandleDownloadCompletedByID(programID, stationID, title, startTime)
-	})
-	ctx = context.WithValue(ctx, radikron.ContextKey("eventEmitter"), eventEmitter)
-
-	go func() {
-		time.Sleep(loggerCleanupDelay)
-		cleanupLogger()
-	}()
-
-	wg := &sync.WaitGroup{}
-	err := radikron.Download(ctx, wg, prog)
-	if err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to download past program immediately: %v", err))
-		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
-			"type":    "error",
-			"message": fmt.Sprintf("Failed to download past program immediately: %v", err),
-		})
-		return err
-	}
-
-	return nil
+	return a.downloadProgramImmediately(prog, "Failed to download past program")
 }
 
-// InjectProgram adds a program to scheduled downloads
+// InjectProgram adds a program to scheduled downloads.
+// For past programs, it attempts to download immediately.
+// For future programs, it adds them to schedules and updates the next fetch time.
+// The program is saved as a manual injection for persistence.
 func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 	a.mu.Lock()
 	// Note: We release the lock before calling saveManualInjections() to avoid deadlock
@@ -725,9 +944,19 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 
 	// Handle past vs future programs
 	if !startTime.After(radikron.CurrentTime) {
-		// Past program - download immediately (error is already logged in downloadPastInjectedProgram)
-		_ = a.downloadPastInjectedProgram(prog)
+		// Past program - download immediately
+		// Even if download fails, we add to schedules so user can see what failed
+		// The failure is tracked in the manual injection for retry logic
+		downloadErr := a.downloadPastInjectedProgram(prog)
 		a.asset.Schedules = append(a.asset.Schedules, prog)
+
+		// If download failed, the failure is already tracked in downloadPastInjectedProgram
+		// We still add to schedules for user visibility
+		if downloadErr != nil {
+			runtime.LogInfo(a.ctx, fmt.Sprintf(
+				"Past program [%s]%s download failed, will be retried automatically",
+				prog.StationID, prog.Title))
+		}
 	} else {
 		// Future program - add to schedules and update next fetch time
 		a.asset.Schedules = append(a.asset.Schedules, prog)
@@ -771,7 +1000,8 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 	return nil
 }
 
-// findProgramIDFromPendingDownloads finds program ID from pending manual downloads
+// findProgramIDFromPendingDownloads finds program ID from pending manual downloads.
+// It searches through pending downloads and schedules to match by station, title, and start time.
 func (a *App) findProgramIDFromPendingDownloads(stationID, title, startTime string) string {
 	for id := range a.pendingManualDownloads {
 		for _, s := range a.asset.Schedules {
@@ -783,7 +1013,8 @@ func (a *App) findProgramIDFromPendingDownloads(stationID, title, startTime stri
 	return ""
 }
 
-// findProgramIDFromManualInjections finds program ID from manual injections by matching metadata
+// findProgramIDFromManualInjections finds program ID from manual injections by matching metadata.
+// It searches through manual injections to match by station ID, title, and start time.
 func (a *App) findProgramIDFromManualInjections(stationID, title, startTime string) string {
 	for id, inj := range a.manualInjections {
 		if inj.StationID == stationID && inj.Title == title && inj.Ft == startTime {
@@ -793,7 +1024,9 @@ func (a *App) findProgramIDFromManualInjections(stationID, title, startTime stri
 	return ""
 }
 
-// removeManualInjectionAndSave removes a program from manual injections and saves to disk
+// removeManualInjectionAndSave removes a program from manual injections and saves to disk.
+// It removes the program from both manualInjections and pendingManualDownloads maps,
+// then saves the updated state to disk.
 func (a *App) removeManualInjectionAndSave(programID, stationID, title string) {
 	if programID == "" {
 		return
@@ -810,9 +1043,9 @@ func (a *App) removeManualInjectionAndSave(programID, stationID, title string) {
 	}
 }
 
-// HandleDownloadCompleted is called when a download completes
-// It checks if the program was manually injected and removes it if so
-// This version matches by station, title, and start time (for backward compatibility)
+// HandleDownloadCompleted is called when a download completes.
+// It checks if the program was manually injected and removes it if so.
+// This version matches by station, title, and start time (for backward compatibility).
 func (a *App) HandleDownloadCompleted(stationID, title, startTime string) {
 	a.mu.Lock()
 
@@ -830,8 +1063,8 @@ func (a *App) HandleDownloadCompleted(stationID, title, startTime string) {
 	a.removeManualInjectionAndSave(programID, stationID, title)
 }
 
-// HandleDownloadCompletedByID is called when a download completes with a known program ID
-// This is more reliable than matching by station/title/time
+// HandleDownloadCompletedByID is called when a download completes with a known program ID.
+// This is more reliable than matching by station/title/time as it uses the program ID directly.
 func (a *App) HandleDownloadCompletedByID(programID, stationID, title, _ string) {
 	a.mu.Lock()
 
@@ -857,7 +1090,8 @@ func (a *App) HandleDownloadCompletedByID(programID, stationID, title, _ string)
 }
 
 // checkAndCleanupManualInjections checks if manually injected programs are still available
-// in the weekly program list and removes them if they're no longer available
+// in the weekly program list and removes them if they're no longer available.
+// It compares manual injections against program snapshots and removes entries that no longer exist.
 func (a *App) checkAndCleanupManualInjections() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1011,8 +1245,9 @@ func (a *App) GetAvailableStations() ([]string, error) {
 	return a.asset.AvailableStations, nil
 }
 
-// FetchProgramSnapshots fetches program snapshots from all available stations
-// This function performs network I/O without holding the lock to avoid blocking
+// FetchProgramSnapshots fetches program snapshots from all available stations.
+// This function performs network I/O without holding the lock to avoid blocking.
+// The snapshots are used for program search and manual injection cleanup.
 func (a *App) FetchProgramSnapshots() error {
 	// Get list of stations to fetch (read lock only to get the list)
 	a.mu.RLock()
@@ -1044,8 +1279,9 @@ func (a *App) FetchProgramSnapshots() error {
 	return nil
 }
 
-// SearchWeeklyPrograms searches weekly programs using rule criteria
-// It searches on the cached program snapshots instead of making network calls
+// SearchWeeklyPrograms searches weekly programs using rule criteria.
+// It searches on the cached program snapshots instead of making network calls.
+// Returns programs that match the specified title, personality, keyword, and station ID criteria.
 func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationID string) (radikron.Progs, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -1101,7 +1337,8 @@ func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationI
 	return matchingPrograms, nil
 }
 
-// OpenDirectory opens the specified directory in the system's file browser
+// OpenDirectory opens the specified directory in the system's file browser.
+// It uses platform-specific commands (open on macOS, explorer on Windows, xdg-open on Linux).
 func (a *App) OpenDirectory(dirPath string) error {
 	if dirPath == "" {
 		return fmt.Errorf("directory path is empty")
@@ -1133,14 +1370,15 @@ func (a *App) OpenDirectory(dirPath string) error {
 	return nil
 }
 
-// GetMonitoringStatus returns whether monitoring is active
+// GetMonitoringStatus returns whether monitoring is currently active.
 func (a *App) GetMonitoringStatus() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.monitoring
 }
 
-// StartMonitoring starts the monitoring loop
+// StartMonitoring starts the monitoring loop.
+// It creates a context, sets up the monitoring goroutine, and begins continuous program monitoring.
 func (a *App) StartMonitoring() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1176,7 +1414,8 @@ func (a *App) StartMonitoring() error {
 	return nil
 }
 
-// StopMonitoring stops the monitoring loop
+// StopMonitoring stops the monitoring loop.
+// It cancels the monitoring context and waits for the monitoring goroutine to finish.
 func (a *App) StopMonitoring() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1203,7 +1442,8 @@ func (a *App) StopMonitoring() error {
 	return nil
 }
 
-// reloadConfigIfNeeded reloads and applies configuration if available
+// reloadConfigIfNeeded reloads and applies configuration if available.
+// It loads the config file and applies it to the asset without blocking on I/O.
 func (a *App) reloadConfigIfNeeded() error {
 	// RLock to capture current configFile snapshot
 	a.mu.RLock()
@@ -1294,7 +1534,8 @@ func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikr
 	return programList
 }
 
-// checkManualInjectionFileExists checks if the file for a manually injected program already exists
+// checkManualInjectionFileExists checks if the file for a manually injected program already exists.
+// It constructs the expected file path and checks if the file exists on disk.
 func (a *App) checkManualInjectionFileExists(p *radikron.Prog, asset *radikron.Asset) bool {
 	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, p.Ft, radikron.Location)
 	if err != nil {
@@ -1316,7 +1557,9 @@ func (a *App) checkManualInjectionFileExists(p *radikron.Prog, asset *radikron.A
 	return err == nil && output.IsExist()
 }
 
-// findMatchingRuleForProcessProgram finds a matching rule for a program during processing
+// findMatchingRuleForProcessProgram finds a matching rule for a program during processing.
+// For manual injections, it searches by rule name if provided.
+// For regular programs, it uses silent rule matching.
 func (a *App) findMatchingRuleForProcessProgram(
 	p *radikron.Prog,
 	stationID string,
@@ -1337,7 +1580,9 @@ func (a *App) findMatchingRuleForProcessProgram(
 	return asset.Rules.FindMatchSilent(stationID, p)
 }
 
-// setupManualInjectionForProcess sets up rule info for manually injected programs
+// setupManualInjectionForProcess sets up rule info for manually injected programs.
+// It copies rule name and folder from the manual injection to the program.
+// Returns true if the program is a manual injection, false otherwise.
 func (a *App) setupManualInjectionForProcess(p *radikron.Prog) bool {
 	if inj, exists := a.manualInjections[p.ID]; exists {
 		p.RuleName = inj.RuleName
@@ -1347,19 +1592,24 @@ func (a *App) setupManualInjectionForProcess(p *radikron.Prog) bool {
 	return false
 }
 
-// checkDuplicateForProcessProgram checks if program is duplicate and handles manual injection cases
+// checkDuplicateForProcessProgram checks if program is duplicate and handles manual injection cases.
+// Note: Uses a.asset.Schedules (live state) for duplicate checking to catch duplicates within the same
+// iteration, but uses asset parameter (snapshot) for file existence checks to ensure consistency.
+// For manual injections, it also checks if the file already exists.
 func (a *App) checkDuplicateForProcessProgram(p *radikron.Prog, asset *radikron.Asset, isManualInjection bool) bool {
+	// Check against live state to catch duplicates from previous iterations and within current iteration
 	if !a.asset.Schedules.HasDuplicate(p) {
 		return false
 	}
 	if !isManualInjection {
 		return true
 	}
-	// For manual injections, check if file exists
+	// For manual injections, check if file exists using the asset snapshot parameter
 	return a.checkManualInjectionFileExists(p, asset)
 }
 
-// applyRuleToProgram applies rule information to program if not already set by manual injection
+// applyRuleToProgram applies rule information to program if not already set by manual injection.
+// It sets the rule name and folder on the program from the matched rule.
 func (a *App) applyRuleToProgram(p *radikron.Prog, matchedRule *radikron.Rule, isManualInjection bool) {
 	if matchedRule != nil && !isManualInjection {
 		p.RuleName = matchedRule.Name
@@ -1367,7 +1617,8 @@ func (a *App) applyRuleToProgram(p *radikron.Prog, matchedRule *radikron.Rule, i
 	}
 }
 
-// checkAlreadyLogged checks if program was already logged in this iteration
+// checkAlreadyLogged checks if program was already logged in this iteration.
+// It tracks logged programs to avoid duplicate log messages.
 func (a *App) checkAlreadyLogged(processedInThisIteration map[string]bool, programID string) bool {
 	alreadyLogged := processedInThisIteration[programID+"_logged"]
 	if !alreadyLogged {
@@ -1376,8 +1627,8 @@ func (a *App) checkAlreadyLogged(processedInThisIteration map[string]bool, progr
 	return alreadyLogged
 }
 
-// processProgram handles a single program: checks duplicates, matches rules, and downloads if needed
-// Returns (matched, duplicate) to indicate if the program matched a rule or was a duplicate
+// processProgram handles a single program: checks duplicates, matches rules, and downloads if needed.
+// Returns (matched, duplicate) to indicate if the program matched a rule or was a duplicate.
 func (a *App) processProgram(
 	pws *programWithStation,
 	asset *radikron.Asset,
@@ -1465,7 +1716,8 @@ func (a *App) processProgram(
 	return true, false
 }
 
-// checkAndLogRulesCount checks and logs the number of configured rules
+// checkAndLogRulesCount checks and logs the number of configured rules.
+// It warns if no rules are configured, as programs won't be downloaded without rules.
 func (a *App) checkAndLogRulesCount(asset *radikron.Asset) {
 	a.mu.RLock()
 	rulesCount := len(asset.Rules)
@@ -1481,7 +1733,8 @@ func (a *App) checkAndLogRulesCount(asset *radikron.Asset) {
 	}
 }
 
-// processAllPrograms collects programs from stations and processes them
+// processAllPrograms collects programs from stations and processes them.
+// It collects programs from all stations, matches them against rules, and downloads matching programs.
 func (a *App) processAllPrograms(
 	asset *radikron.Asset,
 	fetcher *radikronProgramFetcher,
@@ -1512,7 +1765,8 @@ func (a *App) processAllPrograms(
 	log.Printf("processed %d programs: %d matched rules, %d duplicates", processedCount, matchedCount, duplicateCount)
 }
 
-// logAndSleepUntilNextFetch logs the next fetch time and sleeps until then
+// logAndSleepUntilNextFetch logs the next fetch time and sleeps until then.
+// It reads the next fetch time from the asset and sleeps until that time or context cancellation.
 func (a *App) logAndSleepUntilNextFetch(asset *radikron.Asset, ctx context.Context) {
 	a.mu.RLock()
 	nextFetchTime := asset.NextFetchTime
@@ -1525,7 +1779,8 @@ func (a *App) logAndSleepUntilNextFetch(asset *radikron.Asset, ctx context.Conte
 	a.sleepUntilNextFetch(ctx)
 }
 
-// sleepUntilNextFetch sleeps until the next fetch time or until context is canceled
+// sleepUntilNextFetch sleeps until the next fetch time or until context is canceled.
+// It uses a timer that can be canceled if the context is done.
 func (a *App) sleepUntilNextFetch(ctx context.Context) {
 	// Acquire read lock to safely read NextFetchTime
 	a.mu.RLock()
@@ -1559,7 +1814,9 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 	}
 }
 
-// runMonitoringLoop runs the main monitoring loop (similar to CLI's run function)
+// runMonitoringLoop runs the main monitoring loop (similar to CLI's run function).
+// It continuously fetches programs, matches them against rules, and downloads matching programs.
+// The loop respects the next fetch time and can be canceled via context.
 func (a *App) runMonitoringLoop(ctx context.Context) {
 	defer a.monitorWg.Done()
 	defer close(a.monitorDone)
@@ -1661,21 +1918,29 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		// Check and cleanup manually injected programs that are no longer available
 		a.checkAndCleanupManualInjections()
 
+		// Retry failed downloads for manual injections
+		a.retryFailedDownloads()
+
+		// Cleanup stale failed downloads
+		a.cleanupStaleFailedDownloads()
+
 		// Sleep until next fetch time
 		a.logAndSleepUntilNextFetch(asset, ctx)
 	}
 }
 
-// radikronProgramFetcher implements ProgramFetcher
+// radikronProgramFetcher implements ProgramFetcher interface for fetching weekly programs.
 type radikronProgramFetcher struct{}
 
+// FetchWeeklyPrograms fetches weekly programs for the specified station ID.
 func (f *radikronProgramFetcher) FetchWeeklyPrograms(stationID string) (radikron.Progs, error) {
 	return radikron.FetchWeeklyPrograms(stationID)
 }
 
-// radikronDownloader implements Downloader
+// radikronDownloader implements Downloader interface for downloading programs.
 type radikronDownloader struct{}
 
+// Download downloads a program using the radikron download functionality.
 func (d *radikronDownloader) Download(ctx context.Context, wg *sync.WaitGroup, prog *radikron.Prog) error {
 	return radikron.Download(ctx, wg, prog)
 }

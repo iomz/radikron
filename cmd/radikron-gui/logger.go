@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/iomz/radikron"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -26,6 +27,7 @@ type DownloadCompletedCallback func(stationID, title, startTime string)
 type WailsEventEmitter struct {
 	ctx                 context.Context
 	onDownloadCompleted DownloadCompletedCallback
+	callbackMu          sync.Mutex
 }
 
 // Ensure WailsEventEmitter implements radikron.EventEmitter at compile time
@@ -38,6 +40,8 @@ func NewWailsEventEmitter(ctx context.Context) *WailsEventEmitter {
 
 // SetDownloadCompletedCallback sets the callback for download completion
 func (e *WailsEventEmitter) SetDownloadCompletedCallback(callback DownloadCompletedCallback) {
+	e.callbackMu.Lock()
+	defer e.callbackMu.Unlock()
 	e.onDownloadCompleted = callback
 }
 
@@ -67,8 +71,11 @@ func (e *WailsEventEmitter) EmitDownloadCompleted(stationID, title, startTime, f
 	})
 
 	// Call callback if set (for handling manual injections)
-	if e.onDownloadCompleted != nil {
-		e.onDownloadCompleted(stationID, title, startTime)
+	e.callbackMu.Lock()
+	callback := e.onDownloadCompleted
+	e.callbackMu.Unlock()
+	if callback != nil {
+		callback(stationID, title, startTime)
 	}
 }
 

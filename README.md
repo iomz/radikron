@@ -27,6 +27,7 @@ Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they
   - [📁 Flexible File Organization](#-flexible-file-organization)
   - [🏷️ Automatic ID3 Tagging](#-automatic-id3-tagging)
   - [🛡️ Intelligent Download Management](#-intelligent-download-management)
+  - [➕ Manual Program Injection](#-manual-program-injection)
   - [🌐 Multi-Region Support](#-multi-region-support)
   - [🔄 Continuous Monitoring](#-continuous-monitoring)
   - [🖱️ GUI Features](#-gui-features)
@@ -90,8 +91,19 @@ All downloaded files are automatically tagged with rich metadata:
 
 - **Duplicate Detection**: Automatically skips files that already exist (checks both default and rule-specific folders)
 - **Minimum File Size Validation**: Rejects corrupted or incomplete downloads below a specified size
-- **Automatic Retry**: Built-in retry mechanism for failed downloads
+- **Automatic Retry**: Built-in retry mechanism with exponential backoff (1h, 2h, 4h, 8h, 16h) for failed downloads, up to 5 retry attempts
 - **Concurrent Downloads**: Downloads multiple programs simultaneously for efficiency
+- **Failed Download Cleanup**: Automatically removes stale failed downloads after 7 days or when max retries are exceeded
+
+### ➕ Manual Program Injection
+
+- **Manual Downloads**: Manually add any program to the download queue, even if it doesn't match your rules
+- **Past Programs**: Download programs that have already aired (if still available on radiko)
+- **Future Programs**: Schedule downloads for upcoming programs
+- **Persistent Storage**: Manual injections are saved to disk and persist across application restarts
+- **Automatic Retry**: Failed manual downloads are automatically retried with exponential backoff
+- **Easy Management**: View and delete manual injections through the GUI interface
+- **Rule Assignment**: Assign specific rules to manual injections for proper file organization
 
 ### 🌐 Multi-Region Support
 
@@ -111,6 +123,9 @@ The GUI version provides a user-friendly interface with:
 
 - **Configuration Management**: Load and manage configuration files through an intuitive interface
 - **Station Browser**: View all available radio stations in your region
+- **Program Search**: Search and browse weekly programs across all stations with advanced filtering
+- **Manual Injection**: Manually add programs to download queue (supports both past and future programs)
+- **Scheduled Downloads View**: View all scheduled downloads with manual injection indicators
 - **Monitoring Control**: Start and stop automatic monitoring with a single click
 - **Real-Time Activity Log**: Monitor download progress, completions, and errors in real-time
 - **Event System**: Real-time updates via Wails events for instant feedback
@@ -291,8 +306,20 @@ The GUI version provides a visual interface for managing radikron:
 1. **Launch the application**: Run the built binary or use `wails dev` for development
 2. **Load configuration**: Use the configuration panel to load your `config.yml` file
 3. **View stations**: Browse available radio stations in your region
-4. **Start monitoring**: Click "Start Monitoring" to begin automatic downloading
-5. **Monitor activity**: Watch real-time updates in the activity log
+4. **Search programs**: Use the program search browser to find programs across all stations
+5. **Manual injection**: Add programs manually to the download queue (useful for one-off downloads or programs that don't match your rules)
+6. **View scheduled downloads**: See all scheduled downloads, including manual injections (marked with a "Manual" badge)
+7. **Start monitoring**: Click "Start Monitoring" to begin automatic downloading
+8. **Monitor activity**: Watch real-time updates in the activity log
+
+**Manual Injection Workflow**:
+
+- Search for programs using the program search browser
+- Click on a program to view details
+- Click "Inject" to add it to the download queue
+- Past programs will download immediately; future programs will be scheduled
+- View all scheduled downloads (including manual injections) in the Scheduled Downloads panel
+- Delete manual injections if needed (they will be removed from the queue)
 
 The GUI shares the same configuration format and behavior as the CLI version, so you can use the same `config.yml` file with both interfaces.
 

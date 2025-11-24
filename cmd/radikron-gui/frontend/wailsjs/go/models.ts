@@ -79,6 +79,7 @@ export namespace radikron {
 	    M3U8: string;
 	    RuleName: string;
 	    RuleFolder: string;
+	    IsManualInjection: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Prog(source);
@@ -99,6 +100,7 @@ export namespace radikron {
 	        this.M3U8 = source["M3U8"];
 	        this.RuleName = source["RuleName"];
 	        this.RuleFolder = source["RuleFolder"];
+	        this.IsManualInjection = source["IsManualInjection"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
