@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -51,8 +51,11 @@ export const ScheduledDownloads: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedProgram, setSelectedProgram] = useState<radikron.Prog | null>(null);
+  const isFetchingRef = useRef(false);
 
-  const loadSchedules = async () => {
+  const loadSchedules = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setIsLoading(true);
     setError(null);
     try {
@@ -66,9 +69,10 @@ export const ScheduledDownloads: React.FC = () => {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(`Failed to load scheduled downloads: ${errorMessage}`);
     } finally {
+      isFetchingRef.current = false;
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadSchedules();
@@ -92,7 +96,7 @@ export const ScheduledDownloads: React.FC = () => {
       unsubscribeDownloadCompleted();
       unsubscribeFileSaved();
     };
-  }, []);
+  }, [loadSchedules]);
 
   const formatDateTime = (dateTimeStr: string): string => {
     if (dateTimeStr.length !== 14) {
@@ -141,7 +145,15 @@ export const ScheduledDownloads: React.FC = () => {
                       <Card
                         key={program.ID}
                         className="p-4 cursor-pointer hover:bg-accent"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelectedProgram(program)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedProgram(program);
+                          }
+                        }}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
