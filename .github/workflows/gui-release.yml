@@ -73,27 +73,49 @@ jobs:
 
       - name: Prepare artifacts
         shell: bash
-        working-directory: cmd/radikron-gui
         run: |
-          mkdir -p ../artifacts
+          mkdir -p artifacts
+          cd cmd/radikron-gui
           # Wails outputs to build/bin/ directory
           # macOS: .app bundle
           if [ "${{ matrix.goos }}" = "darwin" ]; then
+            echo "Checking for macOS build output..."
+            ls -la build/bin/ || echo "build/bin/ does not exist"
             if [ -d "build/bin/Radikron.app" ]; then
-              # Create a zip for easier distribution
+              echo "Found Radikron.app, creating DMG..."
               cd build/bin
-              zip -r ../../../artifacts/Radikron_${{ matrix.platform }}.zip Radikron.app
+              # Create DMG using hdiutil (built-in macOS tool)
+              # -volname: Volume name shown when DMG is mounted
+              # -srcfolder: Source folder (.app bundle)
+              # -ov: Overwrite if exists
+              # -format UDZO: Compressed DMG format
+              hdiutil create -volname "Radikron" -srcfolder Radikron.app -ov -format UDZO ../../../artifacts/Radikron_${{ matrix.platform }}.dmg
+              cd ../../..
             elif [ -f "build/bin/radikron-gui" ]; then
+              echo "Found radikron-gui binary, copying..."
               cp build/bin/radikron-gui ../artifacts/radikron-gui_${{ matrix.platform }}
+            else
+              echo "ERROR: No macOS build output found in build/bin/"
+              ls -la build/bin/ || echo "build/bin/ does not exist"
+              exit 1
             fi
           # Windows: .exe file
           elif [ "${{ matrix.goos }}" = "windows" ]; then
+            echo "Checking for Windows build output..."
             if [ -f "build/bin/radikron-gui.exe" ]; then
+              echo "Found radikron-gui.exe, copying..."
               cp build/bin/radikron-gui.exe ../artifacts/radikron-gui_${{ matrix.platform }}.exe
+            else
+              echo "ERROR: radikron-gui.exe not found in build/bin/"
+              ls -la build/bin/ || echo "build/bin/ does not exist"
+              exit 1
             fi
             # Check for NSIS installer (if generated)
             find build/bin -name "*.exe" -type f ! -name "radikron-gui.exe" -exec cp {} ../artifacts/ \;
           fi
+          cd ../..
+          echo "Artifacts prepared:"
+          ls -la artifacts/ || echo "artifacts/ directory is empty or does not exist"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
