@@ -22,16 +22,14 @@ Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they
 <!-- vim-markdown-toc GFM -->
 
 - [Features](#features)
-  - [🖥️ Dual Interface Support](#-dual-interface-support)
-  - [🎯 Smart Rule-Based Matching](#-smart-rule-based-matching)
-  - [📁 Flexible File Organization](#-flexible-file-organization)
-  - [🏷️ Automatic ID3 Tagging](#-automatic-id3-tagging)
-  - [🛡️ Intelligent Download Management](#-intelligent-download-management)
-  - [➕ Manual Program Injection](#-manual-program-injection)
-  - [🌐 Multi-Region Support](#-multi-region-support)
-  - [🔄 Continuous Monitoring](#-continuous-monitoring)
-  - [🖱️ GUI Features](#-gui-features)
-  - [🐳 Docker Support](#-docker-support)
+  - [🖥️ Dual Interface Support](#dual-interface-support)
+  - [🎯 Smart Rule-Based Matching](#smart-rule-based-matching)
+  - [📁 Flexible File Organization](#flexible-file-organization)
+  - [🛡️ Intelligent Download Management](#intelligent-download-management)
+  - [➕ Manual Program Injection](#manual-program-injection)
+  - [🌐 Multi-Region & Continuous Monitoring](#multi-region-continuous-monitoring)
+  - [🖱️ GUI Features](#gui-features)
+  - [🐳 Docker Support](#docker-support)
 - [Requirements](#requirements)
 - [Installation](#installation)
   - [CLI Version](#cli-version)
@@ -54,46 +52,46 @@ Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they
 
 radikron is a powerful, automated radio program downloader for [radiko](https://radiko.jp/) available in both **CLI** and **GUI** versions. Both versions share the same core logic, ensuring consistent behavior and reliability.
 
-### 🖥️ Dual Interface Support
+### 🖥️ Dual Interface Support {#dual-interface-support}
 
 - **CLI Version**: Lightweight command-line interface for servers and automation
 - **GUI Version**: Modern graphical interface built with Wails v2 for desktop users
 - **Shared Core**: Both versions use the same engine, ensuring consistent behavior
 
-### 🎯 Smart Rule-Based Matching
+### 🎯 Smart Rule-Based Matching {#smart-rule-based-matching}
 
 Flexible rules to automatically capture programs using multiple criteria: title/keyword matching, performer filtering, station selection, day-of-week and time-window filters.
 
-### 📁 Flexible File Organization
+### 📁 Flexible File Organization {#flexible-file-organization}
 
 - Rule-based folder organization with configurable download directories
 - Support for AAC (default) and MP3 formats
 - Automatic ID3 tagging with program metadata
 
-### 🛡️ Intelligent Download Management
+### 🛡️ Intelligent Download Management {#intelligent-download-management}
 
 - Duplicate detection and file size validation
 - Automatic retry with exponential backoff for failed downloads
 - Concurrent downloads and automatic cleanup of stale failures
 
-### ➕ Manual Program Injection
+### ➕ Manual Program Injection {#manual-program-injection}
 
 Manually add any program to the download queue (past or future), with persistent storage and automatic retry. GUI users can easily manage injections through the interface.
 
-### 🌐 Multi-Region & Continuous Monitoring
+### 🌐 Multi-Region & Continuous Monitoring {#multi-region-continuous-monitoring}
 
 - Area-based station filtering with support for extra stations from other regions
 - Continuous background monitoring with scheduled fetching
 - Graceful shutdown that waits for active downloads
 
-### 🖱️ GUI Features
+### 🖱️ GUI Features {#gui-features}
 
 Configuration management, station browser, program search with filtering, scheduled downloads view, monitoring control, and real-time activity logs.
 
 ![config-editor](https://github.com/user-attachments/assets/4f3e0509-d669-4e48-8adf-da50827925ed)
 ![program-search](https://github.com/user-attachments/assets/ba4741c9-37d8-4d20-ad8b-d6f2d21364bc)
 
-### 🐳 Docker Support
+### 🐳 Docker Support {#docker-support}
 
 Pre-built Docker images with all dependencies included, ready for easy deployment.
 

@@ -115,11 +115,14 @@ export const ProgramSearchBrowser: React.FC = () => {
       // Convert "all" back to empty string for backend
       const stationValue = searchCriteria.station === 'all' ? '' : searchCriteria.station;
       
+      // Trim keyword to avoid whitespace issues in matching
+      const trimmedKeyword = searchCriteria.keyword.trim();
+      
       // @ts-ignore - SearchWeeklyPrograms will be available after Wails rebuild
       const results: any[] = await App.SearchWeeklyPrograms(
         '', // title (not used)
         '', // pfm (not used)
-        searchCriteria.keyword,
+        trimmedKeyword,
         stationValue
       );
 
