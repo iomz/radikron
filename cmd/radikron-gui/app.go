@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goRuntime "runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -1302,6 +1303,91 @@ func (a *App) SaveConfig(filename string) error {
 	return nil
 }
 
+// ReadConfigFile reads the config file content and returns it as a string
+func (a *App) ReadConfigFile() (string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.configFile == "" {
+		return "", fmt.Errorf("config file path not set")
+	}
+
+	content, err := os.ReadFile(a.configFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	return string(content), nil
+}
+
+// ExportConfigFile opens a save file dialog and saves the config file to the selected location
+func (a *App) ExportConfigFile() error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.configFile == "" {
+		return fmt.Errorf("config file path not set")
+	}
+
+	// Read the config file content
+	content, err := os.ReadFile(a.configFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Get the default filename from the config file path
+	defaultFilename := filepath.Base(a.configFile)
+	if defaultFilename == "" {
+		defaultFilename = "config.yml"
+	}
+
+	// Open save file dialog
+	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: defaultFilename,
+		Title:           "Save Configuration File",
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "YAML Files (*.yml, *.yaml)",
+				Pattern:     "*.yml;*.yaml",
+			},
+			{
+				DisplayName: "All Files (*.*)",
+				Pattern:     "*.*",
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("save dialog cancelled or failed: %w", err)
+	}
+
+	if savePath == "" {
+		return fmt.Errorf("no file path selected")
+	}
+
+	// Write the content to the selected file
+	if err := os.WriteFile(savePath, content, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// SelectDirectory opens a directory picker dialog and returns the selected directory path
+func (a *App) SelectDirectory() (string, error) {
+	selectedPath, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Download Directory",
+	})
+	if err != nil {
+		return "", fmt.Errorf("directory dialog cancelled or failed: %w", err)
+	}
+
+	if selectedPath == "" {
+		return "", fmt.Errorf("no directory selected")
+	}
+
+	return selectedPath, nil
+}
+
 // GetAvailableStations returns the list of available stations
 func (a *App) GetAvailableStations() ([]string, error) {
 	a.mu.RLock()
@@ -1312,6 +1398,26 @@ func (a *App) GetAvailableStations() ([]string, error) {
 	}
 
 	return a.asset.AvailableStations, nil
+}
+
+// GetAllStations returns all stations from asset.Stations (all possible stations, not just available ones)
+func (a *App) GetAllStations() ([]string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.asset == nil {
+		return nil, fmt.Errorf("asset not initialized")
+	}
+
+	allStations := make([]string, 0, len(a.asset.Stations))
+	for stationID := range a.asset.Stations {
+		allStations = append(allStations, stationID)
+	}
+
+	// Sort for consistent ordering
+	sort.Strings(allStations)
+
+	return allStations, nil
 }
 
 // FetchProgramSnapshots fetches program snapshots from all available stations.

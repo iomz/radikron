@@ -1,7 +1,7 @@
 // Region mapping from assets/regions.json
 // Maps area ID (e.g., "JP13") to region name (e.g., "東京")
 
-const regionsData = {
+export const regionsData = {
   "hokkaido-tohoku": [
     { id: "JP1", name: "北海道" },
     { id: "JP2", name: "青森" },

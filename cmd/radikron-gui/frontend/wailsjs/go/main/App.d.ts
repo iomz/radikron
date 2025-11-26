@@ -5,7 +5,11 @@ import {radikron} from '../models';
 
 export function DeleteManualInjection(arg1:string):Promise<void>;
 
+export function ExportConfigFile():Promise<void>;
+
 export function FetchProgramSnapshots():Promise<void>;
+
+export function GetAllStations():Promise<Array<string>>;
 
 export function GetAvailableStations():Promise<Array<string>>;
 
@@ -31,9 +35,13 @@ export function LoadConfig(arg1:string):Promise<void>;
 
 export function OpenDirectory(arg1:string):Promise<void>;
 
+export function ReadConfigFile():Promise<string>;
+
 export function SaveConfig(arg1:string):Promise<void>;
 
 export function SearchWeeklyPrograms(arg1:string,arg2:string,arg3:string,arg4:string):Promise<radikron.Progs>;
+
+export function SelectDirectory():Promise<string>;
 
 export function StartMonitoring():Promise<void>;
 
