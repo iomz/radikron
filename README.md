@@ -54,6 +54,9 @@ Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they
 
 radikron is a powerful, automated radio program downloader for [radiko](https://radiko.jp/) available in both **CLI** and **GUI** versions. Both versions share the same core logic, ensuring consistent behavior and reliability.
 
+![config-editor](https://github.com/user-attachments/assets/4f3e0509-d669-4e48-8adf-da50827925ed)
+![program-search](https://github.com/user-attachments/assets/ba4741c9-37d8-4d20-ad8b-d6f2d21364bc)
+
 ### 🖥️ Dual Interface Support
 
 - **CLI Version**: Lightweight command-line interface for servers and automation

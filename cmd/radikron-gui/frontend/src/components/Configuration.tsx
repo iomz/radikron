@@ -83,7 +83,7 @@ export const Configuration: React.FC = () => {
   const handleEdit = async () => {
     if (!configInfo) return;
     // Convert MinimumOutputSize from bytes to MB (1 MB = 1024 * 1024 bytes)
-    const minimumOutputSizeMB = configInfo.MinimumOutputSize
+    const minimumOutputSizeMB = configInfo.MinimumOutputSize != null
       ? (configInfo.MinimumOutputSize / (1024 * 1024)).toString()
       : '1';
     
