@@ -1357,7 +1357,7 @@ func (a *App) ExportConfigFile() error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("save dialog cancelled or failed: %w", err)
+		return fmt.Errorf("save dialog canceled or failed: %w", err)
 	}
 
 	if savePath == "" {
@@ -1365,7 +1365,7 @@ func (a *App) ExportConfigFile() error {
 	}
 
 	// Write the content to the selected file
-	if err := os.WriteFile(savePath, content, 0600); err != nil {
+	if err := os.WriteFile(savePath, content, manualInjectionsFilePerm); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -1378,7 +1378,7 @@ func (a *App) SelectDirectory() (string, error) {
 		Title: "Select Download Directory",
 	})
 	if err != nil {
-		return "", fmt.Errorf("directory dialog cancelled or failed: %w", err)
+		return "", fmt.Errorf("directory dialog canceled or failed: %w", err)
 	}
 
 	if selectedPath == "" {
