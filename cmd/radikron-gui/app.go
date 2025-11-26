@@ -1322,26 +1322,28 @@ func (a *App) ReadConfigFile() (string, error) {
 
 // ExportConfigFile opens a save file dialog and saves the config file to the selected location
 func (a *App) ExportConfigFile() error {
+	// Acquire read lock only long enough to copy configFile
 	a.mu.RLock()
-	defer a.mu.RUnlock()
+	configFile := a.configFile
+	a.mu.RUnlock()
 
-	if a.configFile == "" {
+	if configFile == "" {
 		return fmt.Errorf("config file path not set")
 	}
 
-	// Read the config file content
-	content, err := os.ReadFile(a.configFile)
+	// Read the config file content (no lock needed for file I/O)
+	content, err := os.ReadFile(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	// Get the default filename from the config file path
-	defaultFilename := filepath.Base(a.configFile)
+	defaultFilename := filepath.Base(configFile)
 	if defaultFilename == "" {
 		defaultFilename = "config.yml"
 	}
 
-	// Open save file dialog
+	// Open save file dialog (no lock needed for dialog operations)
 	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
 		DefaultFilename: defaultFilename,
 		Title:           "Save Configuration File",
@@ -1364,7 +1366,7 @@ func (a *App) ExportConfigFile() error {
 		return fmt.Errorf("no file path selected")
 	}
 
-	// Write the content to the selected file
+	// Write the content to the selected file (no lock needed for file I/O)
 	if err := os.WriteFile(savePath, content, manualInjectionsFilePerm); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
