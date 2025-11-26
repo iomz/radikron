@@ -90,6 +90,9 @@ Manually add any program to the download queue (past or future), with persistent
 
 Configuration management, station browser, program search with filtering, scheduled downloads view, monitoring control, and real-time activity logs.
 
+![config-editor](https://github.com/user-attachments/assets/4f3e0509-d669-4e48-8adf-da50827925ed)
+![program-search](https://github.com/user-attachments/assets/ba4741c9-37d8-4d20-ad8b-d6f2d21364bc)
+
 ### 🐳 Docker Support
 
 Pre-built Docker images with all dependencies included, ready for easy deployment.

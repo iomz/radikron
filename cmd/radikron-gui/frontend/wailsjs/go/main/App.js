@@ -6,8 +6,16 @@ export function DeleteManualInjection(arg1) {
   return window['go']['main']['App']['DeleteManualInjection'](arg1);
 }
 
+export function ExportConfigFile() {
+  return window['go']['main']['App']['ExportConfigFile']();
+}
+
 export function FetchProgramSnapshots() {
   return window['go']['main']['App']['FetchProgramSnapshots']();
+}
+
+export function GetAllStations() {
+  return window['go']['main']['App']['GetAllStations']();
 }
 
 export function GetAvailableStations() {
@@ -58,12 +66,20 @@ export function OpenDirectory(arg1) {
   return window['go']['main']['App']['OpenDirectory'](arg1);
 }
 
+export function ReadConfigFile() {
+  return window['go']['main']['App']['ReadConfigFile']();
+}
+
 export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
 }
 
 export function SearchWeeklyPrograms(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SearchWeeklyPrograms'](arg1, arg2, arg3, arg4);
+}
+
+export function SelectDirectory() {
+  return window['go']['main']['App']['SelectDirectory']();
 }
 
 export function StartMonitoring() {
