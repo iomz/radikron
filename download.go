@@ -488,6 +488,8 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 }
 
 // getTimeshiftChunklist returns a slice of chunk urls.
+//
+//nolint:gocyclo,funlen // keep this function monolithic
 func getTimeshiftChunklist(
 	ctx context.Context,
 	prog *Prog,
@@ -508,7 +510,7 @@ func getTimeshiftChunklist(
 
 	location, err := time.LoadLocation(TZTokyo)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	ft, err := time.ParseInLocation(DatetimeLayout, prog.Ft, location)
@@ -526,7 +528,8 @@ func getTimeshiftChunklist(
 	seen := map[string]bool{}
 	var chunklist []string
 
-	for seek := ft; seek.Before(to); seek = seek.Add(15 * time.Second) {
+	// seek the chunks for every 15 seconds
+	for seek := ft; seek.Before(to); seek = seek.Add(15 * time.Second) { //nolint:mnd
 		// build m3u8 request uri
 		u, err := url.Parse(APIPlaylistM3U8)
 		if err != nil {
@@ -553,10 +556,6 @@ func getTimeshiftChunklist(
 		}
 		req = req.WithContext(ctx)
 		req.Header.Set("pragma", "no-cache")
-		//req.Header.Set("X-Radiko-App", "pc_html5")
-		//req.Header.Set("X-Radiko-App-Version", "0.0.1")
-		//req.Header.Set("X-Radiko-User", "dummy_user")
-		//req.Header.Set("X-Radiko-Device", "pc")
 		req.Header.Set(UserAgentHeader, device.UserAgent)
 		req.Header.Set(RadikoAreaIDHeader, areaID)
 		req.Header.Set(RadikoAuthTokenHeader, device.AuthToken)
@@ -599,7 +598,7 @@ func getTimeshiftChunklist(
 // If a relative path is provided, it's resolved relative to the current working directory.
 // If an absolute path is provided, it's used as-is.
 // If no path is provided, it defaults to the user's Downloads/radiko directory,
-// with a fallback to the current working directory/ctx, prog the home directory cannot be determined.
+// with a fallback to the current working directory if the home directory cannot be determined.
 func GetRadikronPath(path string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -855,7 +854,7 @@ func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 }
 
 func generateLSID() string {
-	b := make([]byte, 16) // 16 bytes → 32 hex chars
+	b := make([]byte, 16) //nolint:mnd // 16 bytes → 32 hex chars
 	if _, err := rand.Read(b); err != nil {
 		log.Fatal(err)
 	}
@@ -879,7 +878,7 @@ func extractChunklist(input io.Reader) ([]string, error) {
 }
 
 func parseChunklistFromM3U8(uri string) ([]string, error) {
-	resp, err := http.Get(uri)
+	resp, err := http.Get(uri) //nolint:gosec,noctx
 	if err != nil {
 		return nil, err
 	}
