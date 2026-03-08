@@ -42,7 +42,7 @@ const (
 	// API endpoints
 	// region full
 	APIRegionFull    = "https://radiko.jp/v3/station/region/full.xml"
-	APIPlaylistM3U8  = "https://radiko.jp/v2/api/ts/playlist.m3u8"
+	APIPlaylistM3U8  = "https://tf-f-rpaa-radiko.smartstream.ne.jp/tf/playlist.m3u8"
 	APIWeeklyProgram = "https://radiko.jp/v3/program/station/weekly/%s.xml"
 
 	// HTTP Headers

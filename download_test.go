@@ -30,83 +30,6 @@ const (
 	osWindows = "windows"
 )
 
-func TestBuildM3U8RequestURI(t *testing.T) {
-	prog := &Prog{
-		StationID: "FMT",
-		Ft:        "20230605130000",
-		To:        "20230605145500",
-	}
-	uri := buildM3U8RequestURI(prog)
-	want := "https://radiko.jp/v2/api/ts/playlist.m3u8?ft=20230605130000&l=15&station_id=FMT&to=20230605145500"
-	if uri != want {
-		t.Errorf("buildM3U8RequestURI => %v, want %v", uri, want)
-	}
-
-	// Test with different station
-	prog2 := &Prog{
-		StationID: "TBS",
-		Ft:        "20230605140000",
-		To:        "20230605150000",
-	}
-	uri2 := buildM3U8RequestURI(prog2)
-	if uri2 == uri {
-		t.Error("buildM3U8RequestURI should generate different URIs for different programs")
-	}
-	if uri2 == "" {
-		t.Error("buildM3U8RequestURI returned empty URI")
-	}
-
-	// Verify the URI contains all required parameters
-	if !strings.Contains(uri, "station_id=FMT") {
-		t.Error("URI should contain station_id parameter")
-	}
-	if !strings.Contains(uri, "ft=20230605130000") {
-		t.Error("URI should contain ft parameter")
-	}
-	if !strings.Contains(uri, "to=20230605145500") {
-		t.Error("URI should contain to parameter")
-	}
-	if !strings.Contains(uri, "l=15") {
-		t.Error("URI should contain l parameter with PlaylistM3U8Length")
-	}
-}
-
-func TestGetURI(t *testing.T) {
-	m3u8, err := PlaylistTestM3U8.Open("test/playlist-test.m3u8")
-	if err != nil {
-		t.Error(err)
-	}
-	defer m3u8.Close()
-	uri, err := getURI(m3u8)
-	if err != nil {
-		t.Error(err)
-	}
-	want := "https://radiko.jp/v2/api/ts/chunklist/FsNE6Bt0.m3u8"
-	if uri != want {
-		t.Errorf("getURI => %v, want %v", uri, want)
-	}
-
-	// Test with invalid input (media playlist instead of master)
-	// This would require a media playlist test file, but we can test error handling
-	// by using an invalid reader or empty input
-}
-
-func TestGetURI_InvalidVariants(t *testing.T) {
-	// Test with invalid m3u8 format (not a master playlist)
-	invalidReader := strings.NewReader("not a valid m3u8")
-	_, err := getURI(invalidReader)
-	if err == nil {
-		t.Error("getURI should return error for invalid m3u8 format")
-	}
-
-	// Test with empty input
-	emptyReader := strings.NewReader("")
-	_, err = getURI(emptyReader)
-	if err == nil {
-		t.Error("getURI should return error for empty input")
-	}
-}
-
 func TestGetRadicronPath(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -507,72 +430,6 @@ func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
 	// Verify target file still exists
 	if _, err := os.Stat(targetFile); os.IsNotExist(err) {
 		t.Error("Target file should still exist")
-	}
-}
-
-func TestGetChunklist(t *testing.T) {
-	// Test with master playlist (should return error or nil)
-	m3u8, err := PlaylistTestM3U8.Open("test/playlist-test.m3u8")
-	if err != nil {
-		t.Fatalf("Failed to open test playlist: %v", err)
-	}
-	defer m3u8.Close()
-
-	// Note: The test file is a master playlist, not a media playlist
-	// getChunklist expects a media playlist, so it should return an error or nil chunklist
-	chunklist, err := getChunklist(m3u8)
-	// getChunklist returns (nil, err) when listType is not MEDIA
-	// The function checks: err != nil || listType != m3u8.MEDIA
-	// For master playlist, listType != MEDIA, so it should return nil chunklist
-	if chunklist != nil {
-		t.Errorf("getChunklist should return nil chunklist for master playlist, got %v", chunklist)
-	}
-	// Error may or may not be nil depending on decode behavior, but chunklist must be nil
-	if err != nil {
-		t.Logf("expected non-media playlist decode error: %v", err)
-	}
-
-	// Test with invalid input (empty reader)
-	emptyReader := strings.NewReader("")
-	chunklist, err = getChunklist(emptyReader)
-	if chunklist != nil {
-		t.Error("getChunklist should return nil chunklist for invalid input")
-	}
-	// Error is expected for invalid input
-	if err == nil {
-		t.Log("getChunklist may or may not return error for invalid input")
-	}
-
-	// Test with invalid m3u8 format
-	invalidReader := strings.NewReader("#EXTM3U\ninvalid content")
-	chunklist, _ = getChunklist(invalidReader)
-	if chunklist != nil {
-		t.Error("getChunklist should return nil chunklist for invalid format")
-	}
-}
-
-func TestGetURIErrorCases(t *testing.T) {
-	// Test with invalid input (empty reader)
-	emptyReader := strings.NewReader("")
-	_, err := getURI(emptyReader)
-	if err == nil {
-		t.Error("getURI should return error for invalid input")
-	}
-
-	// Test with invalid XML (not m3u8)
-	invalidReader := strings.NewReader("<?xml version=\"1.0\"?><invalid></invalid>")
-	_, err = getURI(invalidReader)
-	if err == nil {
-		t.Error("getURI should return error for invalid m3u8 format")
-	}
-
-	// Test with media playlist (should return error, expects master playlist)
-	mediaPlaylist := strings.NewReader("#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:10.0,\nsegment.ts\n")
-	uri, err := getURI(mediaPlaylist)
-	// getURI checks listType != m3u8.MASTER, so media playlist should return error
-	// However, if decode succeeds but listType is MEDIA, it returns empty string and error
-	if err == nil && uri != "" {
-		t.Error("getURI should return error or empty URI for media playlist (expects master)")
 	}
 }
 
@@ -1035,23 +892,6 @@ func TestInitSemaphores(_ *testing.T) {
 	}
 	InitSemaphores(asset3)
 	// Should use defaults
-}
-
-func TestGetChunklistFromM3U8(t *testing.T) {
-	// This function makes HTTP requests, so we need to test it carefully
-	// For now, we'll test error cases that don't require a real server
-
-	// Test with invalid URL (should fail)
-	_, err := getChunklistFromM3U8("http://invalid-url-that-does-not-exist-12345.com/test.m3u8")
-	if err == nil {
-		t.Log("getChunklistFromM3U8 may succeed with network retries, but should eventually fail")
-	}
-
-	// Test with empty URL (should fail)
-	_, err = getChunklistFromM3U8("")
-	if err == nil {
-		t.Error("getChunklistFromM3U8 should return error for empty URL")
-	}
 }
 
 func TestValidateAndCleanupOutputFile(t *testing.T) {
@@ -1606,167 +1446,9 @@ func TestBulkDownload_EmptyList(t *testing.T) {
 	}
 }
 
-func TestGetChunklist_MediaPlaylist(t *testing.T) {
-	// Create a media playlist (not master playlist)
-	mediaPlaylist := `#EXTM3U
-#EXT-X-VERSION:3
-#EXTINF:10.0,
-chunk1.aac
-#EXTINF:10.0,
-chunk2.aac
-#EXTINF:10.0,
-chunk3.aac
-#EXT-X-ENDLIST
-`
-
-	reader := strings.NewReader(mediaPlaylist)
-	chunklist, err := getChunklist(reader)
-	if err != nil {
-		t.Errorf("getChunklist failed: %v", err)
-	}
-	if len(chunklist) != 3 {
-		t.Errorf("Expected 3 chunks, got %d", len(chunklist))
-	}
-	if chunklist[0] != "chunk1.aac" {
-		t.Errorf("First chunk should be chunk1.aac, got %s", chunklist[0])
-	}
-}
-
-func TestGetChunklistFromM3U8_Success(t *testing.T) {
-	// Create a media playlist
-	mediaPlaylist := `#EXTM3U
-#EXT-X-VERSION:3
-#EXTINF:10.0,
-chunk1.aac
-#EXTINF:10.0,
-chunk2.aac
-#EXT-X-ENDLIST
-`
-
-	// Create HTTP server that serves the media playlist
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		_, _ = w.Write([]byte(mediaPlaylist))
-	}))
-	defer server.Close()
-
-	chunklist, err := getChunklistFromM3U8(server.URL)
-	if err != nil {
-		t.Errorf("getChunklistFromM3U8 failed: %v", err)
-	}
-	if len(chunklist) != 2 {
-		t.Errorf("Expected 2 chunks, got %d", len(chunklist))
-	}
-}
-
-func TestTimeshiftProgM3U8_NoAsset(t *testing.T) {
-	// Test with no asset in context
-	ctx := context.Background()
-	prog := &Prog{
-		StationID: "FMT",
-		Ft:        "20230605130000",
-		To:        "20230605145500",
-	}
-
-	// This will panic when trying to access nil asset
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("timeshiftProgM3U8 should panic when asset is nil")
-		}
-	}()
-
-	_, _ = timeshiftProgM3U8(ctx, prog)
-	t.Error("timeshiftProgM3U8 should have panicked")
-}
-
-func TestDownloadProgram_ChunklistError(t *testing.T) {
-	// Save original env value
-	testDir := filepath.Join(os.TempDir(), "radikron-test-download-prog")
-	defer os.RemoveAll(testDir)
-
-	ctx := context.Background()
-	wg := &sync.WaitGroup{}
-
-	// Create output config
-	downloadsDir := filepath.Join(testDir, "downloads")
-	err := os.MkdirAll(downloadsDir, DirPermissions)
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	output := newOutputConfigFromPath(downloadsDir, "test-output", radigo.AudioFormatAAC)
-
-	// Test with invalid M3U8 URL (will cause getChunklistFromM3U8 to fail)
-	prog := &Prog{
-		StationID: "FMT",
-		Title:     "Test Program",
-		M3U8:      "http://invalid-url-that-does-not-exist-12345.com/playlist.m3u8",
-	}
-
-	// downloadProgram runs in a goroutine, so we need to wait for it
-	wg.Add(1)
-	downloadProgram(ctx, wg, prog, output)
-	wg.Wait()
-
-	// Verify output file was not created (download should have failed)
-	if _, err := os.Stat(output.AbsPath()); err == nil {
-		t.Error("Output file should not be created when chunklist fetch fails")
-	}
-}
-
-func TestDownloadProgram_BulkDownloadError(t *testing.T) {
-	testDir := filepath.Join(os.TempDir(), "radikron-test-download-prog")
-	defer os.RemoveAll(testDir)
-
-	ctx := context.Background()
-	wg := &sync.WaitGroup{}
-
-	// Create output config
-	downloadsDir := filepath.Join(testDir, "downloads")
-	err := os.MkdirAll(downloadsDir, DirPermissions)
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	output := newOutputConfigFromPath(downloadsDir, "test-output", radigo.AudioFormatAAC)
-
-	// Create a media playlist that points to invalid URLs (will cause bulkDownload to fail)
-	mediaPlaylist := `#EXTM3U
-#EXT-X-VERSION:3
-#EXTINF:10.0,
-http://invalid-url-1.com/chunk1.aac
-#EXTINF:10.0,
-http://invalid-url-2.com/chunk2.aac
-#EXT-X-ENDLIST
-`
-
-	// Create HTTP server that serves the media playlist
-	chunkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		_, _ = w.Write([]byte(mediaPlaylist))
-	}))
-	defer chunkServer.Close()
-
-	prog := &Prog{
-		StationID: "FMT",
-		Title:     "Test Program",
-		M3U8:      chunkServer.URL,
-	}
-
-	// downloadProgram runs in a goroutine, so we need to wait for it
-	wg.Add(1)
-	downloadProgram(ctx, wg, prog, output)
-	wg.Wait()
-
-	// Verify output file was not created (download should have failed)
-	if _, err := os.Stat(output.AbsPath()); err == nil {
-		t.Error("Output file should not be created when bulkDownload fails")
-	}
-}
-
 // mockEventEmitter is a test implementation of EventEmitter
 type mockEventEmitter struct {
-	downloadStarted   []struct{ stationID, title, startTime, uri string }
+	downloadStarted   []struct{ stationID, title, startTime string }
 	downloadCompleted []struct{ stationID, title, startTime, filePath string }
 	fileSaved         []struct{ stationID, title, filePath string }
 	downloadSkipped   []struct{ reason, stationID, title, startTime string }
@@ -1775,8 +1457,8 @@ type mockEventEmitter struct {
 	logMessages       []struct{ level, message string }
 }
 
-func (m *mockEventEmitter) EmitDownloadStarted(stationID, title, startTime, uri string) {
-	m.downloadStarted = append(m.downloadStarted, struct{ stationID, title, startTime, uri string }{stationID, title, startTime, uri})
+func (m *mockEventEmitter) EmitDownloadStarted(stationID, title, startTime string) {
+	m.downloadStarted = append(m.downloadStarted, struct{ stationID, title, startTime string }{stationID, title, startTime})
 }
 
 func (m *mockEventEmitter) EmitDownloadCompleted(stationID, title, startTime, filePath string) {
@@ -1812,7 +1494,7 @@ func TestEmitDownloadStarted_WithEmitter(t *testing.T) {
 	emitter := &mockEventEmitter{}
 	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
 
-	emitDownloadStarted(ctx, "FMT", "Test Program", "20230605100000", "http://test.com/playlist.m3u8")
+	emitDownloadStarted(ctx, "FMT", "Test Program", "20230605100000")
 
 	if len(emitter.downloadStarted) != 1 {
 		t.Errorf("Expected 1 download started event, got %d", len(emitter.downloadStarted))
@@ -1826,7 +1508,7 @@ func TestEmitDownloadStarted_WithoutEmitter(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	// Should not panic, just log
-	emitDownloadStarted(ctx, "FMT", "Test Program", "20230605100000", "http://test.com/playlist.m3u8")
+	emitDownloadStarted(ctx, "FMT", "Test Program", "20230605100000")
 }
 
 func TestEmitDownloadCompleted_WithEmitter(t *testing.T) {

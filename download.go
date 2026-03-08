@@ -1,8 +1,11 @@
 package radikron
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -28,11 +31,11 @@ var (
 )
 
 // emitDownloadStarted emits a download started event if emitter is available, otherwise logs it
-func emitDownloadStarted(ctx context.Context, stationID, title, startTime, uri string) {
+func emitDownloadStarted(ctx context.Context, stationID, title, startTime string) {
 	if emitter := GetEventEmitter(ctx); emitter != nil {
-		emitter.EmitDownloadStarted(stationID, title, startTime, uri)
+		emitter.EmitDownloadStarted(stationID, title, startTime)
 	} else {
-		log.Printf("start downloading [%s]%s (%s): %s", stationID, title, startTime, uri)
+		log.Printf("start downloading [%s]%s (%s)", stationID, title, startTime)
 	}
 }
 
@@ -275,49 +278,14 @@ func Download(
 		return fmt.Errorf("failed to handle duplicate: %w", err)
 	}
 
-	// fetch the recording m3u8 uri
-	uri, err := timeshiftProgM3U8(ctx, prog)
-	if err != nil {
-		msg := fmt.Sprintf("Failed to fetch M3U8 URI: %v", err)
-		emitLogMessage(ctx, "error", msg)
-		return fmt.Errorf(
-			"playlist.m3u8 not available [%s]%s (%s): %s",
-			prog.StationID,
-			title,
-			start,
-			err,
-		)
-	}
 	// Log rule match only when download actually starts (not skipped)
 	if prog.RuleName != "" {
 		emitLogMessage(ctx, "info", fmt.Sprintf("rule[%s] matched: [%s]%s (%s)", prog.RuleName, prog.StationID, title, start))
 	}
-	emitDownloadStarted(ctx, prog.StationID, title, start, uri)
-	prog.M3U8 = uri
+	emitDownloadStarted(ctx, prog.StationID, title, start)
 	wg.Add(1)
 	go downloadProgram(ctx, wg, prog, output)
 	return nil
-}
-
-func buildM3U8RequestURI(prog *Prog) string {
-	u, err := url.Parse(APIPlaylistM3U8)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// set query parameters
-	urlQuery := u.Query()
-	params := map[string]string{
-		"station_id": prog.StationID,
-		"ft":         prog.Ft,
-		"to":         prog.To,
-		"l":          PlaylistM3U8Length, // required?
-	}
-	for k, v := range params {
-		urlQuery.Set(k, v)
-	}
-	u.RawQuery = urlQuery.Encode()
-
-	return u.String()
 }
 
 func bulkDownload(list []string, output string) error {
@@ -333,7 +301,7 @@ func bulkDownload(list []string, output string) error {
 			defer wg.Done()
 
 			var err error
-			for i := 0; i < MaxRetryAttempts; i++ {
+			for range MaxRetryAttempts {
 				downloadingSem <- struct{}{}
 				err = downloadLink(link, output)
 				<-downloadingSem
@@ -392,7 +360,7 @@ func downloadProgram(
 	defer wg.Done()
 	var err error
 
-	chunklist, err := getChunklistFromM3U8(prog.M3U8)
+	chunklist, err := getTimeshiftChunklist(ctx, prog)
 	if err != nil {
 		log.Printf("failed to get chunklist: %s", err)
 		return
@@ -519,39 +487,119 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 	return nil
 }
 
-// getChunklist returns a slice of uri string.
-func getChunklist(input io.Reader) ([]string, error) {
-	playlist, listType, err := m3u8.DecodeFrom(input, true)
-	if err != nil || listType != m3u8.MEDIA {
-		return nil, err
-	}
-	p := playlist.(*m3u8.MediaPlaylist)
+// getTimeshiftChunklist returns a slice of chunk urls.
+func getTimeshiftChunklist(
+	ctx context.Context,
+	prog *Prog,
+) ([]string, error) {
+	asset := GetAsset(ctx)
+	client := asset.DefaultClient
+	var err error
 
-	var chunklist []string
-	for _, v := range p.Segments {
-		if v != nil {
-			chunklist = append(chunklist, v.URI)
+	areaID := asset.GetAreaIDByStationID(prog.StationID)
+
+	device, ok := asset.AreaDevices[areaID]
+	if !ok {
+		device, err = asset.NewDevice(ctx, areaID)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return chunklist, nil
-}
 
-// getChunklistFromM3U8 returns a slice of url.
-func getChunklistFromM3U8(uri string) ([]string, error) {
-	resp, err := http.Get(uri) //nolint:gosec,noctx
+	location, err := time.LoadLocation(TZTokyo)
+	if err != nil {
+		panic(err)
+	}
+
+	ft, err := time.ParseInLocation(DatetimeLayout, prog.Ft, location)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	to, err := time.ParseInLocation(DatetimeLayout, prog.To, location)
+	if err != nil {
+		return nil, err
+	}
+	if !to.After(ft) {
+		return nil, fmt.Errorf("invalid program range: ft=%s to=%s", prog.Ft, prog.To)
+	}
 
-	return getChunklist(resp.Body)
+	seen := map[string]bool{}
+	var chunklist []string
+
+	for seek := ft; seek.Before(to); seek = seek.Add(15 * time.Second) {
+		// build m3u8 request uri
+		u, err := url.Parse(APIPlaylistM3U8)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// set query parameters
+		q := u.Query()
+		q.Set("station_id", prog.StationID)
+		q.Set("start_at", prog.Ft)
+		q.Set("ft", prog.Ft)
+		q.Set("end_at", prog.To)
+		q.Set("to", prog.To)
+		q.Set("seek", seek.In(location).Format(DatetimeLayout))
+		q.Set("preroll", "0")
+		q.Set("l", "15")
+		q.Set("lsid", generateLSID())
+		q.Set("type", "b")
+		u.RawQuery = q.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
+		if err != nil {
+			return nil, err
+		}
+		req = req.WithContext(ctx)
+		req.Header.Set("pragma", "no-cache")
+		//req.Header.Set("X-Radiko-App", "pc_html5")
+		//req.Header.Set("X-Radiko-App-Version", "0.0.1")
+		//req.Header.Set("X-Radiko-User", "dummy_user")
+		//req.Header.Set("X-Radiko-Device", "pc")
+		req.Header.Set(UserAgentHeader, device.UserAgent)
+		req.Header.Set(RadikoAreaIDHeader, areaID)
+		req.Header.Set(RadikoAuthTokenHeader, device.AuthToken)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request failed (%s): %v", u.String(), err)
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read body failed (%s): %v", u.String(), readErr)
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("%s -> %s", u.String(), resp.Status)
+		}
+
+		playlistURI, err := parseMasterPlaylistURI(string(body))
+		if err != nil {
+			return nil, fmt.Errorf("%s -> %v", u.String(), err)
+		}
+
+		chunks, err := parseChunklistFromM3U8(resolveURL(u.String(), playlistURI))
+		if err != nil {
+			return nil, fmt.Errorf("%s -> chunklist parse failed: %v", u.String(), err)
+		}
+		for _, c := range chunks {
+			key := segmentKey(c)
+			if !seen[key] {
+				seen[key] = true
+				chunklist = append(chunklist, c)
+			}
+		}
+	}
+	return chunklist, nil
 }
 
 // GetRadikronPath resolves a provided path (or defaults to the user's Downloads/radiko directory).
 // If a relative path is provided, it's resolved relative to the current working directory.
 // If an absolute path is provided, it's used as-is.
 // If no path is provided, it defaults to the user's Downloads/radiko directory,
-// with a fallback to the current working directory/radiko if the home directory cannot be determined.
+// with a fallback to the current working directory/ctx, prog the home directory cannot be determined.
 func GetRadikronPath(path string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -574,20 +622,6 @@ func GetRadikronPath(path string) (string, error) {
 		}
 	}
 	return filepath.Clean(path), nil
-}
-
-// getURI returns uri generated by parsing m3u8.
-func getURI(input io.Reader) (string, error) {
-	playlist, listType, err := m3u8.DecodeFrom(input, true)
-	if err != nil || listType != m3u8.MASTER {
-		return "", err
-	}
-	p := playlist.(*m3u8.MasterPlaylist)
-
-	if p == nil || len(p.Variants) != 1 || p.Variants[0] == nil {
-		return "", errors.New("invalid m3u8 format")
-	}
-	return p.Variants[0].URI, nil
 }
 
 // newOutputConfigFromPath creates an OutputConfig from a directory path, file base name, and format.
@@ -786,48 +820,6 @@ func tempAACDir() (string, error) {
 	return aacDir, nil
 }
 
-// timeshiftProgM3U8 gets playlist.m3u8 for a Prog
-func timeshiftProgM3U8(
-	ctx context.Context,
-	prog *Prog,
-) (string, error) {
-	asset := GetAsset(ctx)
-	client := asset.DefaultClient
-	var req *http.Request
-	var err error
-
-	areaID := asset.GetAreaIDByStationID(prog.StationID)
-
-	device, ok := asset.AreaDevices[areaID]
-	if !ok {
-		device, err = asset.NewDevice(ctx, areaID)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	uri := buildM3U8RequestURI(prog)
-	req, err = http.NewRequestWithContext(ctx, "POST", uri, http.NoBody)
-	if err != nil {
-		return "", err
-	}
-	headers := map[string]string{
-		UserAgentHeader:       device.UserAgent,
-		RadikoAreaIDHeader:    areaID,
-		RadikoAuthTokenHeader: device.AuthToken,
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	return getURI(resp.Body)
-}
-
 func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 	tag, err := id3v2.Open(output.AbsPath(), id3v2.Options{Parse: true})
 	if err != nil {
@@ -860,4 +852,83 @@ func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
 	}
 
 	return nil
+}
+
+func generateLSID() string {
+	b := make([]byte, 16) // 16 bytes → 32 hex chars
+	if _, err := rand.Read(b); err != nil {
+		log.Fatal(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+func extractChunklist(input io.Reader) ([]string, error) {
+	playlist, listType, err := m3u8.DecodeFrom(input, true)
+	if err != nil || listType != m3u8.MEDIA {
+		return nil, err
+	}
+	p := playlist.(*m3u8.MediaPlaylist)
+
+	var chunklist []string
+	for _, v := range p.Segments {
+		if v != nil {
+			chunklist = append(chunklist, v.URI)
+		}
+	}
+	return chunklist, nil
+}
+
+func parseChunklistFromM3U8(uri string) ([]string, error) {
+	resp, err := http.Get(uri)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	return extractChunklist(resp.Body)
+}
+
+func parseMasterPlaylistURI(body string) (string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	expectURI := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
+			expectURI = true
+			continue
+		}
+		if expectURI && !strings.HasPrefix(line, "#") {
+			return line, nil
+		}
+	}
+	if strings.Contains(body, "#EXTM3U") {
+		return "", fmt.Errorf("master playlist uri not found")
+	}
+	return "", fmt.Errorf("invalid m3u8 body")
+}
+
+func resolveURL(baseURL, ref string) string {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return ref
+	}
+	uri, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	return base.ResolveReference(uri).String()
+}
+
+func segmentKey(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if u.Path != "" {
+		return u.Path
+	}
+	return raw
 }

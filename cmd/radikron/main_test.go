@@ -48,7 +48,7 @@ func TestConfig(t *testing.T) {
 	}
 
 	got := len(asset.AvailableStations)
-	nStations := 13
+	nStations := 12
 	if got != nStations {
 		t.Errorf("asset.AvailableStations: %v => want %v", got, nStations)
 	}

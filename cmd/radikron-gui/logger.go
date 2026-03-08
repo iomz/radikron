@@ -46,13 +46,12 @@ func (e *WailsEventEmitter) SetDownloadCompletedCallback(callback DownloadComple
 }
 
 // EmitDownloadStarted implements radikron.EventEmitter
-func (e *WailsEventEmitter) EmitDownloadStarted(stationID, title, startTime, uri string) {
-	log.Printf("start downloading [%s]%s (%s): %s", stationID, title, startTime, uri)
+func (e *WailsEventEmitter) EmitDownloadStarted(stationID, title, startTime string) {
+	log.Printf("start downloading [%s]%s (%s)", stationID, title, startTime)
 	runtime.EventsEmit(e.ctx, "download-started", map[string]any{
 		"station": stationID,
 		"title":   title,
 		"start":   startTime,
-		"uri":     uri,
 	})
 }
 
