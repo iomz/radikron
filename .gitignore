@@ -9,7 +9,7 @@
 *.dylib
 
 # Compiled binary
-radikron
+/radikron
 /radikron-gui
 
 # Test binary, built with `go test -c`

@@ -24,7 +24,7 @@ func init() { //nolint:gochecknoinits
 // Implementations can provide structured events to external systems (e.g., GUI).
 type EventEmitter interface {
 	// EmitDownloadStarted emits when a download starts
-	EmitDownloadStarted(stationID, title, startTime, uri string)
+	EmitDownloadStarted(stationID, title, startTime string)
 	// EmitDownloadCompleted emits when a download completes successfully (file written to disk)
 	EmitDownloadCompleted(stationID, title, startTime, filePath string)
 	// EmitFileSaved emits when a file is fully saved with metadata tags
