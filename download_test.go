@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bogem/id3v2"
+	"github.com/yyoshiki41/go-radiko"
 	"github.com/yyoshiki41/radigo"
 )
 
@@ -27,8 +28,15 @@ var (
 )
 
 const (
-	osWindows = "windows"
+	osWindows       = "windows"
+	testInvalidTime = "invalid"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestGetRadicronPath(t *testing.T) {
 	cwd, err := os.Getwd()
@@ -894,6 +902,175 @@ func TestInitSemaphores(_ *testing.T) {
 	// Should use defaults
 }
 
+func TestGetTimeshiftChunklist(t *testing.T) { //nolint:gocyclo // transport assertions intentionally cover complete request flow
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+		radiko.SetHTTPClient(&http.Client{Timeout: 120 * time.Second})
+	})
+
+	var playlistRequests int
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := ""
+		switch {
+		case req.URL.Host == "radiko.jp" && req.URL.Path == "/area":
+			body = `<span class="JP13">Tokyo</span>`
+		case req.URL.Host == "tf-f-rpaa-radiko.smartstream.ne.jp":
+			playlistRequests++
+			if got := req.Header.Get(RadikoAreaIDHeader); got != DefaultArea {
+				t.Errorf("%s = %q, want JP13", RadikoAreaIDHeader, got)
+			}
+			if got := req.Header.Get(RadikoAuthTokenHeader); got != "token" {
+				t.Errorf("%s = %q, want token", RadikoAuthTokenHeader, got)
+			}
+			if got := req.URL.Query().Get("station_id"); got != testStationFMT {
+				t.Errorf("station_id = %q, want FMT", got)
+			}
+			if got := req.URL.Query().Get("seek"); got == "" {
+				t.Error("seek is empty")
+			}
+			body = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=48000\nhttps://chunks.test/list.m3u8\n"
+		case req.URL.Host == "chunks.test":
+			if playlistRequests == 1 {
+				body = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:15,\nhttps://audio.test/one.aac?token=first\n#EXTINF:15,\nhttps://audio.test/two.aac\n"
+			} else {
+				body = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:15,\nhttps://audio.test/one.aac?token=second\n#EXTINF:15,\nhttps://audio.test/three.aac\n"
+			}
+		default:
+			t.Fatalf("unexpected request: %s", req.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     http.StatusText(http.StatusOK),
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    req,
+		}, nil
+	})
+	http.DefaultTransport = transport
+	radiko.SetHTTPClient(&http.Client{Transport: transport})
+
+	client, err := radiko.New("")
+	if err != nil {
+		t.Fatalf("radiko.New failed: %v", err)
+	}
+	asset := &Asset{
+		DefaultClient: client,
+		AreaDevices: Devices{
+			DefaultArea: {
+				AuthToken: "token",
+				UserAgent: "test-agent",
+			},
+		},
+		Stations: Stations{
+			testStationFMT: {Areas: []string{DefaultArea}},
+		},
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+	prog := &Prog{
+		StationID: testStationFMT,
+		Ft:        "20230605130000",
+		To:        "20230605130030",
+	}
+
+	chunks, err := getTimeshiftChunklist(ctx, prog)
+	if err != nil {
+		t.Fatalf("getTimeshiftChunklist failed: %v", err)
+	}
+	want := []string{
+		"https://audio.test/one.aac?token=first",
+		"https://audio.test/two.aac",
+		"https://audio.test/three.aac",
+	}
+	if len(chunks) != len(want) {
+		t.Fatalf("chunks = %v, want %v", chunks, want)
+	}
+	for i := range want {
+		if chunks[i] != want[i] {
+			t.Errorf("chunks[%d] = %q, want %q", i, chunks[i], want[i])
+		}
+	}
+	if playlistRequests != 2 {
+		t.Errorf("playlist requests = %d, want 2", playlistRequests)
+	}
+}
+
+func TestGetTimeshiftChunklistInvalidTimes(t *testing.T) {
+	asset := &Asset{
+		AreaDevices: Devices{DefaultArea: {}},
+		Stations:    Stations{testStationFMT: {Areas: []string{DefaultArea}}},
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+
+	tests := []struct {
+		name string
+		ft   string
+		to   string
+	}{
+		{name: "invalid start", ft: testInvalidTime, to: "20230605130030"},
+		{name: "invalid end", ft: "20230605130000", to: testInvalidTime},
+		{name: "reversed", ft: "20230605130030", to: "20230605130000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := getTimeshiftChunklist(ctx, &Prog{
+				StationID: testStationFMT,
+				Ft:        tt.ft,
+				To:        tt.to,
+			})
+			if err == nil {
+				t.Fatal("getTimeshiftChunklist returned nil error")
+			}
+		})
+	}
+}
+
+func TestTimeshiftPlaylistHelpers(t *testing.T) {
+	master := "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=48000\nchunklist.m3u8\n"
+	uri, err := parseMasterPlaylistURI(master)
+	if err != nil {
+		t.Fatalf("parseMasterPlaylistURI failed: %v", err)
+	}
+	if uri != "chunklist.m3u8" {
+		t.Errorf("uri = %q, want chunklist.m3u8", uri)
+	}
+
+	for _, body := range []string{"#EXTM3U\n", "not a playlist"} {
+		if _, err := parseMasterPlaylistURI(body); err == nil {
+			t.Errorf("parseMasterPlaylistURI(%q) returned nil error", body)
+		}
+	}
+
+	resolved := resolveURL("https://example.com/path/master.m3u8", "../chunklist.m3u8")
+	if resolved != "https://example.com/chunklist.m3u8" {
+		t.Errorf("resolveURL = %q", resolved)
+	}
+	if key := segmentKey("https://example.com/audio.aac?token=secret"); key != "/audio.aac" {
+		t.Errorf("segmentKey = %q, want /audio.aac", key)
+	}
+
+	media := "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:15,\none.aac\n#EXTINF:15,\ntwo.aac\n"
+	chunks, err := extractChunklist(strings.NewReader(media))
+	if err != nil {
+		t.Fatalf("extractChunklist failed: %v", err)
+	}
+	if len(chunks) != 2 || chunks[0] != "one.aac" || chunks[1] != "two.aac" {
+		t.Errorf("chunks = %v", chunks)
+	}
+	chunks, err = extractChunklist(strings.NewReader(master))
+	if err != nil {
+		t.Fatalf("extractChunklist master playlist failed: %v", err)
+	}
+	if chunks != nil {
+		t.Errorf("extractChunklist master chunks = %v, want nil", chunks)
+	}
+
+	lsid := generateLSID()
+	if len(lsid) != 32 {
+		t.Errorf("generateLSID length = %d, want 32", len(lsid))
+	}
+}
+
 func TestValidateAndCleanupOutputFile(t *testing.T) {
 	testDir := filepath.Join(os.TempDir(), "radikron-test-validate")
 	defer os.RemoveAll(testDir)
@@ -1333,7 +1510,7 @@ func TestBulkDownload_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fileName := filepath.Base(r.URL.Path)
-		_, _ = w.Write([]byte("content for " + fileName))
+		_, _ = w.Write([]byte("content for " + fileName)) //nolint:gosec // test server response contains sanitized path base
 	}))
 	defer server.Close()
 
@@ -1383,7 +1560,7 @@ func TestBulkDownload_WithErrors(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 		fileName := filepath.Base(r.URL.Path)
-		_, _ = w.Write([]byte("content for " + fileName))
+		_, _ = w.Write([]byte("content for " + fileName)) //nolint:gosec // test server response contains sanitized path base
 	}))
 	defer server.Close()
 

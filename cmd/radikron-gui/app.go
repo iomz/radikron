@@ -1367,7 +1367,7 @@ func (a *App) ExportConfigFile() error {
 	}
 
 	// Write the content to the selected file (no lock needed for file I/O)
-	if err := os.WriteFile(savePath, content, manualInjectionsFilePerm); err != nil {
+	if err := os.WriteFile(savePath, content, manualInjectionsFilePerm); err != nil { //nolint:gosec // path comes from native save dialog
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
