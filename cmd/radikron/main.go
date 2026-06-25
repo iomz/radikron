@@ -268,7 +268,7 @@ func main() {
 	// Print version
 	if *printVersion {
 		fmt.Printf("%v\n", version)
-		os.Exit(0)
+		return
 	}
 
 	// Enable debug logging

@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +15,46 @@ import (
 	"github.com/yyoshiki41/go-radiko"
 	"github.com/yyoshiki41/radigo"
 )
+
+func TestMainPrintsVersion(t *testing.T) {
+	oldArgs := os.Args
+	oldCommandLine := flag.CommandLine
+	oldStdout := os.Stdout
+	oldVersion := version
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldCommandLine
+		os.Stdout = oldStdout
+		version = oldVersion
+	})
+
+	os.Args = []string{"radikron", "-v"}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	version = "v1.2.3-test"
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	os.Stdout = writer
+
+	main()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close stdout reader: %v", err)
+	}
+
+	if got, want := string(output), "v1.2.3-test\n"; got != want {
+		t.Errorf("version output = %q, want %q", got, want)
+	}
+}
 
 const (
 	testStationID         = "FMT"
