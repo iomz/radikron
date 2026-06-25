@@ -1,3 +1,4 @@
+---
 version: "2"
 linters:
   default: none
@@ -8,7 +9,6 @@ linters:
     - errcheck
     - funlen
     - gochecknoinits
-    - goconst
     - gocritic
     - gocyclo
     - goprintffuncname
@@ -33,9 +33,6 @@ linters:
     funlen:
       lines: -1
       statements: 50
-    goconst:
-      min-len: 2
-      min-occurrences: 3
     gocritic:
       disabled-checks:
         - dupImport

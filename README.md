@@ -106,9 +106,9 @@ Pre-built Docker images with all dependencies included, ready for easy deploymen
 
 If you're building the GUI version from source (Linux users), you'll also need:
 
-- **Go 1.20+**
-- **Node.js and pnpm**
-- **Wails v2**: Install with `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- **Go 1.26+**
+- **Node.js 20+ and pnpm 10+**
+- **Wails v2.11.x**: Install with `go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0`
 
 **Note**: macOS and Windows users can download pre-built binaries and don't need these build tools.
 
