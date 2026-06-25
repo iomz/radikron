@@ -30,6 +30,12 @@ var (
 	semMu          sync.Mutex // protects semaphore recreation
 )
 
+const (
+	timeshiftDebugEnv         = "RADIKRON_TIMESHIFT_DEBUG"
+	timeshiftChunklistDumpEnv = "RADIKRON_TIMESHIFT_CHUNKLIST_DUMP"
+	timeshiftDiagnosticPerm   = 0600
+)
+
 // emitDownloadStarted emits a download started event if emitter is available, otherwise logs it
 func emitDownloadStarted(ctx context.Context, stationID, title, startTime string) {
 	if emitter := GetEventEmitter(ctx); emitter != nil {
@@ -494,6 +500,43 @@ func getTimeshiftChunklist(
 	ctx context.Context,
 	prog *Prog,
 ) ([]string, error) {
+	const (
+		seekStep       = 15 * time.Second
+		playlistLength = "20"
+	)
+
+	debugEnvValue := os.Getenv(timeshiftDebugEnv)
+	dumpEnvValue := os.Getenv(timeshiftChunklistDumpEnv)
+	debugTimeshift := timeshiftDebugEnabled()
+	dumpEnabled := dumpEnvValue != ""
+	if debugTimeshift || dumpEnabled {
+		log.Printf( //nolint:gosec // diagnostic environment values are quoted
+			"timeshift diagnostics debug_env=%q dump_env=%q debug_enabled=%t dump_enabled=%t",
+			debugEnvValue,
+			dumpEnvValue,
+			debugTimeshift,
+			dumpEnabled,
+		)
+	}
+
+	var dumpPath string
+	if dumpEnabled {
+		absoluteDumpPath, err := filepath.Abs(dumpEnvValue)
+		if err != nil {
+			log.Printf( //nolint:gosec // developer-supplied diagnostic path is quoted
+				"timeshift chunklist dump path resolution failed path=%q: %v",
+				dumpEnvValue,
+				err,
+			)
+		} else {
+			dumpPath = absoluteDumpPath
+			log.Printf( //nolint:gosec // developer-supplied diagnostic path is quoted
+				"timeshift chunklist dump enabled path=%q",
+				dumpPath,
+			)
+		}
+	}
+
 	asset := GetAsset(ctx)
 	client := asset.DefaultClient
 	var err error
@@ -528,8 +571,8 @@ func getTimeshiftChunklist(
 	seen := map[string]bool{}
 	var chunklist []string
 
-	// seek the chunks for every 15 seconds
-	for seek := ft; seek.Before(to); seek = seek.Add(15 * time.Second) { //nolint:mnd
+	// Overlap requests because HLS segment boundaries may not align with fixed seek intervals.
+	for seek := ft; seek.Before(to); seek = seek.Add(seekStep) {
 		// build m3u8 request uri
 		u, err := url.Parse(APIPlaylistM3U8)
 		if err != nil {
@@ -543,12 +586,16 @@ func getTimeshiftChunklist(
 		q.Set("ft", prog.Ft)
 		q.Set("end_at", prog.To)
 		q.Set("to", prog.To)
-		q.Set("seek", seek.In(location).Format(DatetimeLayout))
+		seekValue := seek.In(location).Format(DatetimeLayout)
+		q.Set("seek", seekValue)
 		q.Set("preroll", "0")
-		q.Set("l", "15")
+		q.Set("l", playlistLength)
 		q.Set("lsid", generateLSID())
 		q.Set("type", "b")
 		u.RawQuery = q.Encode()
+		if debugTimeshift {
+			log.Printf("timeshift seek=%s", seekValue)
+		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 		if err != nil {
@@ -579,16 +626,62 @@ func getTimeshiftChunklist(
 			return nil, fmt.Errorf("%s -> %v", u.String(), err)
 		}
 
-		chunks, err := parseChunklistFromM3U8(resolveURL(u.String(), playlistURI))
+		mediaPlaylistURL := resolveURL(u.String(), playlistURI)
+		if debugTimeshift {
+			log.Printf("timeshift media playlist seek=%s url=%q", seekValue, mediaPlaylistURL)
+		}
+		chunks, err := parseChunklistFromM3U8(mediaPlaylistURL)
 		if err != nil {
 			return nil, fmt.Errorf("%s -> chunklist parse failed: %v", u.String(), err)
 		}
 		for _, c := range chunks {
-			key := segmentKey(c)
-			if !seen[key] {
+			segment, parseErr := parseTimeshiftProgramSegment(c, prog.StationID, ft, to, location)
+			if parseErr != nil {
+				if debugTimeshift {
+					log.Printf(
+						"timeshift chunk skipped seek=%s url=%q reason=%q",
+						seekValue,
+						c,
+						parseErr,
+					)
+				}
+				continue
+			}
+
+			key := segment.key()
+			duplicate := seen[key]
+			if debugTimeshift {
+				log.Printf(
+					"timeshift chunk seek=%s url=%q key=%q timestamp=%s duplicate=%t",
+					seekValue,
+					c,
+					key,
+					segment.Timestamp.Format(DatetimeLayout),
+					duplicate,
+				)
+			}
+			if !duplicate {
 				seen[key] = true
 				chunklist = append(chunklist, c)
 			}
+		}
+	}
+	if debugTimeshift {
+		log.Printf("timeshift final chunk count=%d", len(chunklist))
+	}
+	if dumpPath != "" {
+		if err := dumpChunklist(dumpPath, chunklist); err != nil {
+			log.Printf( //nolint:gosec // developer-supplied diagnostic path is quoted
+				"timeshift chunklist dump failed path=%q: %v",
+				dumpPath,
+				err,
+			)
+		} else {
+			log.Printf( //nolint:gosec // developer-supplied diagnostic path is quoted
+				"timeshift chunklist dumped path=%q count=%d",
+				dumpPath,
+				len(chunklist),
+			)
 		}
 	}
 	return chunklist, nil
@@ -921,13 +1014,149 @@ func resolveURL(baseURL, ref string) string {
 	return base.ResolveReference(uri).String()
 }
 
-func segmentKey(raw string) string {
+type timeshiftProgramSegment struct {
+	Path      string
+	StationID string
+	Date      string
+	Timestamp time.Time
+}
+
+type timeshiftSegmentPath struct {
+	Path      string
+	StationID string
+	Date      string
+	Filename  string
+}
+
+// The random filename suffix may vary between playlist responses.
+// Use station + timestamp as the stable media segment identity.
+func (s timeshiftProgramSegment) key() string {
+	return s.StationID + "/" + s.Timestamp.Format(DatetimeLayout)
+}
+
+func parseTimeshiftSegmentPath(raw string) (timeshiftSegmentPath, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return raw
+		return timeshiftSegmentPath{}, fmt.Errorf("parse url: %w", err)
 	}
-	if u.Path != "" {
-		return u.Path
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	segmentsIndex := -1
+	for i := range parts {
+		if parts[i] == "segments" {
+			segmentsIndex = i
+			break
+		}
 	}
-	return raw
+	if segmentsIndex == -1 || len(parts) <= segmentsIndex+1 {
+		return timeshiftSegmentPath{}, fmt.Errorf("unexpected segment path")
+	}
+	if parts[segmentsIndex+1] != "o" {
+		return timeshiftSegmentPath{}, fmt.Errorf("non-program segment class %q", parts[segmentsIndex+1])
+	}
+	if len(parts) != segmentsIndex+6 {
+		return timeshiftSegmentPath{}, fmt.Errorf("unexpected segment path")
+	}
+
+	return timeshiftSegmentPath{
+		Path:      u.Path,
+		StationID: parts[segmentsIndex+3],
+		Date:      parts[segmentsIndex+4],
+		Filename:  parts[segmentsIndex+5],
+	}, nil
+}
+
+func parseTimeshiftProgramSegment(
+	raw string,
+	stationID string,
+	from time.Time,
+	to time.Time,
+	location *time.Location,
+) (timeshiftProgramSegment, error) {
+	segmentPath, err := parseTimeshiftSegmentPath(raw)
+	if err != nil {
+		return timeshiftProgramSegment{}, err
+	}
+	if segmentPath.StationID != stationID {
+		return timeshiftProgramSegment{}, fmt.Errorf(
+			"station mismatch: got %q want %q",
+			segmentPath.StationID,
+			stationID,
+		)
+	}
+
+	filename := segmentPath.Filename
+	const minimumProgramSegmentFilenameLength = len("20060102_150405_x.aac")
+	if len(filename) < minimumProgramSegmentFilenameLength ||
+		filename[8] != '_' ||
+		filename[15] != '_' ||
+		!strings.HasSuffix(filename, ".aac") {
+		return timeshiftProgramSegment{}, fmt.Errorf("unexpected program segment filename")
+	}
+
+	timestampValue := filename[:8] + filename[9:15]
+	if segmentPath.Date != timestampValue[:8] {
+		return timeshiftProgramSegment{}, fmt.Errorf(
+			"date mismatch: path=%q filename=%q",
+			segmentPath.Date,
+			timestampValue[:8],
+		)
+	}
+	timestamp, err := time.ParseInLocation(DatetimeLayout, timestampValue, location)
+	if err != nil {
+		return timeshiftProgramSegment{}, fmt.Errorf("parse segment timestamp: %w", err)
+	}
+	if timestamp.Before(from) || !timestamp.Before(to) {
+		return timeshiftProgramSegment{}, fmt.Errorf(
+			"timestamp outside program range: %s",
+			timestampValue,
+		)
+	}
+
+	return timeshiftProgramSegment{
+		Path:      segmentPath.Path,
+		StationID: segmentPath.StationID,
+		Date:      segmentPath.Date,
+		Timestamp: timestamp,
+	}, nil
+}
+
+func timeshiftDebugEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(timeshiftDebugEnv))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func dumpChunklist(path string, chunks []string) (err error) {
+	// #nosec G703 -- developer explicitly selects diagnostic dump destination.
+	file, err := os.OpenFile(
+		path,
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+		timeshiftDiagnosticPerm,
+	)
+	if err != nil {
+		return fmt.Errorf("create dump file: %w", err)
+	}
+	// When truncate, the existing permission remains; chmod to overwrite
+	if err := file.Chmod(timeshiftDiagnosticPerm); err != nil {
+		return fmt.Errorf("chmod dump file: %w", err)
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close dump file: %w", closeErr))
+		}
+	}()
+
+	writer := bufio.NewWriter(file)
+	for i, chunk := range chunks {
+		if _, err := writer.WriteString(chunk + "\n"); err != nil {
+			return fmt.Errorf("write chunk %d: %w", i, err)
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("flush dump file: %w", err)
+	}
+	return nil
 }
