@@ -1,11 +1,16 @@
+version: 2
+
 env:
   - GO111MODULE=on
   - CGO_ENABLED=0
+
 before:
   hooks:
-    - go mod tidy
+    - go mod download
+
 builds:
-  - binary: radikron
+  - id: radikron-cli
+    binary: radikron
     main: ./cmd/radikron
     flags:
       - -trimpath
@@ -17,19 +22,31 @@ builds:
       - amd64
       - arm64
       - 386
-    goarm:
-      - 7
+    ignore:
+      - goos: darwin
+        goarch: 386
+
 archives:
-  - format_overrides:
+  - id: radikron-cli
+    ids:
+      - radikron-cli
+    format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     name_template: >-
-      {{ .ProjectName }}_ {{- title .Os }}_ {{- if eq .Arch "amd64" }}x86_64 {{- else if eq .Arch "386" }}i386 {{- else }}{{ .Arch }}{{ end }}
-signs:
-  - artifacts: checksum
-    args: ["--batch", "-u", "{{ .Env.GPG_FINGERPRINT }}", "--output", "${signature}", "--detach-sign", "${artifact}"]
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+
+checksum:
+  name_template: checksums.txt
+
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ .Tag }}-next"
+
 changelog:
   sort: asc
   filters:
