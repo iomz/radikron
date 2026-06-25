@@ -1,16 +1,19 @@
 package radikron
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -904,12 +907,21 @@ func TestInitSemaphores(_ *testing.T) {
 
 func TestGetTimeshiftChunklist(t *testing.T) { //nolint:gocyclo // transport assertions intentionally cover complete request flow
 	originalTransport := http.DefaultTransport
+	originalLogWriter := log.Writer()
 	t.Cleanup(func() {
 		http.DefaultTransport = originalTransport
 		radiko.SetHTTPClient(&http.Client{Timeout: 120 * time.Second})
+		log.SetOutput(originalLogWriter)
 	})
 
+	var diagnosticLog bytes.Buffer
+	log.SetOutput(&diagnosticLog)
+	dumpPath := filepath.Join(t.TempDir(), "timeshift-chunks.txt")
+	t.Setenv(timeshiftDebugEnv, "1")
+	t.Setenv(timeshiftChunklistDumpEnv, dumpPath)
+
 	var playlistRequests int
+	var seeks []string
 	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		body := ""
 		switch {
@@ -928,13 +940,30 @@ func TestGetTimeshiftChunklist(t *testing.T) { //nolint:gocyclo // transport ass
 			}
 			if got := req.URL.Query().Get("seek"); got == "" {
 				t.Error("seek is empty")
+			} else {
+				seeks = append(seeks, got)
+			}
+			if got := req.URL.Query().Get("l"); got != "20" {
+				t.Errorf("l = %q, want 20", got)
 			}
 			body = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=48000\nhttps://chunks.test/list.m3u8\n"
 		case req.URL.Host == "chunks.test":
-			if playlistRequests == 1 {
-				body = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:15,\nhttps://audio.test/one.aac?token=first\n#EXTINF:15,\nhttps://audio.test/two.aac\n"
-			} else {
-				body = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:15,\nhttps://audio.test/one.aac?token=second\n#EXTINF:15,\nhttps://audio.test/three.aac\n"
+			switch playlistRequests {
+			case 1:
+				body = "#EXTM3U\n#EXT-X-VERSION:3\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130000_one.aac\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130005_two.aac\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/c/x/8/advertisement.aac\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130010_three.aac?token=first\n"
+			case 2:
+				body = "#EXTM3U\n#EXT-X-VERSION:3\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130010_changed.aac?token=second\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130015_four.aac\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130020_five.aac\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130025_six.aac\n" +
+					"#EXTINF:5,\nhttps://audio.test/tf/segments/o/B/FMT/20230605/20230605_130030_tail.aac\n"
+			default:
+				t.Fatalf("unexpected playlist request count: %d", playlistRequests)
 			}
 		default:
 			t.Fatalf("unexpected request: %s", req.URL)
@@ -978,9 +1007,12 @@ func TestGetTimeshiftChunklist(t *testing.T) { //nolint:gocyclo // transport ass
 		t.Fatalf("getTimeshiftChunklist failed: %v", err)
 	}
 	want := []string{
-		"https://audio.test/one.aac?token=first",
-		"https://audio.test/two.aac",
-		"https://audio.test/three.aac",
+		"https://audio.test/tf/segments/o/B/FMT/20230605/20230605_130000_one.aac",
+		"https://audio.test/tf/segments/o/B/FMT/20230605/20230605_130005_two.aac",
+		"https://audio.test/tf/segments/o/B/FMT/20230605/20230605_130010_three.aac?token=first",
+		"https://audio.test/tf/segments/o/B/FMT/20230605/20230605_130015_four.aac",
+		"https://audio.test/tf/segments/o/B/FMT/20230605/20230605_130020_five.aac",
+		"https://audio.test/tf/segments/o/B/FMT/20230605/20230605_130025_six.aac",
 	}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunks = %v, want %v", chunks, want)
@@ -992,6 +1024,39 @@ func TestGetTimeshiftChunklist(t *testing.T) { //nolint:gocyclo // transport ass
 	}
 	if playlistRequests != 2 {
 		t.Errorf("playlist requests = %d, want 2", playlistRequests)
+	}
+	wantSeeks := []string{
+		"20230605130000",
+		"20230605130015",
+	}
+	if !reflect.DeepEqual(seeks, wantSeeks) {
+		t.Errorf("seeks = %v, want %v", seeks, wantSeeks)
+	}
+
+	dump, err := os.ReadFile(dumpPath)
+	if err != nil {
+		t.Fatalf("read chunklist dump failed: %v", err)
+	}
+	wantDump := strings.Join(want, "\n") + "\n"
+	if string(dump) != wantDump {
+		t.Errorf("chunklist dump = %q, want %q", dump, wantDump)
+	}
+
+	logOutput := diagnosticLog.String()
+	for _, wantLog := range []string{
+		`timeshift diagnostics debug_env="1" dump_env="` + dumpPath + `" debug_enabled=true dump_enabled=true`,
+		`timeshift chunklist dump enabled path="` + dumpPath + `"`,
+		"timeshift seek=20230605130000",
+		`timeshift media playlist seek=20230605130000 url="https://chunks.test/list.m3u8"`,
+		`url="https://audio.test/tf/segments/c/x/8/advertisement.aac" reason="non-program segment class \"c\""`,
+		`key="FMT/20230605130010" timestamp=20230605130010 duplicate=true`,
+		`url="https://audio.test/tf/segments/o/B/FMT/20230605/20230605_130030_tail.aac" reason="timestamp outside program range: 20230605130030"`,
+		"timeshift final chunk count=6",
+		`timeshift chunklist dumped path="` + dumpPath + `" count=6`,
+	} {
+		if !strings.Contains(logOutput, wantLog) {
+			t.Errorf("diagnostic log missing %q:\n%s", wantLog, logOutput)
+		}
 	}
 }
 
@@ -1045,8 +1110,82 @@ func TestTimeshiftPlaylistHelpers(t *testing.T) {
 	if resolved != "https://example.com/chunklist.m3u8" {
 		t.Errorf("resolveURL = %q", resolved)
 	}
-	if key := segmentKey("https://example.com/audio.aac?token=secret"); key != "/audio.aac" {
-		t.Errorf("segmentKey = %q, want /audio.aac", key)
+	location, err := time.LoadLocation(TZTokyo)
+	if err != nil {
+		t.Fatalf("time.LoadLocation failed: %v", err)
+	}
+	from, err := time.ParseInLocation(DatetimeLayout, "20260625130000", location)
+	if err != nil {
+		t.Fatalf("parse from failed: %v", err)
+	}
+	to, err := time.ParseInLocation(DatetimeLayout, "20260625140000", location)
+	if err != nil {
+		t.Fatalf("parse to failed: %v", err)
+	}
+	validURL := "https://example.com/tf/segments/o/B/FMT/20260625/20260625_135928_25k91.aac?token=secret"
+	segment, err := parseTimeshiftProgramSegment(validURL, testStationFMT, from, to, location)
+	if err != nil {
+		t.Fatalf("parseTimeshiftProgramSegment failed: %v", err)
+	}
+	if segment.Path != "/tf/segments/o/B/FMT/20260625/20260625_135928_25k91.aac" {
+		t.Errorf("segment.Path = %q", segment.Path)
+	}
+	if key := segment.key(); key != "FMT/20260625135928" {
+		t.Errorf("segment key = %q, want FMT/20260625135928", key)
+	}
+
+	invalidSegments := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "commercial segment",
+			url:  "https://example.com/tf/segments/c/x/8/rBDj5dHm7S4TYZmNkwo7.aac",
+			want: `non-program segment class "c"`,
+		},
+		{
+			name: "wrong station",
+			url:  "https://example.com/tf/segments/o/B/TBS/20260625/20260625_135928_25k91.aac",
+			want: `station mismatch`,
+		},
+		{
+			name: "wrong path date",
+			url:  "https://example.com/tf/segments/o/B/FMT/20260624/20260625_135928_25k91.aac",
+			want: `date mismatch`,
+		},
+		{
+			name: "unparsable filename",
+			url:  "https://example.com/tf/segments/o/B/FMT/20260625/not-a-timestamp.aac",
+			want: `unexpected program segment filename`,
+		},
+		{
+			name: "outside program range",
+			url:  "https://example.com/tf/segments/o/B/FMT/20260625/20260625_140000_tail.aac",
+			want: `timestamp outside program range`,
+		},
+	}
+	for _, tt := range invalidSegments {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseTimeshiftProgramSegment(tt.url, testStationFMT, from, to, location)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("parse error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+
+	t.Setenv(timeshiftDebugEnv, "yes")
+	if !timeshiftDebugEnabled() {
+		t.Error("timeshiftDebugEnabled = false, want true")
+	}
+	t.Setenv(timeshiftDebugEnv, "invalid")
+	if timeshiftDebugEnabled() {
+		t.Error("timeshiftDebugEnabled = true, want false")
+	}
+
+	if err := dumpChunklist(t.TempDir(), []string{"one.aac"}); err == nil ||
+		!strings.Contains(err.Error(), "create dump file") {
+		t.Errorf("dumpChunklist create error = %v", err)
 	}
 
 	media := "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:15,\none.aac\n#EXTINF:15,\ntwo.aac\n"
