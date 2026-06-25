@@ -1130,6 +1130,7 @@ func timeshiftDebugEnabled() bool {
 }
 
 func dumpChunklist(path string, chunks []string) (err error) {
+	// #nosec G703 -- developer explicitly selects diagnostic dump destination.
 	file, err := os.OpenFile(
 		path,
 		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
