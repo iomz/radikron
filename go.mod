@@ -1,6 +1,8 @@
 module github.com/iomz/radikron
 
-go 1.22.0
+go 1.26
+
+toolchain go1.26.1
 
 require (
 	github.com/bogem/id3v2 v1.2.0

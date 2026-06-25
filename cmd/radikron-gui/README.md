@@ -18,8 +18,10 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
 
 ### Prerequisites
 
-- Go 1.20+
-- Node.js and pnpm
+- Go 1.26+
+- Node.js 20+
+- pnpm 10+
+- Wails v2.11.x
 
 ### Setup
 
@@ -132,9 +134,9 @@ This ensures:
 
 **Solutions**:
 
-- Ensure Go 1.20+ is installed: `go version`
+- Ensure Go 1.26+ is installed: `go version`
 - Verify Wails is properly installed: `wails version`
-- Reinstall Wails if needed: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- Reinstall Wails if needed: `go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0`
 - Check that `GOPATH` and `GOROOT` are set correctly: `go env GOPATH GOROOT`
 - Clean and rebuild: `go clean -cache && go mod tidy`
 
