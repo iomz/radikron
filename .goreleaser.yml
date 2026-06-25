@@ -14,6 +14,8 @@ builds:
     main: ./cmd/radikron
     flags:
       - -trimpath
+    ldflags:
+      - -X main.version={{ .Version }}
     goos:
       - linux
       - darwin
