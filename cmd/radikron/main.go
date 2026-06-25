@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -16,6 +15,8 @@ import (
 	"github.com/iomz/radikron/internal/config"
 	"github.com/yyoshiki41/go-radiko"
 )
+
+var version = "(devel)"
 
 // ProgramFetcher is an interface for fetching weekly programs
 type ProgramFetcher interface {
@@ -261,14 +262,13 @@ func main() {
 	// Parse flags
 	conf := flag.String("c", "config.yml", "the config.yml to use.")
 	enableDebug := flag.Bool("d", false, "enable debug mode.")
-	version := flag.Bool("v", false, "print version.")
+	printVersion := flag.Bool("v", false, "print version.")
 	flag.Parse()
 
 	// Print version
-	if *version {
-		bi, _ := debug.ReadBuildInfo()
-		fmt.Printf("%v\n", bi.Main.Version)
-		os.Exit(0)
+	if *printVersion {
+		fmt.Printf("%v\n", version)
+		return
 	}
 
 	// Enable debug logging
