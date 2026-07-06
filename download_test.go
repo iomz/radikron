@@ -712,6 +712,51 @@ func TestMoveFile_CopyFallback(t *testing.T) {
 	}
 }
 
+func TestMoveFile_CopyFallbackKeepsDestinationWhenSourceCleanupFails(t *testing.T) {
+	if runtime.GOOS == osWindows {
+		t.Skip("Unix directory permissions are used to simulate source cleanup failure")
+	}
+
+	tmpDir := t.TempDir()
+	sourceDir := filepath.Join(tmpDir, "source")
+	destDir := filepath.Join(tmpDir, "dest")
+	if err := os.MkdirAll(sourceDir, DirPermissions); err != nil {
+		t.Fatalf("Failed to create source directory: %v", err)
+	}
+	if err := os.MkdirAll(destDir, DirPermissions); err != nil {
+		t.Fatalf("Failed to create dest directory: %v", err)
+	}
+
+	sourceFile := filepath.Join(sourceDir, "source.txt")
+	destFile := filepath.Join(destDir, "dest.txt")
+	testContent := "test content for cleanup failure"
+	if err := os.WriteFile(sourceFile, []byte(testContent), 0600); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+	if err := os.Chmod(sourceDir, 0500); err != nil {
+		t.Fatalf("Failed to make source directory read-only: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(sourceDir, DirPermissions)
+	}()
+
+	err := moveFile(sourceFile, destFile)
+	if err != nil {
+		t.Fatalf("moveFile should keep copied destination when source cleanup fails: %v", err)
+	}
+
+	content, err := os.ReadFile(destFile)
+	if err != nil {
+		t.Fatalf("Failed to read destination file: %v", err)
+	}
+	if string(content) != testContent {
+		t.Errorf("File content mismatch: got %s, want %s", string(content), testContent)
+	}
+	if _, err := os.Stat(sourceFile); err != nil {
+		t.Errorf("Source file should remain when cleanup fails, got: %v", err)
+	}
+}
+
 func TestMoveFile_CopyFallbackErrorPaths(t *testing.T) {
 	tmpDir := t.TempDir()
 

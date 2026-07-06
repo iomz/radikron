@@ -756,11 +756,11 @@ func moveFile(source, dest string) error {
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
 
-	// Delete source file after successful copy
+	// Delete source file after successful copy. Once the destination has been
+	// written and closed, cleanup failure must not make the user-visible output
+	// look failed.
 	if err := os.Remove(source); err != nil {
-		// Clean up destination file if delete failed (atomic operation)
-		_ = os.Remove(dest)
-		return fmt.Errorf("failed to remove source file after copy: %w", err)
+		log.Printf("warning: failed to remove source file after copy: %v", err)
 	}
 
 	return nil
