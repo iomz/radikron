@@ -1,6 +1,6 @@
 {
   "name": "radikron-gui-frontend",
-  "version": "0.7.6",
+  "version": "0.8.0",
   "type": "module",
   "description": "Frontend for Radikron GUI",
   "scripts": {
