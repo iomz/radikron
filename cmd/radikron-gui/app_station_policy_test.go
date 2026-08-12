@@ -49,8 +49,10 @@ func TestSearchAndSchedulesExcludeUnsupportedArchiveStations(t *testing.T) {
 	app := NewApp()
 	app.asset = &radikron.Asset{
 		AvailableStations: []string{"TBS"},
+		OutputFormat:      "aac",
+		DownloadDir:       t.TempDir(),
 		Schedules: radikron.Schedules{
-			{StationID: "JOAK", Title: "NHK Show"},
+			{StationID: "JOAK", Title: "NHK Show", Ft: "20260812120000"},
 		},
 	}
 	app.programSnapshots = map[string]radikron.Progs{
