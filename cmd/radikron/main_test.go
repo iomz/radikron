@@ -91,7 +91,7 @@ func TestConfig(t *testing.T) {
 	}
 
 	got := len(asset.AvailableStations)
-	nStations := 12
+	nStations := 10
 	if got != nStations {
 		t.Errorf("asset.AvailableStations: %v => want %v", got, nStations)
 	}
@@ -219,6 +219,20 @@ func TestProcessStations_EmptyStations(t *testing.T) {
 	// Should not process any stations
 	if mockFetcher.CallCount() != 0 {
 		t.Errorf("processStations should not process any stations when list is empty, got %d calls", mockFetcher.CallCount())
+	}
+}
+
+func TestProcessStationSkipsUnsupportedArchiveStation(t *testing.T) {
+	ctx := context.Background()
+	wg := &sync.WaitGroup{}
+	rule := &radikron.Rule{StationID: "JOAK"}
+	rule.SetName("nhk")
+	fetcher := &mockProgramFetcher{}
+
+	processStation(ctx, wg, "JOAK", radikron.Rules{rule}, fetcher, &mockDownloader{})
+
+	if fetcher.Called() {
+		t.Error("FetchWeeklyPrograms called for unsupported archive station")
 	}
 }
 

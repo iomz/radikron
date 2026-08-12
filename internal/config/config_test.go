@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/iomz/radikron"
@@ -99,6 +100,68 @@ func TestLoadConfigInvalidFormat(t *testing.T) {
 	_, err = LoadConfig("config.yml")
 	if err == nil {
 		t.Error("expected error for unsupported audio format")
+	}
+}
+
+func TestLoadConfigRejectsUnsupportedArchiveStations(t *testing.T) {
+	tests := []struct {
+		name       string
+		content    string
+		wantSource string
+	}{
+		{
+			name: "extra station",
+			content: `file-format: aac
+extra-stations:
+  - JOAK
+`,
+			wantSource: "extra-stations: JOAK",
+		},
+		{
+			name: "station rule",
+			content: `file-format: aac
+rules:
+  nhk:
+    station-id: JOBK
+`,
+			wantSource: "rules.nhk.station-id: JOBK",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configFile := filepath.Join(t.TempDir(), "config.yml")
+			if err := os.WriteFile(configFile, []byte(tt.content), 0600); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+
+			_, err := LoadConfig(configFile)
+			if err == nil {
+				t.Fatal("LoadConfig() error = nil, want unsupported archive station error")
+			}
+			if !strings.Contains(err.Error(), "does not support Radiko archive/timeshift downloads") &&
+				!strings.Contains(err.Error(), "do not support Radiko archive/timeshift downloads") {
+				t.Errorf("LoadConfig() error = %q, want archive/timeshift explanation", err)
+			}
+			if !strings.Contains(err.Error(), tt.wantSource) {
+				t.Errorf("LoadConfig() error = %q, want source %q", err, tt.wantSource)
+			}
+		})
+	}
+}
+
+func TestApplyToAssetRejectsUnsupportedArchiveStation(t *testing.T) {
+	cfg := &Config{
+		ExtraStations: []string{"JOAK-FM"},
+	}
+	asset := &radikron.Asset{}
+
+	err := cfg.ApplyToAsset(asset)
+	if err == nil || !strings.Contains(err.Error(), "extra-stations: JOAK-FM") {
+		t.Fatalf("ApplyToAsset() error = %v, want unsupported station source", err)
+	}
+	if len(asset.AvailableStations) != 0 {
+		t.Errorf("ApplyToAsset() mutated stations after validation failure: %v", asset.AvailableStations)
 	}
 }
 

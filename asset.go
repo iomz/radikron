@@ -64,6 +64,9 @@ type Asset struct {
 // AddExtraStations appends stations to AvailableStations
 func (a *Asset) AddExtraStations(es []string) {
 	for _, s := range es {
+		if !SupportsArchive(s) {
+			continue
+		}
 		dup := false
 		for _, as := range a.AvailableStations {
 			if as == s {
@@ -130,7 +133,8 @@ func (a *Asset) GetStationIDsByAreaID(areaID string) []string {
 // LoadAvailableStations loads up the avaialable stations
 func (a *Asset) LoadAvailableStations(areaID string) {
 	// AvailableStations
-	a.AvailableStations = a.GetStationIDsByAreaID(areaID)
+	a.AvailableStations = nil
+	a.AddExtraStations(a.GetStationIDsByAreaID(areaID))
 }
 
 // NewDevice returns a pointer to a new authorized Device
@@ -356,6 +360,27 @@ type Station struct {
 
 type Stations map[string]*Station
 
+func stationsFromRegion(xmlRegion XMLRegion) Stations {
+	stations := Stations{}
+	for _, xmlStations := range xmlRegion.Region {
+		for _, xmlStation := range xmlStations.Stations {
+			if !SupportsArchive(xmlStation.ID) {
+				continue
+			}
+			if station, ok := stations[xmlStation.ID]; ok {
+				station.Areas = append(station.Areas, xmlStation.AreaID)
+			} else {
+				stations[xmlStation.ID] = &Station{
+					Areas: []string{xmlStation.AreaID},
+					Name:  xmlStation.Name,
+					Ruby:  xmlStation.Ruby,
+				}
+			}
+		}
+	}
+	return stations
+}
+
 type Versions struct {
 	Apps   []string        `json:"apps"`
 	Models []string        `json:"models"`
@@ -427,21 +452,7 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 	if err != nil {
 		return asset, err
 	}
-	asset.Stations = Stations{}
-	for _, xmlStations := range xmlRegion.Region {
-		for _, xmlStation := range xmlStations.Stations {
-			if station, ok := asset.Stations[xmlStation.ID]; ok {
-				station.Areas = append(station.Areas, xmlStation.AreaID)
-			} else {
-				station := &Station{
-					Areas: []string{xmlStation.AreaID},
-					Name:  xmlStation.Name,
-					Ruby:  xmlStation.Ruby,
-				}
-				asset.Stations[xmlStation.ID] = station
-			}
-		}
-	}
+	asset.Stations = stationsFromRegion(xmlRegion)
 
 	// Versions
 	versionsJSON, err := VersionsJSON.Open("assets/versions.json")

@@ -624,12 +624,21 @@ func (a *App) loadManualInjections() error {
 	// Group injections by station ID (no lock needed)
 	stationInjectionMap := make(map[string][]*manualInjection)
 	stationIDs := make([]string, 0, len(injections))
+	supportedInjections := make([]*manualInjection, 0, len(injections))
 	for _, inj := range injections {
+		if !radikron.SupportsArchive(inj.StationID) {
+			runtime.LogWarning(a.ctx, fmt.Sprintf(
+				"Ignoring saved manual injection for unsupported archive station %s",
+				inj.StationID))
+			continue
+		}
+		supportedInjections = append(supportedInjections, inj)
 		if _, exists := stationInjectionMap[inj.StationID]; !exists {
 			stationIDs = append(stationIDs, inj.StationID)
 		}
 		stationInjectionMap[inj.StationID] = append(stationInjectionMap[inj.StationID], inj)
 	}
+	injections = supportedInjections
 	a.mu.Unlock()
 
 	// Fetch weekly programs for each station WITHOUT holding the lock
@@ -792,6 +801,9 @@ func (a *App) GetSchedules() (radikron.Progs, error) {
 	// Filter out programs whose files already exist
 	pendingSchedules := make(radikron.Progs, 0, len(a.asset.Schedules))
 	for _, prog := range a.asset.Schedules {
+		if !radikron.SupportsArchive(prog.StationID) {
+			continue
+		}
 		// Check if the file already exists
 		startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
 		if err != nil {
@@ -932,6 +944,13 @@ func (a *App) downloadPastInjectedProgram(prog *radikron.Prog) error {
 // For future programs, it adds them to schedules and updates the next fetch time.
 // The program is saved as a manual injection for persistence.
 func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
+	if prog == nil {
+		return fmt.Errorf("program cannot be nil")
+	}
+	if !radikron.SupportsArchive(prog.StationID) {
+		return fmt.Errorf("station %s does not support Radiko archive/timeshift downloads", prog.StationID)
+	}
+
 	a.mu.Lock()
 	// Note: We release the lock before calling saveManualInjections() to avoid deadlock
 
@@ -1413,6 +1432,9 @@ func (a *App) GetAllStations() ([]string, error) {
 
 	allStations := make([]string, 0, len(a.asset.Stations))
 	for stationID := range a.asset.Stations {
+		if !radikron.SupportsArchive(stationID) {
+			continue
+		}
 		allStations = append(allStations, stationID)
 	}
 

@@ -224,6 +224,10 @@ func Download(
 	wg *sync.WaitGroup,
 	prog *Prog,
 ) (err error) {
+	if !SupportsArchive(prog.StationID) {
+		return fmt.Errorf("station %s does not support Radiko archive/timeshift downloads", prog.StationID)
+	}
+
 	asset := GetAsset(ctx)
 	if asset == nil {
 		emitLogMessage(ctx, "error", "Asset is nil in Download context")

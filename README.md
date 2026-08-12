@@ -167,6 +167,13 @@ Create a configuration file (`config.yml`) to define rules for recording. The co
 - **`max-downloading-concurrency`**: Maximum number of concurrent download operations (default: 64). Only included in config if different from default.
 - **`max-encoding-concurrency`**: Maximum number of concurrent MP3 encoding operations (default: 2). Set lower than downloading concurrency since encoding is CPU-intensive. Only included in config if different from default.
 
+NHK stations whose Radiko archives/timeshift audio is unavailable are excluded automatically from station discovery, search, monitoring, and scheduling.
+Unsupported station IDs are `JOIK`, `JOHK`, `JOAK`, `JOCK`, `JOBK`, `JOFK`, `JOZK`, `JOLK`, and `JOAK-FM`.
+Configuration loading fails with a clear error if one appears in `extra-stations` or a rule's `station-id`; adding these IDs to `ignore-stations` is no longer necessary.
+Commercial stations and Radio NIKKEI `RN1`/`RN2` remain supported.
+Radiko metadata currently reports `timefree=1` for these NHK stations, so Radikron uses an explicit built-in list instead of runtime capability detection.
+Unknown station IDs remain supported to avoid blocking new commercial stations; maintainers must review the built-in list when Radiko changes its station catalog or archive availability.
+
 ### Rule Configuration
 
 Each rule can use one or more of the following matching criteria (all support partial matching):
@@ -192,7 +199,7 @@ downloads: ~/Downloads/radiko # download directory path, default is "$HOME/Downl
 extra-stations:
   - ALPHA-STATION # include stations not in your region
 ignore-stations:
-  - JOAK # ignore stations from search
+  - LFR # exclude an otherwise supported station from monitoring and search
 minimum-output-size: 2 # do not save an audio below this size (in MB), default is 1 (MB)
 # max-downloading-concurrency: 64  # Maximum concurrent download operations (default: 64)
 # max-encoding-concurrency: 2  # Maximum concurrent encoding operations for MP3 conversion (default: 2)
