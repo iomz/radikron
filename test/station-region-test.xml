@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<region>
+  <stations region_id="test" region_name="Test">
+    <station><id>JOIK</id><name>NHK AM（札幌）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP1</area_id></station>
+    <station><id>JOHK</id><name>NHK AM（仙台）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP4</area_id></station>
+    <station><id>JOAK</id><name>NHK AM（東京）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP13</area_id></station>
+    <station><id>JOCK</id><name>NHK AM（名古屋）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP23</area_id></station>
+    <station><id>JOBK</id><name>NHK AM（大阪）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP27</area_id></station>
+    <station><id>JOFK</id><name>NHK AM（広島）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP34</area_id></station>
+    <station><id>JOZK</id><name>NHK AM（松山）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP38</area_id></station>
+    <station><id>JOLK</id><name>NHK AM（福岡）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP40</area_id></station>
+    <station><id>JOAK-FM</id><name>NHK FM（東京）</name><ruby>nhk</ruby><areafree>0</areafree><timefree>1</timefree><area_id>JP13</area_id></station>
+    <station><id>TBS</id><name>TBSラジオ</name><ruby>tbs</ruby><areafree>1</areafree><timefree>1</timefree><area_id>JP13</area_id></station>
+    <station><id>RN1</id><name>ラジオNIKKEI第1</name><ruby>rn1</ruby><areafree>1</areafree><timefree>1</timefree><area_id>JP13</area_id></station>
+    <station><id>RN2</id><name>ラジオNIKKEI第2</name><ruby>rn2</ruby><areafree>1</areafree><timefree>1</timefree><area_id>JP13</area_id></station>
+  </stations>
+</region>

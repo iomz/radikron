@@ -31,6 +31,13 @@ var (
 	PlaylistTestM3U8 embed.FS
 )
 
+func TestDownloadRejectsUnsupportedArchiveStation(t *testing.T) {
+	err := Download(context.Background(), &sync.WaitGroup{}, &Prog{StationID: "JOAK"})
+	if err == nil || !strings.Contains(err.Error(), "does not support Radiko archive/timeshift downloads") {
+		t.Fatalf("Download() error = %v, want unsupported station error", err)
+	}
+}
+
 const (
 	osWindows       = "windows"
 	testInvalidTime = "invalid"

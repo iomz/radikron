@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/iomz/radikron"
 	"github.com/spf13/viper"
@@ -63,6 +65,10 @@ func LoadConfig(filename string) (*Config, error) {
 
 // ApplyToAsset applies the configuration to an asset
 func (c *Config) ApplyToAsset(asset *radikron.Asset) error {
+	if err := c.validateArchiveStations(); err != nil {
+		return err
+	}
+
 	asset.OutputFormat = c.FileFormat
 	asset.MinimumOutputSize = c.MinimumOutputSize
 	asset.DownloadDir = c.DownloadDir
@@ -167,8 +173,34 @@ func (c *Config) buildConfig() error {
 		return fmt.Errorf("error loading rules: %w", err)
 	}
 	c.Rules = rules
+	if err := c.validateArchiveStations(); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func (c *Config) validateArchiveStations() error {
+	unsupported := make([]string, 0)
+	for _, stationID := range c.ExtraStations {
+		if !radikron.SupportsArchive(stationID) {
+			unsupported = append(unsupported, fmt.Sprintf("extra-stations: %s", stationID))
+		}
+	}
+	for _, rule := range c.Rules {
+		if rule.HasStationID() && !radikron.SupportsArchive(rule.StationID) {
+			unsupported = append(unsupported, fmt.Sprintf("rules.%s.station-id: %s", rule.Name, rule.StationID))
+		}
+	}
+	if len(unsupported) == 0 {
+		return nil
+	}
+
+	sort.Strings(unsupported)
+	return fmt.Errorf(
+		"stations do not support Radiko archive/timeshift downloads: %s",
+		strings.Join(unsupported, ", "),
+	)
 }
 
 // configYAML represents the YAML structure for saving configuration

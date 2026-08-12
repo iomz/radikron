@@ -92,6 +92,11 @@ func processStation(
 	fetcher ProgramFetcher,
 	downloader Downloader,
 ) {
+	if !radikron.SupportsArchive(stationID) {
+		log.Printf("skipping unsupported archive station %s", stationID)
+		return
+	}
+
 	// Skip if no rules match this station
 	if !rules.HasRuleWithoutStationID() && !rules.HasRuleForStationID(stationID) {
 		return
