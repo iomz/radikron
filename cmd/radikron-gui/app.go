@@ -55,6 +55,17 @@ type manualInjection struct {
 	LastError       string     `json:"last_error,omitempty"`        // Last error message
 }
 
+// frontendEventSink isolates backend state transitions from Wails runtime delivery.
+type frontendEventSink interface {
+	Emit(context.Context, string, any)
+}
+
+type wailsEventSink struct{}
+
+func (wailsEventSink) Emit(ctx context.Context, eventName string, data any) {
+	runtime.EventsEmit(ctx, eventName, data)
+}
+
 // App struct represents the Wails application
 type App struct {
 	ctx                    context.Context
@@ -64,12 +75,15 @@ type App struct {
 	configFile             string
 	manualInjectionsFile   string
 	monitoring             bool
+	monitorStopping        bool
 	monitorDone            chan struct{}
 	monitorWg              *sync.WaitGroup
 	monitorCancel          context.CancelFunc
 	programSnapshots       map[string]radikron.Progs   // stationID -> programs snapshot
 	manualInjections       map[string]*manualInjection // program ID -> injection data
 	pendingManualDownloads map[string]string           // program ID -> program ID (for tracking downloads in progress)
+	events                 frontendEventSink
+	monitorLoop            func(context.Context)
 	mu                     sync.RWMutex
 }
 
@@ -80,6 +94,13 @@ func NewApp() *App {
 		programSnapshots:       make(map[string]radikron.Progs),
 		manualInjections:       make(map[string]*manualInjection),
 		pendingManualDownloads: make(map[string]string),
+		events:                 wailsEventSink{},
+	}
+}
+
+func (a *App) emit(eventName string, data any) {
+	if a.events != nil {
+		a.events.Emit(a.ctx, eventName, data)
 	}
 }
 
@@ -1251,7 +1272,7 @@ func (a *App) LoadConfig(filename string) error {
 	a.configFile = filename
 
 	// Emit event to frontend
-	runtime.EventsEmit(a.ctx, "config-loaded", map[string]any{
+	a.emit("config-loaded", map[string]any{
 		"success": true,
 	})
 
@@ -1280,7 +1301,7 @@ func (a *App) UpdateConfig(newConfig *config.Config) error {
 	a.config = newConfig
 
 	// Emit event to frontend
-	runtime.EventsEmit(a.ctx, "config-updated", map[string]any{
+	a.emit("config-updated", map[string]any{
 		"success": true,
 	})
 
@@ -1314,7 +1335,7 @@ func (a *App) SaveConfig(filename string) error {
 	a.configFile = filename
 
 	// Emit event to frontend
-	runtime.EventsEmit(a.ctx, "config-saved", map[string]any{
+	a.emit("config-saved", map[string]any{
 		"success": true,
 		"file":    filename,
 	})
@@ -1604,41 +1625,67 @@ func (a *App) StartMonitoring() error {
 
 	// Start monitoring in goroutine
 	a.monitorWg.Add(1)
-	go a.runMonitoringLoop(ctx)
+	go a.executeMonitoringLoop(ctx)
 
 	// Log and emit event to frontend
 	log.Printf("monitoring started")
-	runtime.EventsEmit(a.ctx, "monitoring-started", nil)
+	a.emit("monitoring-started", nil)
 
 	return nil
 }
 
 // StopMonitoring stops the monitoring loop.
 // It cancels the monitoring context and waits for the monitoring goroutine to finish.
-func (a *App) StopMonitoring() error {
+func (a *App) StopMonitoring() error { //nolint:unparam // Keep Wails binding's established Promise<void> contract.
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if !a.monitoring {
+		a.mu.Unlock()
 		return nil
 	}
-
-	if a.monitorCancel != nil {
-		a.monitorCancel()
+	cancel := a.monitorCancel
+	done := a.monitorDone
+	if a.monitorStopping {
+		a.mu.Unlock()
+		if done != nil {
+			<-done
+		}
+		a.monitorWg.Wait()
+		return nil
 	}
+	a.monitorStopping = true
+	a.mu.Unlock()
 
-	if a.monitorDone != nil {
-		<-a.monitorDone
+	if cancel != nil {
+		cancel()
 	}
-
+	if done != nil {
+		<-done
+	}
 	a.monitorWg.Wait()
+
+	a.mu.Lock()
 	a.monitoring = false
+	a.monitorStopping = false
+	a.monitorCancel = nil
+	a.monitorDone = nil
+	a.mu.Unlock()
 
 	// Log and emit event to frontend
 	log.Printf("monitoring stopped")
-	runtime.EventsEmit(a.ctx, "monitoring-stopped", nil)
+	a.emit("monitoring-stopped", nil)
 
 	return nil
+}
+
+func (a *App) executeMonitoringLoop(ctx context.Context) {
+	defer a.monitorWg.Done()
+	defer close(a.monitorDone)
+
+	if a.monitorLoop != nil {
+		a.monitorLoop(ctx)
+		return
+	}
+	a.runMonitoringLoop(ctx)
 }
 
 // reloadConfigIfNeeded reloads and applies configuration if available.
@@ -2017,9 +2064,6 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 // It continuously fetches programs, matches them against rules, and downloads matching programs.
 // The loop respects the next fetch time and can be canceled via context.
 func (a *App) runMonitoringLoop(ctx context.Context) {
-	defer a.monitorWg.Done()
-	defer close(a.monitorDone)
-
 	log.Printf("monitoring loop started")
 	runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 		"type":    "info",

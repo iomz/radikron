@@ -67,6 +67,21 @@ wails build
 
 This creates platform-specific binaries in `build/bin/`.
 
+### Testing
+
+Run backend, frontend, type, build, and lint checks from repository root:
+
+```bash
+go test ./...
+pnpm --dir cmd/radikron-gui/frontend test
+pnpm --dir cmd/radikron-gui/frontend run typecheck
+pnpm --dir cmd/radikron-gui/frontend run build
+golangci-lint run ./...
+git diff --check
+```
+
+GUI backend tests use deterministic event and monitoring seams; they do not launch native Wails window or contact download services.
+
 ## Architecture
 
 ### Structure
