@@ -184,9 +184,41 @@ Each rule can use one or more of the following matching criteria (all support pa
 - **`station-id`**: Filter by specific station (also adds the station to watch list if not in your region)
 - **`dow`**: Filter by day of week (e.g., `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`)
 - **`window`**: Time window filter (e.g., `48h` for last 48 hours, `7d` for last 7 days)
+- **`exclude`**: (Optional) Reject programs that would otherwise match (see below)
 - **`folder`**: (Optional) Organize downloads for this rule into a subfolder
 
 Rules are evaluated with AND logic - a program must match all specified criteria in a rule.
+
+#### Excluding Programs
+
+A rule can carve out programs it would otherwise match by nesting an `exclude` block. It accepts the same program properties as the matching criteria: `title`, `keyword`, `pfm`, `station-id`, and `dow`.
+
+```yaml
+rules:
+  midday:
+    folder: "MIDDAY LOUNGE"
+    station-id: FMJ
+    title: "MIDDAY LOUNGE"
+    exclude:
+      pfm: "GUEST NAME" # skip episodes hosted by this performer
+      dow: [sat] # skip the Saturday edition
+```
+
+Exclusion uses OR logic, the opposite of the matching criteria: a program is rejected when **any** single criterion under `exclude` matches. An empty or absent `exclude` block rejects nothing.
+
+Because the first matching rule wins, excluding a program from an earlier rule lets a later rule pick it up. This is how a special edition is routed to its own folder:
+
+```yaml
+rules:
+  midday:
+    folder: "MIDDAY LOUNGE"
+    title: "MIDDAY LOUNGE"
+    exclude:
+      title: "SPECIAL"
+  midday-special:
+    folder: "SPECIALS"
+    title: "MIDDAY LOUNGE SPECIAL"
+```
 
 **Important**: Rule order matters! When a program matches multiple rules, the first matching rule (in the order they appear in your config file) determines which folder the file is saved to. This allows you to prioritize certain rules by placing them earlier in your configuration.
 
@@ -219,6 +251,8 @@ rules:
       - thu
     station-id: FMT
     title: "THE TRAD"
+    exclude: # (optional) reject programs that would otherwise match
+      keyword: "再放送" # any single criterion here is enough to skip the program
 ```
 
 The base directory for downloads defaults to `$HOME/Downloads/radiko` (cross-platform: `~/Downloads/radiko` on Unix/macOS, `%USERPROFILE%\Downloads\radiko` on Windows). If the home directory cannot be determined, it falls back to `./radiko` in the current working directory.

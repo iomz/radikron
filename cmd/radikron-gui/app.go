@@ -1513,11 +1513,13 @@ func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationI
 
 	// Create a temporary rule for matching
 	tempRule := &radikron.Rule{
-		Name:      "search",
-		Title:     ruleTitle,
-		Pfm:       rulePfm,
-		Keyword:   ruleKeyword,
-		StationID: ruleStationID,
+		Name: "search",
+		Criteria: radikron.Criteria{
+			Title:     ruleTitle,
+			Pfm:       rulePfm,
+			Keyword:   ruleKeyword,
+			StationID: ruleStationID,
+		},
 	}
 
 	// Get stations to search (all if no station specified, otherwise just the specified one)
