@@ -196,7 +196,13 @@ func (c *Criteria) dowHit(ft string) bool {
 		"fri": time.Friday,
 		"sat": time.Saturday,
 	}
-	st, _ := time.ParseInLocation(DatetimeLayout, ft, Location)
+	st, err := time.ParseInLocation(DatetimeLayout, ft, Location)
+	if err != nil {
+		// The zero time.Time is a Monday, so treating an unparseable start time
+		// as a match would silently include or exclude Monday programs.
+		log.Printf("invalid start time format '%s': %s", ft, err)
+		return false
+	}
 	for _, d := range c.DoW {
 		if st.Weekday() == dow[strings.ToLower(d)] {
 			return true

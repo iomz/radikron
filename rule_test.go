@@ -1422,3 +1422,30 @@ func TestRuleJSONKeepsInclusionCriteriaFlat(t *testing.T) {
 		t.Errorf("Exclude.Pfm = %v, want GUEST", exclude["Pfm"])
 	}
 }
+
+func TestDoWWithUnparseableStartTime(t *testing.T) {
+	// The zero time.Time is a Monday. An unparseable Ft must not be treated as
+	// Monday, in either direction.
+	bad := buildProg("MIDDAY LOUNGE", "HOST", "not-a-timestamp", nil)
+
+	t.Run("does not include", func(t *testing.T) {
+		r := &Rule{
+			Name:     "midday",
+			Criteria: Criteria{Title: "MIDDAY LOUNGE", DoW: []string{"mon"}},
+		}
+		if r.MatchSilent("FMJ", bad) {
+			t.Error("MatchSilent() = true for an unparseable start time")
+		}
+	})
+
+	t.Run("does not exclude", func(t *testing.T) {
+		r := &Rule{
+			Name:     "midday",
+			Criteria: Criteria{Title: "MIDDAY LOUNGE"},
+			Exclude:  &Criteria{DoW: []string{"mon"}},
+		}
+		if !r.MatchSilent("FMJ", bad) {
+			t.Error("MatchSilent() = false; an unparseable start time must not exclude")
+		}
+	})
+}
