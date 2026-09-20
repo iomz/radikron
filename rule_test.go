@@ -1,6 +1,7 @@
 package radikron
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -12,7 +13,7 @@ var matchtests = []struct {
 	out       bool
 }{
 	{
-		&Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+		&Rule{Name: "matchtests", Criteria: Criteria{Title: "Title", DoW: []string{}, Keyword: "Keyword", Pfm: "Pfm", StationID: "FMT"}},
 		"FMT",
 		&Prog{
 			"ID",
@@ -33,7 +34,13 @@ var matchtests = []struct {
 		true,
 	},
 	{
-		&Rule{"matchtests", "RadioProgram", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+		&Rule{Name: "matchtests", Criteria: Criteria{
+			Title:     "RadioProgram",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "FMT",
+		}},
 		"FMT",
 		&Prog{
 			"ID",
@@ -54,7 +61,7 @@ var matchtests = []struct {
 		false,
 	},
 	{
-		&Rule{"matchtests", "RadioProgram", []string{}, "", "Someone", "FMT", "", ""},
+		&Rule{Name: "matchtests", Criteria: Criteria{Title: "RadioProgram", DoW: []string{}, Pfm: "Someone", StationID: "FMT"}},
 		"FMT",
 		&Prog{
 			"ID",
@@ -76,7 +83,7 @@ var matchtests = []struct {
 	},
 	{
 		// Rule with no optional criteria (Title, Pfm, Keyword) should not match
-		&Rule{"matchtests", "", []string{}, "", "", "FMT", "", ""},
+		&Rule{Name: "matchtests", Criteria: Criteria{DoW: []string{}, StationID: "FMT"}},
 		"FMT",
 		&Prog{
 			"ID",
@@ -110,7 +117,13 @@ func TestMatch(t *testing.T) {
 	}
 
 	// Test Match with window exclusion
-	r := &Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "1h", ""}
+	r := &Rule{Name: "matchtests", Criteria: Criteria{
+		Title:     "Title",
+		DoW:       []string{},
+		Keyword:   "Keyword",
+		Pfm:       "Pfm",
+		StationID: "FMT",
+	}, Window: "1h"}
 	p := &Prog{
 		"ID",
 		"FMT",
@@ -132,7 +145,13 @@ func TestMatch(t *testing.T) {
 	}
 
 	// Test Match with DoW exclusion
-	r2 := &Rule{"matchtests", "Title", []string{"mon"}, "Keyword", "Pfm", "FMT", "", ""}
+	r2 := &Rule{Name: "matchtests", Criteria: Criteria{
+		Title:     "Title",
+		DoW:       []string{"mon"},
+		Keyword:   "Keyword",
+		Pfm:       "Pfm",
+		StationID: "FMT",
+	}}
 	p2 := &Prog{
 		"ID",
 		"FMT",
@@ -154,7 +173,7 @@ func TestMatch(t *testing.T) {
 	}
 
 	// Test Match with station ID exclusion
-	r3 := &Rule{"matchtests", "Title", []string{}, "Keyword", "Pfm", "TBS", "", ""}
+	r3 := &Rule{Name: "matchtests", Criteria: Criteria{Title: "Title", DoW: []string{}, Keyword: "Keyword", Pfm: "Pfm", StationID: "TBS"}}
 	if r3.Match("FMT", p2) {
 		t.Error("Match should return false when station ID doesn't match")
 	}
@@ -166,17 +185,35 @@ var dowtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"dowtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "dowtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		"20230625050000", // sun
 		true,
 	},
 	{
-		&Rule{"dowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "dowtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{"sun"},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		"20230625050000", // sun
 		true,
 	},
 	{
-		&Rule{"dowtests", "Title", []string{"mon", "tue"}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "dowtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{"mon", "tue"},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		"20230625050000", // sun
 		false,
 	},
@@ -197,7 +234,12 @@ var keywordtests = []struct {
 	out  bool
 }{
 	{
-		&Rule{"keywordtests", "Title", []string{}, "", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "keywordtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		&Prog{
 			"ID",
 			"StationID",
@@ -217,7 +259,13 @@ var keywordtests = []struct {
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "keywordtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		&Prog{
 			"ID",
 			"StationID",
@@ -237,7 +285,13 @@ var keywordtests = []struct {
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "keywordtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		&Prog{
 			"ID",
 			"StationID",
@@ -257,7 +311,13 @@ var keywordtests = []struct {
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "keywordtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		&Prog{
 			"ID",
 			"StationID",
@@ -277,7 +337,13 @@ var keywordtests = []struct {
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "keywordtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		&Prog{
 			"test",
 			"test",
@@ -297,7 +363,13 @@ var keywordtests = []struct {
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "keywordtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		&Prog{
 			"test",
 			"test",
@@ -317,7 +389,13 @@ var keywordtests = []struct {
 		true,
 	},
 	{
-		&Rule{"keywordtests", "Title", []string{}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "keywordtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		&Prog{
 			"ID",
 			"StationID",
@@ -353,17 +431,22 @@ var pfmtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"pfmtests", "Title", []string{"sun"}, "Keyword", "", "StationID", "Window", ""},
+		&Rule{Name: "pfmtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{"sun"},
+			Keyword:   "Keyword",
+			StationID: "StationID",
+		}, Window: "Window"},
 		"Pfm",
 		true,
 	},
 	{
-		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", "", ""},
+		&Rule{Name: "pfmtests", Criteria: Criteria{DoW: []string{}, Pfm: "Pfm"}},
 		"Pfm",
 		true,
 	},
 	{
-		&Rule{"pfmtests", "", []string{}, "", "Pfm", "", "", ""},
+		&Rule{Name: "pfmtests", Criteria: Criteria{DoW: []string{}, Pfm: "Pfm"}},
 		"Someone",
 		false,
 	},
@@ -384,17 +467,23 @@ var stationtests = []struct {
 	out       bool
 }{
 	{
-		&Rule{"stationtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window", ""},
+		&Rule{Name: "stationtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{"sun"},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "FMT",
+		}, Window: "Window"},
 		"FMT",
 		true,
 	},
 	{
-		&Rule{"stationtests", "", []string{}, "", "", "", "", ""},
+		&Rule{Name: "stationtests", Criteria: Criteria{DoW: []string{}}},
 		"FMT",
 		true,
 	},
 	{
-		&Rule{"stationtests", "", []string{}, "", "", "FMT", "", ""},
+		&Rule{Name: "stationtests", Criteria: Criteria{DoW: []string{}, StationID: "FMT"}},
 		"TBS",
 		false,
 	},
@@ -415,17 +504,23 @@ var titletests = []struct {
 	out   bool
 }{
 	{
-		&Rule{"titletests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "Window", ""},
+		&Rule{Name: "titletests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{"sun"},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "FMT",
+		}, Window: "Window"},
 		"Title",
 		true,
 	},
 	{
-		&Rule{"titletests", "", []string{}, "", "", "", "", ""},
+		&Rule{Name: "titletests", Criteria: Criteria{DoW: []string{}}},
 		"Title",
 		true,
 	},
 	{
-		&Rule{"titletests", "Title", []string{}, "", "", "FMT", "", ""},
+		&Rule{Name: "titletests", Criteria: Criteria{Title: "Title", DoW: []string{}, StationID: "FMT"}},
 		"Radio",
 		false,
 	},
@@ -446,17 +541,23 @@ var windowtests = []struct {
 	out bool
 }{
 	{
-		&Rule{"windowtests", "Title", []string{"sun"}, "Keyword", "Pfm", "FMT", "", ""},
+		&Rule{Name: "windowtests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{"sun"},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "FMT",
+		}},
 		"20230625050000",
 		true,
 	},
 	{
-		&Rule{"windowtests", "", []string{}, "", "", "", "24h", ""},
+		&Rule{Name: "windowtests", Criteria: Criteria{DoW: []string{}}, Window: "24h"},
 		time.Now().Add(-1 * time.Hour).Format("20060102150405"),
 		true,
 	},
 	{
-		&Rule{"windowtests", "", []string{}, "", "", "", "24h", ""},
+		&Rule{Name: "windowtests", Criteria: Criteria{DoW: []string{}}, Window: "24h"},
 		time.Now().Add(time.Duration(-48) * time.Hour).Format("20060102150405"),
 		false,
 	},
@@ -474,14 +575,26 @@ func TestMatchWindow(t *testing.T) {
 	}
 
 	// Test with invalid time format
-	r := &Rule{"windowtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "24h", ""}
+	r := &Rule{Name: "windowtests", Criteria: Criteria{
+		Title:     "Title",
+		DoW:       []string{},
+		Keyword:   "Keyword",
+		Pfm:       "Pfm",
+		StationID: "FMT",
+	}, Window: "24h"}
 	got := r.MatchWindow("invalid-time")
 	if got {
 		t.Error("MatchWindow should return false for invalid time format")
 	}
 
 	// Test with invalid window duration
-	r2 := &Rule{"windowtests", "Title", []string{}, "Keyword", "Pfm", "FMT", "invalid", ""}
+	r2 := &Rule{Name: "windowtests", Criteria: Criteria{
+		Title:     "Title",
+		DoW:       []string{},
+		Keyword:   "Keyword",
+		Pfm:       "Pfm",
+		StationID: "FMT",
+	}, Window: "invalid"}
 	got = r2.MatchWindow(time.Now().Add(-1 * time.Hour).Format("20060102150405"))
 	if !got {
 		t.Error("MatchWindow should handle invalid window duration gracefully")
@@ -493,11 +606,17 @@ var ruletests = []struct {
 	out bool
 }{
 	{
-		&Rule{"ruletests", "Title", []string{"sun"}, "Keyword", "Pfm", "StationID", "Window", ""},
+		&Rule{Name: "ruletests", Criteria: Criteria{
+			Title:     "Title",
+			DoW:       []string{"sun"},
+			Keyword:   "Keyword",
+			Pfm:       "Pfm",
+			StationID: "StationID",
+		}, Window: "Window"},
 		true,
 	},
 	{
-		&Rule{"ruletests", "", []string{}, "", "", "", "", ""},
+		&Rule{Name: "ruletests", Criteria: Criteria{DoW: []string{}}},
 		false,
 	},
 }
@@ -566,16 +685,40 @@ func TestHasRuleFor(t *testing.T) {
 	}{
 		{
 			Rules{
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
+				&Rule{Name: "rulestests", Criteria: Criteria{
+					Title:     "Title",
+					DoW:       []string{},
+					Keyword:   "Keyword",
+					Pfm:       "Pfm",
+					StationID: "FMT",
+				}, Window: "Window"},
+				&Rule{Name: "rulestests", Criteria: Criteria{
+					Title:     "Title",
+					DoW:       []string{},
+					Keyword:   "Keyword",
+					Pfm:       "Pfm",
+					StationID: "TBS",
+				}, Window: "Window"},
 			},
 			"FMT",
 			true,
 		},
 		{
 			Rules{
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
-				&Rule{"rulestests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
+				&Rule{Name: "rulestests", Criteria: Criteria{
+					Title:     "Title",
+					DoW:       []string{},
+					Keyword:   "Keyword",
+					Pfm:       "Pfm",
+					StationID: "FMT",
+				}, Window: "Window"},
+				&Rule{Name: "rulestests", Criteria: Criteria{
+					Title:     "Title",
+					DoW:       []string{},
+					Keyword:   "Keyword",
+					Pfm:       "Pfm",
+					StationID: "TBS",
+				}, Window: "Window"},
 			},
 			"MBS",
 			false,
@@ -596,15 +739,38 @@ func TestHasRuleWithoutStationID(t *testing.T) {
 	}{
 		{
 			Rules{
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "", "Window", ""},
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
+				&Rule{Name: "hrwsitests", Criteria: Criteria{
+					Title:   "Title",
+					DoW:     []string{},
+					Keyword: "Keyword",
+					Pfm:     "Pfm",
+				}, Window: "Window"},
+				&Rule{Name: "hrwsitests", Criteria: Criteria{
+					Title:     "Title",
+					DoW:       []string{},
+					Keyword:   "Keyword",
+					Pfm:       "Pfm",
+					StationID: "TBS",
+				}, Window: "Window"},
 			},
 			true,
 		},
 		{
 			Rules{
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "FMT", "Window", ""},
-				&Rule{"hrwsitests", "Title", []string{}, "Keyword", "Pfm", "TBS", "Window", ""},
+				&Rule{Name: "hrwsitests", Criteria: Criteria{
+					Title:     "Title",
+					DoW:       []string{},
+					Keyword:   "Keyword",
+					Pfm:       "Pfm",
+					StationID: "FMT",
+				}, Window: "Window"},
+				&Rule{Name: "hrwsitests", Criteria: Criteria{
+					Title:     "Title",
+					DoW:       []string{},
+					Keyword:   "Keyword",
+					Pfm:       "Pfm",
+					StationID: "TBS",
+				}, Window: "Window"},
 			},
 			false,
 		},
@@ -628,10 +794,7 @@ func TestHasMatch(t *testing.T) {
 		expected  bool
 	}{
 		{
-			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
-			},
+			findMatchRules(),
 			"FMT",
 			&Prog{
 				"ID",
@@ -652,10 +815,7 @@ func TestHasMatch(t *testing.T) {
 			true,
 		},
 		{
-			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
-			},
+			findMatchRules(),
 			"MBS",
 			&Prog{
 				"ID",
@@ -706,6 +866,20 @@ func TestHasMatch(t *testing.T) {
 	}
 }
 
+// findMatchRules returns the two-rule set shared by the TestFindMatch cases.
+func findMatchRules() Rules {
+	return Rules{
+		&Rule{Name: "rule1", Criteria: Criteria{Title: "Title", DoW: []string{}, Keyword: "Keyword", Pfm: "Pfm", StationID: "FMT"}},
+		&Rule{Name: "rule2", Criteria: Criteria{
+			Title:     "OtherTitle",
+			DoW:       []string{},
+			Keyword:   "OtherKeyword",
+			Pfm:       "OtherPfm",
+			StationID: "TBS",
+		}},
+	}
+}
+
 func TestFindMatch(t *testing.T) {
 	Location, _ = time.LoadLocation(TZTokyo)
 	CurrentTime = time.Now().In(Location)
@@ -717,10 +891,7 @@ func TestFindMatch(t *testing.T) {
 		expected  *Rule
 	}{
 		{
-			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
-			},
+			findMatchRules(),
 			"FMT",
 			&Prog{
 				"ID",
@@ -738,13 +909,10 @@ func TestFindMatch(t *testing.T) {
 				"",
 				false,
 			},
-			&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+			&Rule{Name: "rule1", Criteria: Criteria{Title: "Title", DoW: []string{}, Keyword: "Keyword", Pfm: "Pfm", StationID: "FMT"}},
 		},
 		{
-			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
-			},
+			findMatchRules(),
 			"TBS",
 			&Prog{
 				"ID",
@@ -762,13 +930,16 @@ func TestFindMatch(t *testing.T) {
 				"",
 				false,
 			},
-			&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
+			&Rule{Name: "rule2", Criteria: Criteria{
+				Title:     "OtherTitle",
+				DoW:       []string{},
+				Keyword:   "OtherKeyword",
+				Pfm:       "OtherPfm",
+				StationID: "TBS",
+			}},
 		},
 		{
-			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
-			},
+			findMatchRules(),
 			"MBS",
 			&Prog{
 				"ID",
@@ -817,10 +988,7 @@ func TestFindMatchSilent(t *testing.T) {
 		expected  *Rule
 	}{
 		{
-			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
-			},
+			findMatchRules(),
 			"FMT",
 			&Prog{
 				"ID",
@@ -838,13 +1006,10 @@ func TestFindMatchSilent(t *testing.T) {
 				"",
 				false,
 			},
-			&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+			&Rule{Name: "rule1", Criteria: Criteria{Title: "Title", DoW: []string{}, Keyword: "Keyword", Pfm: "Pfm", StationID: "FMT"}},
 		},
 		{
-			Rules{
-				&Rule{"rule1", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
-				&Rule{"rule2", "OtherTitle", []string{}, "OtherKeyword", "OtherPfm", "TBS", "", ""},
-			},
+			findMatchRules(),
 			"MBS",
 			&Prog{
 				"ID",
@@ -907,7 +1072,7 @@ func TestMatchSilent(t *testing.T) {
 	Location, _ = time.LoadLocation(TZTokyo)
 	CurrentTime = time.Now().In(Location)
 
-	rule := &Rule{"silenttest", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""}
+	rule := &Rule{Name: "silenttest", Criteria: Criteria{Title: "Title", DoW: []string{}, Keyword: "Keyword", Pfm: "Pfm", StationID: "FMT"}}
 	prog := &Prog{
 		"ID",
 		"FMT",
@@ -932,14 +1097,20 @@ func TestMatchSilent(t *testing.T) {
 	}
 
 	// Test with non-matching rule
-	rule2 := &Rule{"silenttest", "OtherTitle", []string{}, "Keyword", "Pfm", "FMT", "", ""}
+	rule2 := &Rule{Name: "silenttest", Criteria: Criteria{
+		Title:     "OtherTitle",
+		DoW:       []string{},
+		Keyword:   "Keyword",
+		Pfm:       "Pfm",
+		StationID: "FMT",
+	}}
 	got = rule2.MatchSilent("FMT", prog)
 	if got {
 		t.Error("MatchSilent should return false for non-matching rule")
 	}
 
 	// Test with rule that has no criteria (should not match)
-	rule3 := &Rule{"silenttest", "", []string{}, "", "", "FMT", "", ""}
+	rule3 := &Rule{Name: "silenttest", Criteria: Criteria{DoW: []string{}, StationID: "FMT"}}
 	got = rule3.MatchSilent("FMT", prog)
 	if got {
 		t.Error("MatchSilent should return false for rule with no criteria")
@@ -959,67 +1130,67 @@ func TestHasRuleWithCriteria(t *testing.T) {
 		{
 			// Rule with Title only
 			Rules{
-				&Rule{"test", "Title", []string{}, "", "", "FMT", "", ""},
+				&Rule{Name: "test", Criteria: Criteria{Title: "Title", DoW: []string{}, StationID: "FMT"}},
 			},
 			true,
 		},
 		{
 			// Rule with Pfm only
 			Rules{
-				&Rule{"test", "", []string{}, "", "Pfm", "FMT", "", ""},
+				&Rule{Name: "test", Criteria: Criteria{DoW: []string{}, Pfm: "Pfm", StationID: "FMT"}},
 			},
 			true,
 		},
 		{
 			// Rule with Keyword only
 			Rules{
-				&Rule{"test", "", []string{}, "Keyword", "", "FMT", "", ""},
+				&Rule{Name: "test", Criteria: Criteria{DoW: []string{}, Keyword: "Keyword", StationID: "FMT"}},
 			},
 			true,
 		},
 		{
 			// Rule with Title and Pfm
 			Rules{
-				&Rule{"test", "Title", []string{}, "", "Pfm", "FMT", "", ""},
+				&Rule{Name: "test", Criteria: Criteria{Title: "Title", DoW: []string{}, Pfm: "Pfm", StationID: "FMT"}},
 			},
 			true,
 		},
 		{
 			// Rule with all criteria
 			Rules{
-				&Rule{"test", "Title", []string{}, "Keyword", "Pfm", "FMT", "", ""},
+				&Rule{Name: "test", Criteria: Criteria{Title: "Title", DoW: []string{}, Keyword: "Keyword", Pfm: "Pfm", StationID: "FMT"}},
 			},
 			true,
 		},
 		{
 			// Rule with no criteria
 			Rules{
-				&Rule{"test", "", []string{}, "", "", "FMT", "", ""},
+				&Rule{Name: "test", Criteria: Criteria{DoW: []string{}, StationID: "FMT"}},
 			},
 			false,
 		},
 		{
 			// Multiple rules, all without criteria
 			Rules{
-				&Rule{"test1", "", []string{}, "", "", "FMT", "", ""},
-				&Rule{"test2", "", []string{}, "", "", "TBS", "", ""},
+				&Rule{Name: "test1", Criteria: Criteria{DoW: []string{}, StationID: "FMT"}},
+				&Rule{Name: "test2", Criteria: Criteria{DoW: []string{}, StationID: "TBS"}},
 			},
 			false,
 		},
 		{
 			// Multiple rules, some with criteria
 			Rules{
-				&Rule{"test1", "", []string{}, "", "", "FMT", "", ""},
-				&Rule{"test2", "Title", []string{}, "", "", "TBS", "", ""},
+				&Rule{Name: "test1", Criteria: Criteria{DoW: []string{}, StationID: "FMT"}},
+				&Rule{Name: "test2", Criteria: Criteria{Title: "Title", DoW: []string{}, StationID: "TBS"}},
 			},
 			true,
 		},
 		{
 			// Multiple rules, all with criteria
 			Rules{
-				&Rule{"test1", "Title1", []string{}, "", "", "FMT", "", ""},
-				&Rule{"test2", "", []string{}, "Keyword", "", "TBS", "", ""},
-				&Rule{"test3", "", []string{}, "", "Pfm", "MBS", "", ""},
+				&Rule{Name: "test1", Criteria: Criteria{Title: "Title1", DoW: []string{}, StationID: "FMT"}},
+				&Rule{Name: "test2", Criteria: Criteria{DoW: []string{}, Keyword: "Keyword", StationID: "TBS"}},
+				&Rule{Name: "test3", Criteria: Criteria{DoW: []string{}, Pfm: "Pfm", StationID: "MBS"}},
 			},
 			true,
 		},
@@ -1031,4 +1202,250 @@ func TestHasRuleWithCriteria(t *testing.T) {
 			t.Errorf("(%v).HasRuleWithCriteria() => %v, want %v", tt.in, res, tt.out)
 		}
 	}
+}
+
+// buildProg returns a program with the fields the rule criteria inspect.
+func buildProg(title, pfm, ft string, tags []string) *Prog {
+	return &Prog{
+		Title: title,
+		Pfm:   pfm,
+		Ft:    ft,
+		Tags:  tags,
+	}
+}
+
+func TestExcludeRejectsMatchingProgram(t *testing.T) {
+	// 20230626050000 is a Monday.
+	monday := "20230626050000"
+	saturday := "20230701050000"
+
+	for _, tt := range []struct {
+		name    string
+		exclude *Criteria
+		prog    *Prog
+		want    bool // true when the rule still matches
+	}{
+		{
+			name:    "nil exclude is a no-op",
+			exclude: nil,
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", monday, nil),
+			want:    true,
+		},
+		{
+			name:    "empty exclude is a no-op",
+			exclude: &Criteria{},
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", monday, nil),
+			want:    true,
+		},
+		{
+			name:    "pfm excludes",
+			exclude: &Criteria{Pfm: "GUEST"},
+			prog:    buildProg("MIDDAY LOUNGE", "GUEST", monday, nil),
+			want:    false,
+		},
+		{
+			name:    "pfm that does not match leaves the rule matching",
+			exclude: &Criteria{Pfm: "GUEST"},
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", monday, nil),
+			want:    true,
+		},
+		{
+			name:    "dow excludes",
+			exclude: &Criteria{DoW: []string{"sat"}},
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", saturday, nil),
+			want:    false,
+		},
+		{
+			name:    "dow on another day leaves the rule matching",
+			exclude: &Criteria{DoW: []string{"sat"}},
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", monday, nil),
+			want:    true,
+		},
+		{
+			name:    "title excludes",
+			exclude: &Criteria{Title: "SPECIAL"},
+			prog:    buildProg("MIDDAY LOUNGE SPECIAL", "HOST", monday, nil),
+			want:    false,
+		},
+		{
+			name:    "keyword excludes via tags",
+			exclude: &Criteria{Keyword: "rerun"},
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", monday, []string{"rerun"}),
+			want:    false,
+		},
+		{
+			name:    "station-id excludes",
+			exclude: &Criteria{StationID: "FMJ"},
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", monday, nil),
+			want:    false,
+		},
+		{
+			name:    "any one of several criteria is enough to exclude",
+			exclude: &Criteria{Pfm: "NOBODY", DoW: []string{"sat"}},
+			prog:    buildProg("MIDDAY LOUNGE", "HOST", saturday, nil),
+			want:    false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Rule{
+				Name:     "midday",
+				Criteria: Criteria{Title: "MIDDAY LOUNGE"},
+				Exclude:  tt.exclude,
+			}
+			if got := r.MatchSilent("FMJ", tt.prog); got != tt.want {
+				t.Errorf("MatchSilent() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExcludeDoesNotWidenAMatch(t *testing.T) {
+	// A program that never matched the inclusion criteria must stay unmatched
+	// regardless of the exclusion block.
+	r := &Rule{
+		Name:     "midday",
+		Criteria: Criteria{Title: "MIDDAY LOUNGE"},
+		Exclude:  &Criteria{Pfm: "GUEST"},
+	}
+	p := buildProg("EVENING DRIVE", "HOST", "20230626050000", nil)
+	if r.MatchSilent("FMJ", p) {
+		t.Error("MatchSilent() = true for a program outside the inclusion criteria")
+	}
+}
+
+func TestFindMatchReturnsFirstMatchingRule(t *testing.T) {
+	// Both rules match; the earlier one must win, and it must stay stable when
+	// the rules are declared in the opposite order.
+	p := buildProg("MIDDAY LOUNGE", "HOST", "20230626050000", nil)
+
+	ab := Rules{
+		{Name: "a", Criteria: Criteria{Keyword: "LOUNGE"}, Folder: "a"},
+		{Name: "b", Criteria: Criteria{Keyword: "MIDDAY"}, Folder: "b"},
+	}
+	ba := Rules{
+		{Name: "b", Criteria: Criteria{Keyword: "MIDDAY"}, Folder: "b"},
+		{Name: "a", Criteria: Criteria{Keyword: "LOUNGE"}, Folder: "a"},
+	}
+
+	for _, r := range ab {
+		if !r.MatchSilent("FMJ", p) {
+			t.Fatalf("precondition: rule %s does not match", r.Name)
+		}
+	}
+
+	if got := ab.FindMatchSilent("FMJ", p); got == nil || got.Name != "a" {
+		t.Errorf("FindMatchSilent() = %v, want rule a", got)
+	}
+	if got := ba.FindMatchSilent("FMJ", p); got == nil || got.Name != "b" {
+		t.Errorf("FindMatchSilent() = %v, want rule b", got)
+	}
+}
+
+func TestExcludeFallsThroughToLaterRule(t *testing.T) {
+	// Excluding from an earlier rule lets a later rule pick the program up,
+	// which is how a special edition is routed to a different folder.
+	special := buildProg("MIDDAY LOUNGE SPECIAL", "HOST", "20230626050000", nil)
+	regular := buildProg("MIDDAY LOUNGE", "HOST", "20230626050000", nil)
+
+	rules := Rules{
+		{
+			Name:     "midday",
+			Criteria: Criteria{Title: "MIDDAY LOUNGE"},
+			Exclude:  &Criteria{Title: "SPECIAL"},
+			Folder:   "MIDDAY LOUNGE",
+		},
+		{
+			Name:     "midday-special",
+			Criteria: Criteria{Title: "MIDDAY LOUNGE SPECIAL"},
+			Folder:   "SPECIALS",
+		},
+	}
+
+	if got := rules.FindMatchSilent("FMJ", special); got == nil || got.Folder != "SPECIALS" {
+		t.Errorf("special: FindMatchSilent() = %v, want the SPECIALS rule", got)
+	}
+	if got := rules.FindMatchSilent("FMJ", regular); got == nil || got.Folder != "MIDDAY LOUNGE" {
+		t.Errorf("regular: FindMatchSilent() = %v, want the MIDDAY LOUNGE rule", got)
+	}
+}
+
+func TestHasExclude(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		rule *Rule
+		want bool
+	}{
+		{"nil", &Rule{Name: "r"}, false},
+		{"empty", &Rule{Name: "r", Exclude: &Criteria{}}, false},
+		{"title", &Rule{Name: "r", Exclude: &Criteria{Title: "x"}}, true},
+		{"dow", &Rule{Name: "r", Exclude: &Criteria{DoW: []string{"sat"}}}, true},
+		{"station-id", &Rule{Name: "r", Exclude: &Criteria{StationID: "FMJ"}}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.rule.HasExclude(); got != tt.want {
+				t.Errorf("HasExclude() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuleJSONKeepsInclusionCriteriaFlat(t *testing.T) {
+	// The Wails frontend reads rule.Title, rule.StationID and friends directly
+	// off the marshaled rule. Embedding Criteria must not nest them.
+	r := &Rule{
+		Name:     "midday",
+		Criteria: Criteria{Title: "MIDDAY LOUNGE", StationID: "FMJ"},
+		Exclude:  &Criteria{Pfm: "GUEST"},
+		Folder:   "MIDDAY LOUNGE",
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if _, nested := m["Criteria"]; nested {
+		t.Errorf("Criteria is nested in %s", b)
+	}
+	for _, k := range []string{"Name", "Title", "StationID", "Exclude", "Folder"} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("missing top-level key %q in %s", k, b)
+		}
+	}
+	exclude, ok := m["Exclude"].(map[string]any)
+	if !ok {
+		t.Fatalf("Exclude is not an object in %s", b)
+	}
+	if exclude["Pfm"] != "GUEST" {
+		t.Errorf("Exclude.Pfm = %v, want GUEST", exclude["Pfm"])
+	}
+}
+
+func TestDoWWithUnparseableStartTime(t *testing.T) {
+	// The zero time.Time is a Monday. An unparseable Ft must not be treated as
+	// Monday, in either direction.
+	bad := buildProg("MIDDAY LOUNGE", "HOST", "not-a-timestamp", nil)
+
+	t.Run("does not include", func(t *testing.T) {
+		r := &Rule{
+			Name:     "midday",
+			Criteria: Criteria{Title: "MIDDAY LOUNGE", DoW: []string{"mon"}},
+		}
+		if r.MatchSilent("FMJ", bad) {
+			t.Error("MatchSilent() = true for an unparseable start time")
+		}
+	})
+
+	t.Run("does not exclude", func(t *testing.T) {
+		r := &Rule{
+			Name:     "midday",
+			Criteria: Criteria{Title: "MIDDAY LOUNGE"},
+			Exclude:  &Criteria{DoW: []string{"mon"}},
+		}
+		if !r.MatchSilent("FMJ", bad) {
+			t.Error("MatchSilent() = false; an unparseable start time must not exclude")
+		}
+	})
 }

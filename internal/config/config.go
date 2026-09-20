@@ -220,13 +220,23 @@ type configYAML struct {
 
 // ruleYAML represents a rule in YAML format
 type ruleYAML struct {
+	StationID string        `yaml:"station-id,omitempty"`
+	Title     string        `yaml:"title,omitempty"`
+	DoW       []string      `yaml:"dow,omitempty"`
+	Keyword   string        `yaml:"keyword,omitempty"`
+	Pfm       string        `yaml:"pfm,omitempty"`
+	Exclude   *criteriaYAML `yaml:"exclude,omitempty"`
+	Window    string        `yaml:"window,omitempty"`
+	Folder    string        `yaml:"folder,omitempty"`
+}
+
+// criteriaYAML represents a rule's exclusion criteria in YAML format
+type criteriaYAML struct {
 	StationID string   `yaml:"station-id,omitempty"`
 	Title     string   `yaml:"title,omitempty"`
 	DoW       []string `yaml:"dow,omitempty"`
 	Keyword   string   `yaml:"keyword,omitempty"`
 	Pfm       string   `yaml:"pfm,omitempty"`
-	Window    string   `yaml:"window,omitempty"`
-	Folder    string   `yaml:"folder,omitempty"`
 }
 
 // convertRulesToYAML converts rules to YAML format, preserving order
@@ -258,6 +268,15 @@ func convertRulesToYAML(rules radikron.Rules) (rulesMap map[string]*ruleYAML, or
 		}
 		if rule.HasWindow() {
 			ruleYAMLObj.Window = rule.Window
+		}
+		if rule.HasExclude() {
+			ruleYAMLObj.Exclude = &criteriaYAML{
+				StationID: rule.Exclude.StationID,
+				Title:     rule.Exclude.Title,
+				DoW:       rule.Exclude.DoW,
+				Keyword:   rule.Exclude.Keyword,
+				Pfm:       rule.Exclude.Pfm,
+			}
 		}
 		rulesMap[rule.Name] = ruleYAMLObj
 		order = append(order, rule.Name)
@@ -545,7 +564,17 @@ func loadRulesFromViper() (radikron.Rules, error) {
 	rules := radikron.Rules{}
 	ruleMap := viper.GetStringMap("rules")
 
+	// Go randomizes map iteration order, and rule order decides precedence when
+	// several rules match the same program. Sort the names so this fallback is
+	// at least deterministic across runs; the document order of the config file
+	// is not recoverable here.
+	names := make([]string, 0, len(ruleMap))
 	for name := range ruleMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
 		rule := &radikron.Rule{}
 		err := viper.UnmarshalKey(fmt.Sprintf("rules.%s", name), rule)
 		if err != nil {

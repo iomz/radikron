@@ -122,6 +122,26 @@ export namespace radikron {
 		}
 	}
 	
+	export class Criteria {
+	    Title: string;
+	    DoW: string[];
+	    Keyword: string;
+	    Pfm: string;
+	    StationID: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Criteria(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Title = source["Title"];
+	        this.DoW = source["DoW"];
+	        this.Keyword = source["Keyword"];
+	        this.Pfm = source["Pfm"];
+	        this.StationID = source["StationID"];
+	    }
+	}
 	export class Rule {
 	    Name: string;
 	    Title: string;
@@ -129,6 +149,7 @@ export namespace radikron {
 	    Keyword: string;
 	    Pfm: string;
 	    StationID: string;
+	    Exclude?: Criteria;
 	    Window: string;
 	    Folder: string;
 	
@@ -144,9 +165,28 @@ export namespace radikron {
 	        this.Keyword = source["Keyword"];
 	        this.Pfm = source["Pfm"];
 	        this.StationID = source["StationID"];
+	        this.Exclude = this.convertValues(source["Exclude"], Criteria);
 	        this.Window = source["Window"];
 	        this.Folder = source["Folder"];
 	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

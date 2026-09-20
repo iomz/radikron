@@ -225,7 +225,7 @@ func TestProcessStations_EmptyStations(t *testing.T) {
 func TestProcessStationSkipsUnsupportedArchiveStation(t *testing.T) {
 	ctx := context.Background()
 	wg := &sync.WaitGroup{}
-	rule := &radikron.Rule{StationID: "JOAK"}
+	rule := &radikron.Rule{Criteria: radikron.Criteria{StationID: "JOAK"}}
 	rule.SetName("nhk")
 	fetcher := &mockProgramFetcher{}
 

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -708,16 +709,13 @@ func TestConvertRulesToYAML(t *testing.T) {
 	}
 
 	// Test with rules containing all fields
-	rule := &radikron.Rule{
-		Name:      "test-rule",
-		StationID: testStationFMT,
+	rule := &radikron.Rule{Name: "test-rule", Criteria: radikron.Criteria{
 		Title:     "Test Title",
+		DoW:       []string{"mon", "tue"},
 		Keyword:   "test",
 		Pfm:       "Test Person",
-		DoW:       []string{"mon", "tue"},
-		Window:    "48h",
-		Folder:    "test-folder",
-	}
+		StationID: testStationFMT,
+	}, Window: "48h", Folder: "test-folder"}
 
 	rules = radikron.Rules{rule}
 	result, order = convertRulesToYAML(rules)
@@ -759,9 +757,9 @@ func TestConvertRulesToYAML(t *testing.T) {
 func TestConvertRulesToYAMLPartialFields(t *testing.T) {
 	// Test with rules that only have some fields
 	rule := &radikron.Rule{
-		Name:      "partial-rule",
-		StationID: "TBS",
+		Name: "partial-rule",
 		// Don't set other fields
+		Criteria: radikron.Criteria{StationID: "TBS"},
 	}
 
 	rules := radikron.Rules{rule}
@@ -1025,10 +1023,10 @@ func TestSaveConfigPreservesRuleOrder(t *testing.T) {
 		AreaID:     "JP13",
 		FileFormat: radigo.AudioFormatAAC,
 		Rules: radikron.Rules{
-			&radikron.Rule{Name: "first-rule", StationID: "FMT", Title: "First"},
-			&radikron.Rule{Name: "second-rule", StationID: "TBS", Title: "Second"},
-			&radikron.Rule{Name: "third-rule", StationID: "MBS", Title: "Third"},
-			&radikron.Rule{Name: "fourth-rule", StationID: "FMJ", Title: "Fourth"},
+			&radikron.Rule{Name: "first-rule", Criteria: radikron.Criteria{Title: "First", StationID: "FMT"}},
+			&radikron.Rule{Name: "second-rule", Criteria: radikron.Criteria{Title: "Second", StationID: "TBS"}},
+			&radikron.Rule{Name: "third-rule", Criteria: radikron.Criteria{Title: "Third", StationID: "MBS"}},
+			&radikron.Rule{Name: "fourth-rule", Criteria: radikron.Criteria{Title: "Fourth", StationID: "FMJ"}},
 		},
 	}
 
@@ -1165,9 +1163,9 @@ func TestSaveConfig_WithRulesOrder(t *testing.T) {
 		AreaID:     "JP13",
 		FileFormat: radigo.AudioFormatAAC,
 		Rules: radikron.Rules{
-			&radikron.Rule{Name: "rule1", StationID: "FMT", Title: "First"},
-			&radikron.Rule{Name: "rule2", StationID: "TBS", Title: "Second"},
-			&radikron.Rule{Name: "rule3", StationID: "MBS", Title: "Third"},
+			&radikron.Rule{Name: "rule1", Criteria: radikron.Criteria{Title: "First", StationID: "FMT"}},
+			&radikron.Rule{Name: "rule2", Criteria: radikron.Criteria{Title: "Second", StationID: "TBS"}},
+			&radikron.Rule{Name: "rule3", Criteria: radikron.Criteria{Title: "Third", StationID: "MBS"}},
 		},
 	}
 
@@ -1229,9 +1227,9 @@ func TestSaveConfig_EmptyRules(t *testing.T) {
 func TestConvertRulesToYAML_MultipleRules(t *testing.T) {
 	// Test with multiple rules to ensure order is preserved
 	rules := radikron.Rules{
-		&radikron.Rule{Name: "first", StationID: "FMT"},
-		&radikron.Rule{Name: "second", StationID: "TBS"},
-		&radikron.Rule{Name: "third", StationID: "MBS"},
+		&radikron.Rule{Name: "first", Criteria: radikron.Criteria{StationID: "FMT"}},
+		&radikron.Rule{Name: "second", Criteria: radikron.Criteria{StationID: "TBS"}},
+		&radikron.Rule{Name: "third", Criteria: radikron.Criteria{StationID: "MBS"}},
 	}
 
 	rulesMap, order := convertRulesToYAML(rules)
@@ -1255,16 +1253,13 @@ func TestConvertRulesToYAML_MultipleRules(t *testing.T) {
 
 func TestConvertRulesToYAML_AllRuleFields(t *testing.T) {
 	// Test with a rule that has all possible fields set
-	rule := &radikron.Rule{
-		Name:      "full-rule",
-		StationID: "FMT",
+	rule := &radikron.Rule{Name: "full-rule", Criteria: radikron.Criteria{
 		Title:     "Full Title",
+		DoW:       []string{"mon", "tue"},
 		Keyword:   "keyword",
 		Pfm:       "Person",
-		DoW:       []string{"mon", "tue"},
-		Window:    "48h",
-		Folder:    "test-folder",
-	}
+		StationID: "FMT",
+	}, Window: "48h", Folder: "test-folder"}
 
 	rules := radikron.Rules{rule}
 	rulesMap, order := convertRulesToYAML(rules)
@@ -1417,4 +1412,114 @@ func findStringInLines(s, substr string, start int) int {
 		}
 	}
 	return -1
+}
+
+func TestExcludeRoundTripsThroughConfigFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yml")
+
+	original := &Config{
+		AreaID:     "JP13",
+		FileFormat: radigo.AudioFormatAAC,
+		Rules: radikron.Rules{
+			&radikron.Rule{
+				Name:     "midday",
+				Criteria: radikron.Criteria{Title: "MIDDAY LOUNGE", StationID: "FMJ"},
+				Exclude: &radikron.Criteria{
+					Pfm:     "GUEST",
+					DoW:     []string{"sat"},
+					Keyword: "rerun",
+				},
+				Folder: "MIDDAY LOUNGE",
+			},
+			&radikron.Rule{
+				Name:     "plain",
+				Criteria: radikron.Criteria{Title: "EVENING DRIVE"},
+			},
+		},
+	}
+
+	if err := original.SaveConfig(configPath); err != nil {
+		t.Fatalf("SaveConfig() error: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("reading saved config: %v", err)
+	}
+	if !strings.Contains(string(data), "exclude:") {
+		t.Fatalf("saved config has no exclude block:\n%s", data)
+	}
+
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	loaded, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	if len(loaded.Rules) != 2 {
+		t.Fatalf("loaded %d rules, want 2", len(loaded.Rules))
+	}
+
+	midday := loaded.Rules[0]
+	if midday.Name != "midday" {
+		t.Fatalf("rule order not preserved: first rule is %q", midday.Name)
+	}
+	if !midday.HasExclude() {
+		t.Fatalf("exclude block lost on reload: %+v", midday.Exclude)
+	}
+	if midday.Exclude.Pfm != "GUEST" {
+		t.Errorf("Exclude.Pfm = %q, want GUEST", midday.Exclude.Pfm)
+	}
+	if midday.Exclude.Keyword != "rerun" {
+		t.Errorf("Exclude.Keyword = %q, want rerun", midday.Exclude.Keyword)
+	}
+	if len(midday.Exclude.DoW) != 1 || midday.Exclude.DoW[0] != "sat" {
+		t.Errorf("Exclude.DoW = %v, want [sat]", midday.Exclude.DoW)
+	}
+	if midday.Title != "MIDDAY LOUNGE" {
+		t.Errorf("Title = %q, want MIDDAY LOUNGE", midday.Title)
+	}
+
+	// A rule without an exclusion block must not gain an empty one.
+	if loaded.Rules[1].HasExclude() {
+		t.Errorf("plain rule gained an exclude block: %+v", loaded.Rules[1].Exclude)
+	}
+	if strings.Count(string(data), "exclude:") != 1 {
+		t.Errorf("expected exactly one exclude block in:\n%s", data)
+	}
+}
+
+func TestLoadRulesFromViperIsDeterministic(t *testing.T) {
+	// Go randomizes map iteration, so the fallback must sort to keep rule
+	// precedence stable across runs.
+	var first []string
+	for i := 0; i < 20; i++ {
+		viper.Reset()
+		viper.Set("rules", map[string]any{
+			"zebra":  map[string]any{"title": "Z"},
+			"alpha":  map[string]any{"title": "A"},
+			"middle": map[string]any{"title": "M"},
+		})
+		rules, err := loadRulesFromViper()
+		if err != nil {
+			t.Fatalf("loadRulesFromViper() error: %v", err)
+		}
+		names := make([]string, 0, len(rules))
+		for _, r := range rules {
+			names = append(names, r.Name)
+		}
+		if first == nil {
+			first = names
+			continue
+		}
+		if !slices.Equal(names, first) {
+			t.Fatalf("order varied between runs: %v vs %v", names, first)
+		}
+	}
+	viper.Reset()
+	if want := []string{"alpha", "middle", "zebra"}; !slices.Equal(first, want) {
+		t.Errorf("order = %v, want %v", first, want)
+	}
 }
