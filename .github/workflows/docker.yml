@@ -5,7 +5,6 @@ on:
     # Publish the default branch as Docker `latest` image.
     branches:
       - main
-      - dev
     # Publish `v1.2.3` tags as releases.
     tags:
       - v*.*.*
