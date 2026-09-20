@@ -77,6 +77,7 @@ type App struct {
 	monitoring             bool
 	monitorStopping        bool
 	monitorDone            chan struct{}
+	monitorStopped         chan struct{}
 	monitorWg              *sync.WaitGroup
 	monitorCancel          context.CancelFunc
 	programSnapshots       map[string]radikron.Progs   // stationID -> programs snapshot
@@ -1642,16 +1643,20 @@ func (a *App) StopMonitoring() error { //nolint:unparam // Keep Wails binding's 
 		a.mu.Unlock()
 		return nil
 	}
-	cancel := a.monitorCancel
-	done := a.monitorDone
 	if a.monitorStopping {
+		stopped := a.monitorStopped
 		a.mu.Unlock()
-		if done != nil {
-			<-done
+		// Wait for the first caller to finish resetting the lifecycle state, so
+		// GetMonitoringStatus and StartMonitoring observe a completed stop.
+		if stopped != nil {
+			<-stopped
 		}
-		a.monitorWg.Wait()
 		return nil
 	}
+	cancel := a.monitorCancel
+	done := a.monitorDone
+	stopped := make(chan struct{})
+	a.monitorStopped = stopped
 	a.monitorStopping = true
 	a.mu.Unlock()
 
@@ -1668,11 +1673,16 @@ func (a *App) StopMonitoring() error { //nolint:unparam // Keep Wails binding's 
 	a.monitorStopping = false
 	a.monitorCancel = nil
 	a.monitorDone = nil
+	a.monitorStopped = nil
 	a.mu.Unlock()
 
 	// Log and emit event to frontend
 	log.Printf("monitoring stopped")
 	a.emit("monitoring-stopped", nil)
+
+	// Release concurrent callers only after the stop is fully observable, so they
+	// cannot start a new run that emits monitoring-started before this event.
+	close(stopped)
 
 	return nil
 }

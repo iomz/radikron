@@ -76,6 +76,7 @@ go test ./...
 pnpm --dir cmd/radikron-gui/frontend test
 pnpm --dir cmd/radikron-gui/frontend run typecheck
 pnpm --dir cmd/radikron-gui/frontend run build
+(cd cmd/radikron-gui && wails build)
 golangci-lint run ./...
 git diff --check
 ```

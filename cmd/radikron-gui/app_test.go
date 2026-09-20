@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -222,6 +224,58 @@ func TestMonitoringLifecycleEmitsStateTransitions(t *testing.T) {
 	}
 	if got := events.names(); !slices.Equal(got, []string{"monitoring-started", "monitoring-stopped"}) {
 		t.Errorf("events = %v", got)
+	}
+}
+
+func TestConcurrentStopMonitoringObservesCompletedStop(t *testing.T) {
+	started := make(chan struct{})
+	var startOnce sync.Once
+	app := NewApp()
+	app.asset = &radikron.Asset{}
+	app.events = &recordingEventSink{}
+	app.monitorLoop = func(ctx context.Context) {
+		startOnce.Do(func() { close(started) })
+		<-ctx.Done()
+	}
+
+	if err := app.StartMonitoring(); err != nil {
+		t.Fatalf("StartMonitoring() error: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("monitor loop did not start")
+	}
+
+	// Every concurrent caller must observe the fully reset lifecycle state once
+	// StopMonitoring returns, not just the monitoring goroutine's exit.
+	const callers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, callers)
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := app.StopMonitoring(); err != nil {
+				errs <- fmt.Errorf("StopMonitoring() error: %w", err)
+				return
+			}
+			if app.GetMonitoringStatus() {
+				errs <- errors.New("monitoring status true after StopMonitoring returned")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+
+	if err := app.StartMonitoring(); err != nil {
+		t.Fatalf("StartMonitoring() after stop error: %v", err)
+	}
+	if err := app.StopMonitoring(); err != nil {
+		t.Fatalf("final StopMonitoring() error: %v", err)
 	}
 }
 
