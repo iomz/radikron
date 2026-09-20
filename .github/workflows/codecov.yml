@@ -16,7 +16,7 @@ jobs:
       - name: Set up go
         uses: actions/setup-go@v5
         with:
-          go-version: "^1.22"
+          go-version-file: go.mod
       - name: See go version
         run: go version
       - uses: actions/setup-node@v4
@@ -35,6 +35,12 @@ jobs:
             ${{ runner.os }}-pnpm-
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+        working-directory: cmd/radikron-gui/frontend
+      - name: Test frontend
+        run: pnpm test
+        working-directory: cmd/radikron-gui/frontend
+      - name: Type-check frontend
+        run: pnpm run typecheck
         working-directory: cmd/radikron-gui/frontend
       - name: Build frontend
         run: pnpm run build

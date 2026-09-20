@@ -28,6 +28,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
         working-directory: cmd/radikron-gui/frontend
+      - name: Test frontend
+        run: pnpm test
+        working-directory: cmd/radikron-gui/frontend
+      - name: Type-check frontend
+        run: pnpm run typecheck
+        working-directory: cmd/radikron-gui/frontend
       - name: Build frontend
         run: pnpm run build
         working-directory: cmd/radikron-gui/frontend
