@@ -5,14 +5,17 @@ codecov:
 coverage:
   status:
     project:
-      default:
+      core:
         target: 70%
         threshold: 1%
+        paths:
+          - "!cmd/radikron-gui/"
+      gui-backend:
+        target: 20%
+        threshold: 1%
+        paths:
+          - "cmd/radikron-gui/"
     patch:
       default:
         target: 70%
         threshold: 1%
-
-ignore:
-  - "cmd/radikron-gui"
-

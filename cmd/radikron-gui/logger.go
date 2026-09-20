@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/iomz/radikron"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -26,6 +27,7 @@ type DownloadCompletedCallback func(stationID, title, startTime string)
 // WailsEventEmitter implements radikron.EventEmitter interface using Wails runtime events
 type WailsEventEmitter struct {
 	ctx                 context.Context
+	emitEvent           func(context.Context, string, any)
 	onDownloadCompleted DownloadCompletedCallback
 	callbackMu          sync.Mutex
 }
@@ -35,7 +37,18 @@ var _ radikron.EventEmitter = (*WailsEventEmitter)(nil)
 
 // NewWailsEventEmitter creates a new WailsEventEmitter
 func NewWailsEventEmitter(ctx context.Context) *WailsEventEmitter {
-	return &WailsEventEmitter{ctx: ctx}
+	return &WailsEventEmitter{
+		ctx: ctx,
+		emitEvent: func(ctx context.Context, eventName string, data any) {
+			runtime.EventsEmit(ctx, eventName, data)
+		},
+	}
+}
+
+func (e *WailsEventEmitter) emit(eventName string, data any) {
+	if e.emitEvent != nil {
+		e.emitEvent(e.ctx, eventName, data)
+	}
 }
 
 // SetDownloadCompletedCallback sets the callback for download completion
@@ -48,7 +61,7 @@ func (e *WailsEventEmitter) SetDownloadCompletedCallback(callback DownloadComple
 // EmitDownloadStarted implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitDownloadStarted(stationID, title, startTime string) {
 	log.Printf("start downloading [%s]%s (%s)", stationID, title, startTime)
-	runtime.EventsEmit(e.ctx, "download-started", map[string]any{
+	e.emit("download-started", map[string]any{
 		"station": stationID,
 		"title":   title,
 		"start":   startTime,
@@ -63,7 +76,7 @@ func (e *WailsEventEmitter) EmitDownloadCompleted(stationID, title, startTime, f
 	}
 
 	log.Printf("download completed [%s]%s: %s", stationID, title, filePath)
-	runtime.EventsEmit(e.ctx, "download-completed", map[string]any{
+	e.emit("download-completed", map[string]any{
 		"station": stationID,
 		"title":   title,
 		"start":   startTime,
@@ -86,7 +99,7 @@ func (e *WailsEventEmitter) EmitFileSaved(stationID, title, filePath string) {
 	}
 
 	log.Printf("+file saved: %s", filePath)
-	runtime.EventsEmit(e.ctx, "file-saved", map[string]any{
+	e.emit("file-saved", map[string]any{
 		"station":  stationID,
 		"title":    title,
 		"filePath": filePath,
@@ -100,7 +113,7 @@ func (e *WailsEventEmitter) EmitDownloadSkipped(reason, stationID, title, startT
 	} else {
 		log.Printf("-skip %s", reason)
 	}
-	runtime.EventsEmit(e.ctx, "download-skipped", map[string]any{
+	e.emit("download-skipped", map[string]any{
 		"reason":  reason,
 		"station": stationID,
 		"title":   title,
@@ -111,7 +124,7 @@ func (e *WailsEventEmitter) EmitDownloadSkipped(reason, stationID, title, startT
 // EmitEncodingStarted implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitEncodingStarted(filePath string) {
 	log.Printf("start encoding to MP3: %s", filePath)
-	runtime.EventsEmit(e.ctx, "encoding-started", map[string]any{
+	e.emit("encoding-started", map[string]any{
 		"filePath": filePath,
 	})
 }
@@ -119,14 +132,14 @@ func (e *WailsEventEmitter) EmitEncodingStarted(filePath string) {
 // EmitEncodingCompleted implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitEncodingCompleted(filePath string) {
 	log.Printf("finish encoding to MP3: %s", filePath)
-	runtime.EventsEmit(e.ctx, "encoding-completed", map[string]any{
+	e.emit("encoding-completed", map[string]any{
 		"filePath": filePath,
 	})
 }
 
 // EmitLogMessage implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitLogMessage(level, message string) {
-	runtime.EventsEmit(e.ctx, "log-message", map[string]any{
+	e.emit("log-message", map[string]any{
 		"type":    level,
 		"message": message,
 	})
@@ -139,9 +152,17 @@ func extractProgramInfoFromPath(filePath string) (stationID, title string) {
 	if extIndex := strings.LastIndex(fileName, "."); extIndex >= 0 {
 		fileName = fileName[:extIndex]
 	}
-	// Split by underscore: [0]=date, [1]=time, [2]=station, [3+]=title
+	// Current names use [datetime]_[station]_[title]. Keep legacy
+	// [date]_[time]_[station]_[title] parsing for existing downloads.
 	parts := strings.Split(fileName, "_")
 	if len(parts) >= minFilenameParts {
+		if _, err := time.Parse(radikron.OutputDatetimeLayout, parts[0]); err == nil {
+			stationID = parts[1]
+			title = strings.Join(parts[2:], "_")
+			return stationID, title
+		}
+	}
+	if len(parts) >= minFilenameParts+1 {
 		stationID = parts[2]
 		title = strings.Join(parts[3:], "_")
 	}

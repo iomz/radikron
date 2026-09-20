@@ -91,14 +91,15 @@ export const TabsTrigger: React.FC<TabsTriggerProps> = ({ value, children, class
   const isActive = context.value === value
   const tabId = `tab-${value}`
   const panelId = `panel-${value}`
+  const { registerTab, unregisterTab } = context
 
   // Register this tab when component mounts
   React.useEffect(() => {
-    context.registerTab(value)
+    registerTab(value)
     return () => {
-      context.unregisterTab(value)
+      unregisterTab(value)
     }
-  }, [value, context])
+  }, [value, registerTab, unregisterTab])
 
   const getTabIndex = (currentValue: string): number => {
     return context.tabValues.indexOf(currentValue)
@@ -232,4 +233,3 @@ export const TabsContent: React.FC<TabsContentProps> = ({ value, children, class
     </div>
   )
 }
-
