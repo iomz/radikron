@@ -156,6 +156,15 @@ func checkProgramUnavailable(ctx context.Context, asset *Asset, prog *Prog, star
 		return true, fmt.Errorf("invalid end time format '%s': %w", prog.To, err)
 	}
 
+	if !endTime.After(startTime) {
+		// Nothing can be downloaded for an inverted or empty range, and a retry
+		// would not help. Fail here rather than in the download goroutine, where
+		// the error would only reach the log.
+		emitLogMessage(ctx, "error", fmt.Sprintf(
+			"Invalid program range for [%s]%s: ft=%s to=%s", prog.StationID, title, start, prog.To))
+		return true, fmt.Errorf("invalid program range: ft=%s to=%s", start, prog.To)
+	}
+
 	availableAt := endTime.Add(BufferMinutes * time.Minute)
 	if !CurrentTime.Before(availableAt) {
 		return false, nil

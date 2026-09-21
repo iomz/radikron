@@ -2368,3 +2368,39 @@ func TestDownloadSkipsProgramStillAiring(t *testing.T) {
 		t.Errorf("NextFetchTime = %v, want %v", asset.NextFetchTime, want)
 	}
 }
+
+func TestCheckProgramUnavailableRejectsInvalidRange(t *testing.T) {
+	// An inverted or empty range cannot produce a recording, and retrying would
+	// not help. It must fail synchronously rather than in the download goroutine.
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
+
+	for _, tt := range []struct {
+		name   string
+		ft, to string
+	}{
+		{"end before start", "20230605100000", "20230605090000"},
+		{"end equals start", "20230605100000", "20230605100000"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			asset := &Asset{}
+			prog := &Prog{StationID: "FMT", Title: "Bad Range", Ft: tt.ft, To: tt.to}
+			start, err := time.ParseInLocation(DatetimeLayout, tt.ft, Location)
+			if err != nil {
+				t.Fatalf("parsing fixture start time: %v", err)
+			}
+
+			handled, err := checkProgramUnavailable(
+				context.Background(), asset, prog, start, prog.Title, prog.Ft)
+			if !handled {
+				t.Error("handled = false; an invalid range must not reach the download")
+			}
+			if err == nil {
+				t.Error("err = nil; an invalid range must be reported")
+			}
+			if asset.NextFetchTime != nil {
+				t.Errorf("NextFetchTime = %v; an invalid range must not be retried", asset.NextFetchTime)
+			}
+		})
+	}
+}
