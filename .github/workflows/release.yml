@@ -13,19 +13,19 @@ jobs:
           - os: macos-latest
             goos: darwin
             goarch: amd64
-            platform: darwin_amd64
+            platform: macOS_Intel
           - os: macos-latest
             goos: darwin
             goarch: arm64
-            platform: darwin_arm64
+            platform: macOS_Apple_Silicon
           - os: windows-latest
             goos: windows
             goarch: amd64
-            platform: windows_amd64
+            platform: Windows_x64
           - os: windows-latest
             goos: windows
             goarch: arm64
-            platform: windows_arm64
+            platform: Windows_ARM64
     runs-on: ${{ matrix.os }}
     env:
       GO111MODULE: on
@@ -89,6 +89,19 @@ jobs:
             echo "Checking for macOS build output..."
             ls -la build/bin/ || echo "build/bin/ does not exist"
             if [ -d "build/bin/Radikron.app" ]; then
+              case "${{ matrix.goarch }}" in
+                amd64) expected_arch=x86_64 ;;
+                arm64) expected_arch=arm64 ;;
+                *) echo "Unsupported macOS architecture: ${{ matrix.goarch }}"; exit 1 ;;
+              esac
+              app_binary="build/bin/Radikron.app/Contents/MacOS/radikron-gui"
+              actual_arch=$(lipo -archs "$app_binary")
+              if [ "$actual_arch" != "$expected_arch" ]; then
+                echo "Expected $expected_arch app binary, got $actual_arch"
+                exit 1
+              fi
+              codesign --force --deep --sign - build/bin/Radikron.app
+              codesign --verify --deep --strict --verbose=2 build/bin/Radikron.app
               echo "Found Radikron.app, creating DMG with drag-and-drop interface..."
               # Create DMG using create-dmg for better user experience
               # --volname: Volume name shown when DMG is mounted

@@ -131,6 +131,8 @@ Pre-built binaries are available for macOS and Windows. Download the latest rele
 - **macOS**: Download the `.dmg` file for your architecture (Intel or Apple Silicon)
 - **Windows**: Download the `.exe` file for your architecture (x64 or ARM64)
 
+macOS downloads are ad-hoc signed but not notarized. Gatekeeper may require manual approval: only if you downloaded Radikron from the official Releases page, Control-click `Radikron.app`, choose **Open**, then confirm **Open**. The app is not signed with a paid Apple Developer ID.
+
 #### Linux Users
 
 Linux users need to build from source. See the [GUI README](cmd/radikron-gui/README.md) for detailed setup instructions.
