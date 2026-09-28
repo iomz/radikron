@@ -491,7 +491,7 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 	// Check if ffmpeg is available
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
-		return fmt.Errorf("ffmpeg not found in PATH: %w", err)
+		return fmt.Errorf("ffmpeg not found; install FFmpeg and ensure it is available in PATH: %w", err)
 	}
 
 	// Build ffmpeg command:

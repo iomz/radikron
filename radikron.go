@@ -12,6 +12,7 @@ var (
 )
 
 func init() { //nolint:gochecknoinits
+	initFFmpegPath()
 	var err error
 
 	Location, err = time.LoadLocation(TZTokyo)

@@ -99,7 +99,7 @@ Pre-built Docker images with all dependencies included, ready for easy deploymen
 
 ### Common Requirements
 
-- **[FFmpeg](https://ffmpeg.org/download.html)**: Required to combine m3u8 chunks to a single AAC file (or convert to MP3). Make sure `ffmpeg` exists in your `$PATH`.
+- **[FFmpeg](https://ffmpeg.org/download.html)**: Required to combine m3u8 chunks to a single AAC file (or convert to MP3). Make sure `ffmpeg` exists in your `$PATH`. On macOS, Radikron also checks standard Homebrew locations (`/opt/homebrew/bin` and `/usr/local/bin`), including for apps launched from Finder.
   - The [docker image](#try-with-docker) already contains all the requirements including FFmpeg.
 
 ### GUI-Specific Requirements (for building from source)
