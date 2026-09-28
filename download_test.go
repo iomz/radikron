@@ -2253,3 +2253,154 @@ func TestConvertAACtoMP3_ConversionError(t *testing.T) {
 		t.Logf("convertAACtoMP3 returned error (expected): %v", err)
 	}
 }
+
+func TestCheckProgramUnavailable(t *testing.T) {
+	Location, _ = time.LoadLocation(TZTokyo)
+	now := time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
+
+	for _, tt := range []struct {
+		name        string
+		start       time.Time
+		end         time.Time
+		wantHandled bool
+		wantNext    bool // NextFetchTime should be set to end+buffer
+	}{
+		{
+			name:        "program has not started",
+			start:       now.Add(1 * time.Hour),
+			end:         now.Add(2 * time.Hour),
+			wantHandled: true,
+			wantNext:    true,
+		},
+		{
+			name:        "program is still airing",
+			start:       now.Add(-30 * time.Minute),
+			end:         now.Add(30 * time.Minute),
+			wantHandled: true,
+			wantNext:    true,
+		},
+		{
+			name:        "program just ended, inside the buffer",
+			start:       now.Add(-60 * time.Minute),
+			end:         now.Add(-1 * time.Minute),
+			wantHandled: true,
+			wantNext:    true,
+		},
+		{
+			name:        "program ended exactly at the buffer boundary",
+			start:       now.Add(-60 * time.Minute),
+			end:         now.Add(-BufferMinutes * time.Minute),
+			wantHandled: false,
+		},
+		{
+			name:        "program ended well before the buffer",
+			start:       now.Add(-120 * time.Minute),
+			end:         now.Add(-60 * time.Minute),
+			wantHandled: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			CurrentTime = now
+			asset := &Asset{}
+			prog := &Prog{
+				StationID: "FMT",
+				Title:     "Test Program",
+				Ft:        tt.start.Format(DatetimeLayout),
+				To:        tt.end.Format(DatetimeLayout),
+			}
+
+			handled, err := checkProgramUnavailable(
+				context.Background(), asset, prog, tt.start, prog.Title, prog.Ft)
+			if err != nil {
+				t.Fatalf("checkProgramUnavailable() error: %v", err)
+			}
+			if handled != tt.wantHandled {
+				t.Errorf("handled = %v, want %v", handled, tt.wantHandled)
+			}
+
+			if !tt.wantNext {
+				if asset.NextFetchTime != nil {
+					t.Errorf("NextFetchTime = %v, want nil", asset.NextFetchTime)
+				}
+				return
+			}
+			if asset.NextFetchTime == nil {
+				t.Fatal("NextFetchTime was not set; the program would never be retried")
+			}
+			want := tt.end.Add(BufferMinutes * time.Minute)
+			if !asset.NextFetchTime.Equal(want) {
+				t.Errorf("NextFetchTime = %v, want %v", asset.NextFetchTime, want)
+			}
+		})
+	}
+}
+
+func TestDownloadSkipsProgramStillAiring(t *testing.T) {
+	// A program caught mid-broadcast must not be written as a truncated file,
+	// because checkFileExists would then skip it forever.
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
+
+	asset := &Asset{
+		OutputFormat:      radigo.AudioFormatAAC,
+		DownloadDir:       t.TempDir(),
+		MinimumOutputSize: 1024,
+		Rules:             Rules{},
+		Schedules:         Schedules{},
+	}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+
+	prog := &Prog{
+		StationID: "FMT",
+		Title:     "Airing Now",
+		Ft:        "20230605113000", // started 30 minutes ago
+		To:        "20230605123000", // ends 30 minutes from now
+	}
+
+	if err := Download(ctx, &sync.WaitGroup{}, prog); err != nil {
+		t.Fatalf("Download() error: %v", err)
+	}
+	if asset.NextFetchTime == nil {
+		t.Fatal("NextFetchTime was not set for an unfinished program")
+	}
+	want := time.Date(2023, 6, 5, 12, 35, 0, 0, Location) // end + BufferMinutes
+	if !asset.NextFetchTime.Equal(want) {
+		t.Errorf("NextFetchTime = %v, want %v", asset.NextFetchTime, want)
+	}
+}
+
+func TestCheckProgramUnavailableRejectsInvalidRange(t *testing.T) {
+	// An inverted or empty range cannot produce a recording, and retrying would
+	// not help. It must fail synchronously rather than in the download goroutine.
+	Location, _ = time.LoadLocation(TZTokyo)
+	CurrentTime = time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
+
+	for _, tt := range []struct {
+		name   string
+		ft, to string
+	}{
+		{"end before start", "20230605100000", "20230605090000"},
+		{"end equals start", "20230605100000", "20230605100000"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			asset := &Asset{}
+			prog := &Prog{StationID: "FMT", Title: "Bad Range", Ft: tt.ft, To: tt.to}
+			start, err := time.ParseInLocation(DatetimeLayout, tt.ft, Location)
+			if err != nil {
+				t.Fatalf("parsing fixture start time: %v", err)
+			}
+
+			handled, err := checkProgramUnavailable(
+				context.Background(), asset, prog, start, prog.Title, prog.Ft)
+			if !handled {
+				t.Error("handled = false; an invalid range must not reach the download")
+			}
+			if err == nil {
+				t.Error("err = nil; an invalid range must be reported")
+			}
+			if asset.NextFetchTime != nil {
+				t.Errorf("NextFetchTime = %v; an invalid range must not be retried", asset.NextFetchTime)
+			}
+		})
+	}
+}

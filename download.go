@@ -140,27 +140,51 @@ func InitSemaphores(asset *Asset) {
 // so download should be skipped without logging "skip already exists"
 var errSkipAfterMove = errors.New("skip after move")
 
-// checkFutureProgram checks if the program is in the future and handles it accordingly.
-// Returns true if the program is in the future (and was handled), false otherwise.
-func checkFutureProgram(ctx context.Context, asset *Asset, prog *Prog, startTime time.Time, title, start string) (bool, error) {
-	if !startTime.After(CurrentTime) {
-		return false, nil
-	}
-
-	nextEndTime, err := time.ParseInLocation(DatetimeLayout, prog.To, Location)
+// checkProgramUnavailable reports whether the program cannot be downloaded yet.
+//
+// A program is unavailable while it has not started, and also while it is still
+// airing or has only just ended: Radiko's archive holds audio up to the present
+// moment, so downloading before the program has finished produces a recording
+// that is missing its tail. BufferMinutes is added on top of the end time to let
+// the archive catch up with the broadcast.
+//
+// Returns true if the program was handled (skipped and rescheduled).
+func checkProgramUnavailable(ctx context.Context, asset *Asset, prog *Prog, startTime time.Time, title, start string) (bool, error) {
+	endTime, err := time.ParseInLocation(DatetimeLayout, prog.To, Location)
 	if err != nil {
 		emitLogMessage(ctx, "error", fmt.Sprintf("Failed to parse end time '%s': %v", prog.To, err))
 		return true, fmt.Errorf("invalid end time format '%s': %w", prog.To, err)
 	}
 
-	// update the next fetching time
-	if asset.NextFetchTime == nil || asset.NextFetchTime.After(nextEndTime) {
-		next := nextEndTime.Add(BufferMinutes * time.Minute)
-		asset.NextFetchTime = &next
+	if !endTime.After(startTime) {
+		// Nothing can be downloaded for an inverted or empty range, and a retry
+		// would not help. Fail here rather than in the download goroutine, where
+		// the error would only reach the log.
+		emitLogMessage(ctx, "error", fmt.Sprintf(
+			"Invalid program range for [%s]%s: ft=%s to=%s", prog.StationID, title, start, prog.To))
+		return true, fmt.Errorf("invalid program range: ft=%s to=%s", start, prog.To)
 	}
 
-	msg := fmt.Sprintf("skipping future program [%s]%s (starts at %s, current time %s)",
-		prog.StationID, title, start, CurrentTime.Format(DatetimeLayout))
+	availableAt := endTime.Add(BufferMinutes * time.Minute)
+	if !CurrentTime.Before(availableAt) {
+		return false, nil
+	}
+
+	// Retry once the archive is expected to be complete instead of dropping the
+	// program, which would otherwise leave it undownloaded for this cycle.
+	if asset.NextFetchTime == nil || asset.NextFetchTime.After(availableAt) {
+		asset.NextFetchTime = &availableAt
+	}
+
+	var msg string
+	if startTime.After(CurrentTime) {
+		msg = fmt.Sprintf("skipping future program [%s]%s (starts at %s, current time %s)",
+			prog.StationID, title, start, CurrentTime.Format(DatetimeLayout))
+	} else {
+		msg = fmt.Sprintf("skipping unfinished program [%s]%s (ends at %s, available at %s, current time %s)",
+			prog.StationID, title, prog.To,
+			availableAt.Format(DatetimeLayout), CurrentTime.Format(DatetimeLayout))
+	}
 	emitLogMessage(ctx, "info", msg)
 	return true, nil
 }
@@ -243,8 +267,8 @@ func Download(
 		return fmt.Errorf("invalid start time format '%s': %w", start, err)
 	}
 
-	// Check if program is in the future
-	if handled, err := checkFutureProgram(ctx, asset, prog, startTime, title, start); err != nil {
+	// Check if the program has finished and its archive is expected to be complete
+	if handled, err := checkProgramUnavailable(ctx, asset, prog, startTime, title, start); err != nil {
 		return err
 	} else if handled {
 		return nil
