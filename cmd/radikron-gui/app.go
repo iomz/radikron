@@ -750,16 +750,7 @@ func (a *App) DeleteManualInjection(programID string) error {
 		return fmt.Errorf("program %s is not a manual injection", programID)
 	}
 
-	// Remove from schedules
-	if a.asset != nil {
-		newSchedules := make(radikron.Schedules, 0, len(a.asset.Schedules))
-		for _, prog := range a.asset.Schedules {
-			if prog.ID != programID {
-				newSchedules = append(newSchedules, prog)
-			}
-		}
-		a.asset.Schedules = newSchedules
-	}
+	a.removeScheduledProgramLocked(programID)
 
 	// Remove from pending manual downloads
 	delete(a.pendingManualDownloads, programID)
@@ -777,6 +768,20 @@ func (a *App) DeleteManualInjection(programID string) error {
 
 	runtime.LogInfo(a.ctx, fmt.Sprintf("Deleted manual injection: %s", programID))
 	return nil
+}
+
+// removeScheduledProgramLocked removes a program from schedules. Caller must hold a.mu.
+func (a *App) removeScheduledProgramLocked(programID string) {
+	if a.asset == nil {
+		return
+	}
+	schedules := a.asset.Schedules[:0]
+	for _, prog := range a.asset.Schedules {
+		if prog.ID != programID {
+			schedules = append(schedules, prog)
+		}
+	}
+	a.asset.Schedules = schedules
 }
 
 // OnShutdown is called when the app closes
@@ -1008,23 +1013,9 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 
 	// Handle past vs future programs
 	if !startTime.After(radikron.CurrentTime) {
-		// Past program - prepare for download outside the lock
-		// Create a copy of prog to avoid issues after releasing the lock
+		// Register the injection before starting its asynchronous download so a
+		// very fast completion cannot race ahead of the manual-injection state.
 		progCopy := *prog
-		a.mu.Unlock() // Release lock before download to avoid deadlock
-
-		// Download outside the lock (downloadProgramImmediately will acquire its own lock)
-		downloadErr := a.downloadPastInjectedProgram(&progCopy)
-
-		// Re-acquire lock to update schedules
-		a.mu.Lock()
-		// Even if download fails, we add to schedules so user can see what failed
-		// The failure is tracked in the manual injection for retry logic
-		if !a.asset.Schedules.HasDuplicate(&progCopy) {
-			a.asset.Schedules = append(a.asset.Schedules, &progCopy)
-		}
-
-		// Save as manual injection
 		inj := &manualInjection{
 			ProgramID:  progCopy.ID,
 			StationID:  progCopy.StationID,
@@ -1037,11 +1028,20 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 		a.manualInjections[progCopy.ID] = inj
 		a.mu.Unlock()
 
-		// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
 		if err := a.saveManualInjections(); err != nil {
 			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
-			// Continue anyway - the program is in schedules
 		}
+
+		// Start download only after the manual injection is visible and persisted.
+		downloadErr := a.downloadPastInjectedProgram(&progCopy)
+
+		// Keep failed/in-progress injections visible. A fast successful completion
+		// may already have removed the injection and schedule in its callback.
+		a.mu.Lock()
+		if a.manualInjections[progCopy.ID] != nil && !a.asset.Schedules.HasDuplicate(&progCopy) {
+			a.asset.Schedules = append(a.asset.Schedules, &progCopy)
+		}
+		a.mu.Unlock()
 
 		// If download failed, the failure is already tracked in downloadPastInjectedProgram
 		if downloadErr != nil {
@@ -1127,12 +1127,13 @@ func (a *App) removeManualInjectionAndSave(programID, stationID, title string) {
 	a.mu.Lock()
 	delete(a.manualInjections, programID)
 	delete(a.pendingManualDownloads, programID)
+	a.removeScheduledProgramLocked(programID)
 	a.mu.Unlock()
 
 	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
 	if err := a.saveManualInjections(); err != nil {
 		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after download: %v", err))
-	} else {
+	} else if a.ctx != nil {
 		runtime.LogInfo(a.ctx, fmt.Sprintf("Removed manually injected program [%s]%s after download completion", stationID, title))
 	}
 }
@@ -1164,22 +1165,10 @@ func (a *App) HandleDownloadCompletedByID(programID, stationID, title, _ string)
 
 	// Check if this program ID is in manual injections
 	_, exists := a.manualInjections[programID]
-	if exists {
-		// Remove from manual injections and pending downloads
-		delete(a.manualInjections, programID)
-		delete(a.pendingManualDownloads, programID)
-	}
 	a.mu.Unlock()
 
-	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
 	if exists {
-		if err := a.saveManualInjections(); err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after download: %v", err))
-		} else {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
-				"Removed manually injected program [%s]%s (ID: %s) after download completion",
-				stationID, title, programID))
-		}
+		a.removeManualInjectionAndSave(programID, stationID, title)
 	}
 }
 

@@ -111,6 +111,27 @@ func TestGetRadicronPath(t *testing.T) {
 	}
 }
 
+func TestWindowsUserPathRelative(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+		ok   bool
+	}{
+		{path: "/Users/iomz/Downloads/radiko", want: "Downloads/radiko", ok: true},
+		{path: `/Users/iomz\Downloads\radiko`, want: "Downloads/radiko", ok: true},
+		{path: "/Users/iomz", want: ".", ok: true},
+		{path: "/tmp/radiko", ok: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got, ok := windowsUserPathRelative(tt.path)
+			if got != tt.want || ok != tt.ok {
+				t.Errorf("windowsUserPathRelative(%q) = (%q, %t), want (%q, %t)", tt.path, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 func TestNewOutputConfig(t *testing.T) {
 	// Test without folder
 	output, err := NewOutputConfig("test-file", AudioFormatAAC, "downloads", "")

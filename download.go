@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -411,9 +412,6 @@ func downloadProgram(
 		return
 	}
 
-	// Download completed - tmp files are ready for concatenation and validation
-	emitDownloadCompleted(ctx, prog.StationID, prog.Title, prog.Ft, output.AbsPath())
-
 	concatedFile, err := concatAACFilesFromList(ctx, aacDir)
 	if err != nil {
 		log.Printf("failed to concat aac files: %s", err)
@@ -435,7 +433,8 @@ func downloadProgram(
 		return
 	}
 
-	// File saved - metadata tags have been written
+	// Report completion only after final output and metadata are saved.
+	emitDownloadCompleted(ctx, prog.StationID, prog.Title, prog.Ft, output.AbsPath())
 	emitFileSaved(ctx, prog.StationID, prog.Title, output.AbsPath())
 }
 
@@ -724,6 +723,17 @@ func GetRadikronPath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get current working directory: %w", err)
 	}
+	if runtime.GOOS == "windows" && strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") {
+		relativePath, ok := windowsUserPathRelative(path)
+		if !ok {
+			return "", fmt.Errorf("POSIX download path %q is not valid on Windows", path)
+		}
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		path = filepath.Join(homeDir, filepath.FromSlash(relativePath))
+	}
 	switch {
 	case path != "" && !filepath.IsAbs(path):
 		// Relative path - need working directory
@@ -741,6 +751,19 @@ func GetRadikronPath(path string) (string, error) {
 		}
 	}
 	return filepath.Clean(path), nil
+}
+
+// windowsUserPathRelative returns the path below /Users/<name> for a POSIX
+// home path copied from macOS. Other POSIX roots cannot be safely mapped.
+func windowsUserPathRelative(path string) (string, bool) {
+	parts := strings.Split(strings.Trim(strings.ReplaceAll(path, `\`, "/"), "/"), "/")
+	if len(parts) < 2 || parts[0] != "Users" {
+		return "", false
+	}
+	if len(parts) == 2 {
+		return ".", true
+	}
+	return strings.Join(parts[2:], "/"), true
 }
 
 // newOutputConfigFromPath creates an OutputConfig from a directory path, file base name, and format.

@@ -187,6 +187,40 @@ func TestGetSchedulesRequiresAsset(t *testing.T) {
 	}
 }
 
+func TestHandleDownloadCompletedByIDRemovesInjectionAndSchedule(t *testing.T) {
+	manualInjectionsFile := filepath.Join(t.TempDir(), "manual-injections.json")
+	app := NewApp()
+	app.manualInjectionsFile = manualInjectionsFile
+	app.asset = &radikron.Asset{
+		Schedules: radikron.Schedules{{ID: "program-1", StationID: "TBS", Title: "Test"}},
+	}
+	app.manualInjections["program-1"] = &manualInjection{
+		ProgramID: "program-1",
+		StationID: "TBS",
+		Title:     "Test",
+	}
+	app.pendingManualDownloads["program-1"] = "program-1"
+
+	app.HandleDownloadCompletedByID("program-1", "TBS", "Test", "20260820120000")
+
+	if len(app.asset.Schedules) != 0 {
+		t.Errorf("completed program remains scheduled: %+v", app.asset.Schedules)
+	}
+	if app.IsManualInjection("program-1") {
+		t.Error("completed program remains a manual injection")
+	}
+	if _, exists := app.pendingManualDownloads["program-1"]; exists {
+		t.Error("completed program remains pending")
+	}
+	data, err := os.ReadFile(manualInjectionsFile)
+	if err != nil {
+		t.Fatalf("manual injection state not saved: %v", err)
+	}
+	if string(data) != "[]" {
+		t.Errorf("saved manual injections = %s, want []", data)
+	}
+}
+
 func TestMonitoringLifecycleEmitsStateTransitions(t *testing.T) {
 	events := &recordingEventSink{}
 	started := make(chan struct{})
