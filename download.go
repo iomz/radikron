@@ -589,6 +589,7 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 		"-loglevel", "error",
 		destFile,
 	)
+	hideFFmpegConsole(cmd)
 
 	// Capture stderr for error messages
 	var stderr bytes.Buffer
