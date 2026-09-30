@@ -3,6 +3,8 @@ package radikron
 import (
 	"context"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -60,6 +62,28 @@ func TestNewAsset(t *testing.T) {
 	}
 	if len(asset.Versions.SDKs) != 10 {
 		t.Errorf("wrong number of sdks (%v instead of %v)", len(asset.Versions.SDKs), 10)
+	}
+}
+
+func TestNewAssetContinuesWhenStationCatalogUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client, err := NewRadikoHTTPClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := newAsset(client, server.URL)
+	if err != nil {
+		t.Fatalf("newAsset() failed despite optional station catalog outage: %v", err)
+	}
+	if asset.Stations == nil || len(asset.Stations) != 0 {
+		t.Fatalf("Stations = %#v, want initialized empty catalog", asset.Stations)
+	}
+	if len(asset.Versions.Apps) == 0 {
+		t.Fatal("embedded version data was not loaded")
 	}
 }
 

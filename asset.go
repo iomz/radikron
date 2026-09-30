@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"reflect"
@@ -394,6 +395,10 @@ func GetAsset(ctx context.Context) *Asset {
 }
 
 func NewAsset(client *http.Client) (*Asset, error) {
+	return newAsset(client, APIRegionFull)
+}
+
+func newAsset(client *http.Client, stationCatalogEndpoint string) (*Asset, error) {
 	asset := &Asset{}
 	// empty AreaDevices
 	asset.AreaDevices = map[string]*Device{}
@@ -444,12 +449,15 @@ func NewAsset(client *http.Client) (*Asset, error) {
 		return asset, err
 	}
 
-	// Station
-	xmlRegion, err := FetchXMLRegion()
+	// Station catalog is remote and may be temporarily unavailable. Keep the
+	// embedded asset usable so GUI startup/config loading can still complete.
+	xmlRegion, err := fetchXMLRegionWithClient(client, stationCatalogEndpoint)
 	if err != nil {
-		return asset, err
+		log.Printf("warning: failed to fetch station catalog: %v; continuing with configured stations only", err)
+		asset.Stations = Stations{}
+	} else {
+		asset.Stations = stationsFromRegion(xmlRegion)
 	}
-	asset.Stations = stationsFromRegion(xmlRegion)
 
 	// Versions
 	versionsJSON, err := VersionsJSON.Open("assets/versions.json")
