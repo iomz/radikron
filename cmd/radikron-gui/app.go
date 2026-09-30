@@ -997,13 +997,7 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 
 	// Find matching rule
 	matchedRule := a.findMatchingRuleForInjection(prog, ruleName)
-	if matchedRule != nil {
-		prog.RuleName = matchedRule.Name
-		prog.RuleFolder = matchedRule.Folder
-	} else {
-		prog.RuleName = ""
-		prog.RuleFolder = ""
-	}
+	a.applyInjectionRule(prog, matchedRule)
 
 	// Check for duplicates
 	if err := a.handleDuplicateCheckForInjection(prog, startTime); err != nil {
@@ -1013,82 +1007,72 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 
 	// Handle past vs future programs
 	if !startTime.After(radikron.CurrentTime) {
-		// Register the injection before starting its asynchronous download so a
-		// very fast completion cannot race ahead of the manual-injection state.
-		progCopy := *prog
-		inj := &manualInjection{
-			ProgramID:  progCopy.ID,
-			StationID:  progCopy.StationID,
-			Ft:         progCopy.Ft,
-			To:         progCopy.To,
-			Title:      progCopy.Title,
-			RuleName:   progCopy.RuleName,
-			RuleFolder: progCopy.RuleFolder,
-		}
-		a.manualInjections[progCopy.ID] = inj
-		a.mu.Unlock()
+		return a.injectPastProgramLocked(prog)
+	}
+	return a.injectFutureProgramLocked(prog)
+}
 
-		if err := a.saveManualInjections(); err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
-		}
+// applyInjectionRule copies matching rule metadata to the injected program.
+func (a *App) applyInjectionRule(prog *radikron.Prog, matchedRule *radikron.Rule) {
+	if matchedRule == nil {
+		prog.RuleName = ""
+		prog.RuleFolder = ""
+		return
+	}
+	prog.RuleName = matchedRule.Name
+	prog.RuleFolder = matchedRule.Folder
+}
 
-		// Start download only after the manual injection is visible and persisted.
-		downloadErr := a.downloadPastInjectedProgram(&progCopy)
-
-		// Keep failed/in-progress injections visible. A fast successful completion
-		// may already have removed the injection and schedule in its callback.
-		a.mu.Lock()
-		if a.manualInjections[progCopy.ID] != nil && !a.asset.Schedules.HasDuplicate(&progCopy) {
-			a.asset.Schedules = append(a.asset.Schedules, &progCopy)
-		}
-		a.mu.Unlock()
-
-		// If download failed, the failure is already tracked in downloadPastInjectedProgram
-		if downloadErr != nil {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
-				"Past program [%s]%s download failed, will be retried automatically",
-				progCopy.StationID, progCopy.Title))
-		}
-	} else {
-		// Future program - add to schedules and update next fetch time
-		a.asset.Schedules = append(a.asset.Schedules, prog)
-		endTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.To, radikron.Location)
-		if err == nil {
-			next := endTime.Add(radikron.BufferMinutes * time.Minute)
-			if a.asset.NextFetchTime == nil || a.asset.NextFetchTime.After(next) {
-				a.asset.NextFetchTime = &next
-			}
-		}
-
-		// Save as manual injection
-		inj := &manualInjection{
-			ProgramID:  prog.ID,
-			StationID:  prog.StationID,
-			Ft:         prog.Ft,
-			To:         prog.To,
-			Title:      prog.Title,
-			RuleName:   prog.RuleName,
-			RuleFolder: prog.RuleFolder,
-		}
-		a.manualInjections[prog.ID] = inj
-		a.mu.Unlock() // Release lock before saving to avoid deadlock
-
-		// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
-		if err := a.saveManualInjections(); err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
-			// Continue anyway - the program is in schedules
-		}
-
-		// Reload monitoring to recalculate next fetch timer
-		// This is done by triggering a reload of the monitoring loop
-		// Since we can't directly trigger it, we'll emit an event
-		// The monitoring loop will pick up the change on its next iteration
-		runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
-			"program": prog.Title,
-			"station": prog.StationID,
-		})
+// injectPastProgramLocked registers and downloads a past program. Caller holds a.mu.
+func (a *App) injectPastProgramLocked(prog *radikron.Prog) error {
+	progCopy := *prog
+	a.manualInjections[progCopy.ID] = &manualInjection{
+		ProgramID: progCopy.ID, StationID: progCopy.StationID, Ft: progCopy.Ft,
+		To: progCopy.To, Title: progCopy.Title, RuleName: progCopy.RuleName,
+		RuleFolder: progCopy.RuleFolder,
+	}
+	a.mu.Unlock()
+	if err := a.saveManualInjections(); err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
 	}
 
+	downloadErr := a.downloadPastInjectedProgram(&progCopy)
+	a.mu.Lock()
+	if a.manualInjections[progCopy.ID] != nil && !a.asset.Schedules.HasDuplicate(&progCopy) {
+		a.asset.Schedules = append(a.asset.Schedules, &progCopy)
+	}
+	a.mu.Unlock()
+	if downloadErr != nil {
+		runtime.LogInfo(a.ctx, fmt.Sprintf(
+			"Past program [%s]%s download failed, will be retried automatically",
+			progCopy.StationID, progCopy.Title))
+	}
+	return nil
+}
+
+// injectFutureProgramLocked schedules a future program. Caller holds a.mu.
+func (a *App) injectFutureProgramLocked(prog *radikron.Prog) error {
+	a.asset.Schedules = append(a.asset.Schedules, prog)
+	endTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.To, radikron.Location)
+	if err == nil {
+		next := endTime.Add(radikron.BufferMinutes * time.Minute)
+		if a.asset.NextFetchTime == nil || a.asset.NextFetchTime.After(next) {
+			a.asset.NextFetchTime = &next
+		}
+	}
+	a.manualInjections[prog.ID] = &manualInjection{
+		ProgramID: prog.ID, StationID: prog.StationID, Ft: prog.Ft,
+		To: prog.To, Title: prog.Title, RuleName: prog.RuleName,
+		RuleFolder: prog.RuleFolder,
+	}
+	a.mu.Unlock()
+	if err := a.saveManualInjections(); err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
+	}
+	runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
+		"program": prog.Title,
+		"station": prog.StationID,
+	})
 	return nil
 }
 

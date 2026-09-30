@@ -1,6 +1,7 @@
 package radikron
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -37,7 +38,11 @@ func fetchXMLRegionWithClient(client *http.Client, endpoint string) (XMLRegion, 
 		return XMLRegion{}, fmt.Errorf("HTTP client is nil")
 	}
 	region := XMLRegion{}
-	resp, err := client.Get(endpoint)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return region, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return region, err
 	}

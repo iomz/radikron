@@ -1,6 +1,7 @@
 package radikron
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -40,7 +41,11 @@ func currentAreaIDWithClient(client *http.Client, endpoint string) (string, erro
 	if client == nil {
 		return "", errors.New("HTTP client is nil")
 	}
-	resp, err := client.Get(endpoint)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}

@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const aacConcatBatchSize = 100
+
 func concatAACFilesFromList(ctx context.Context, resourcesDir string) (string, error) {
 	entries, err := os.ReadDir(resourcesDir)
 	if err != nil {
@@ -28,9 +30,9 @@ func concatAACFilesFromList(ctx context.Context, resourcesDir string) (string, e
 }
 
 func concatAACFiles(ctx context.Context, files []string, tempDir, output string) error {
-	if len(files) > 100 {
-		first := files[:100]
-		rest := files[100:]
+	if len(files) > aacConcatBatchSize {
+		first := files[:aacConcatBatchSize]
+		rest := files[aacConcatBatchSize:]
 		tmp, err := os.CreateTemp(tempDir, "tmp-concatenated-*.aac")
 		if err != nil {
 			return err

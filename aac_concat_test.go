@@ -10,16 +10,21 @@ import (
 	"testing"
 )
 
+const aacConcatTestFileCount = 205
+
 func TestConcatAACFilesRemovesConsumedBatches(t *testing.T) {
 	tempDir := t.TempDir()
 	binDir := t.TempDir()
 	ffmpeg := filepath.Join(binDir, "ffmpeg")
-	if err := os.WriteFile(ffmpeg, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+	if err := os.WriteFile(ffmpeg, []byte("#!/bin/sh\nexit 0\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ffmpeg, 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)
 
-	files := make([]string, 205)
+	files := make([]string, aacConcatTestFileCount)
 	for i := range files {
 		files[i] = filepath.Join(tempDir, fmt.Sprintf("chunk-%03d.aac", i))
 		if err := os.WriteFile(files[i], []byte("chunk"), 0600); err != nil {

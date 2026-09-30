@@ -286,7 +286,6 @@ func main() {
 	// Setup signal handling
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(quit)
 
 	// Create done channel for graceful shutdown
 	done := make(chan struct{})
@@ -319,8 +318,8 @@ func main() {
 	log.Println("exit once all the downloads complete")
 	wg.Wait()
 	log.Println("exiting radikron")
+	signal.Stop(quit)
 	if loopErr != nil {
-		signal.Stop(quit)
 		log.Fatalf("fatal error in main loop: %v", loopErr)
 	}
 }

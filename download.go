@@ -32,9 +32,10 @@ var (
 )
 
 const (
-	timeshiftDebugEnv         = "RADIKRON_TIMESHIFT_DEBUG"
-	timeshiftChunklistDumpEnv = "RADIKRON_TIMESHIFT_CHUNKLIST_DUMP"
-	timeshiftDiagnosticPerm   = 0600
+	timeshiftDebugEnv              = "RADIKRON_TIMESHIFT_DEBUG"
+	timeshiftChunklistDumpEnv      = "RADIKRON_TIMESHIFT_CHUNKLIST_DUMP"
+	timeshiftDiagnosticPerm        = 0600
+	windowsUserPathPrefixPartCount = 2
 )
 
 // emitDownloadStarted emits a download started event if emitter is available, otherwise logs it
@@ -787,13 +788,13 @@ func GetRadikronPath(path string) (string, error) {
 // home path copied from macOS. Other POSIX roots cannot be safely mapped.
 func windowsUserPathRelative(path string) (string, bool) {
 	parts := strings.Split(strings.Trim(strings.ReplaceAll(path, `\`, "/"), "/"), "/")
-	if len(parts) < 2 || parts[0] != "Users" {
+	if len(parts) < windowsUserPathPrefixPartCount || parts[0] != "Users" {
 		return "", false
 	}
-	if len(parts) == 2 {
+	if len(parts) == windowsUserPathPrefixPartCount {
 		return ".", true
 	}
-	return strings.Join(parts[2:], "/"), true
+	return strings.Join(parts[windowsUserPathPrefixPartCount:], "/"), true
 }
 
 // newOutputConfigFromPath creates an OutputConfig from a directory path, file base name, and format.
@@ -1048,10 +1049,6 @@ func extractChunklist(input io.Reader) ([]string, error) {
 		}
 	}
 	return chunklist, nil
-}
-
-func parseChunklistFromM3U8(uri string) ([]string, error) {
-	return parseChunklistFromM3U8WithClient(context.Background(), downloadingHTTPClient, uri)
 }
 
 func parseChunklistFromM3U8WithClient(ctx context.Context, client *http.Client, uri string) ([]string, error) {
