@@ -14,9 +14,6 @@ import (
 	"reflect"
 	"strconv"
 	"time"
-
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 )
 
 var (
@@ -44,7 +41,7 @@ type Asset struct {
 	AreaDevices       Devices
 	Base64Key         string
 	Coordinates       Coordinates
-	DefaultClient     *radiko.Client
+	DefaultClient     *http.Client
 	// MinimumOutputSize in bytes for the downloaded audio
 	MinimumOutputSize int64
 	NextFetchTime     *time.Time
@@ -396,7 +393,7 @@ func GetAsset(ctx context.Context) *Asset {
 	return asset
 }
 
-func NewAsset(client *radiko.Client) (*Asset, error) {
+func NewAsset(client *http.Client) (*Asset, error) {
 	asset := &Asset{}
 	// empty AreaDevices
 	asset.AreaDevices = map[string]*Device{}
@@ -409,7 +406,7 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 	// default client
 	asset.DefaultClient = client
 	// empty FileFormat
-	asset.OutputFormat = radigo.AudioFormatAAC
+	asset.OutputFormat = AudioFormatAAC
 	// default DownloadDir
 	asset.DownloadDir = "radiko"
 	// default concurrency values

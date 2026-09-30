@@ -22,8 +22,6 @@ import (
 	"time"
 
 	"github.com/bogem/id3v2"
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 )
 
 var (
@@ -115,7 +113,7 @@ func TestGetRadicronPath(t *testing.T) {
 
 func TestNewOutputConfig(t *testing.T) {
 	// Test without folder
-	output, err := NewOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
+	output, err := NewOutputConfig("test-file", AudioFormatAAC, "downloads", "")
 	if err != nil {
 		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
@@ -125,24 +123,24 @@ func TestNewOutputConfig(t *testing.T) {
 	if output.FileBaseName != "test-file" {
 		t.Errorf("NewOutputConfig FileBaseName => %v, want test-file", output.FileBaseName)
 	}
-	if output.FileFormat != radigo.AudioFormatAAC {
-		t.Errorf("NewOutputConfig FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatAAC)
+	if output.FileFormat != AudioFormatAAC {
+		t.Errorf("NewOutputConfig FileFormat => %v, want %v", output.FileFormat, AudioFormatAAC)
 	}
 
 	// Test with folder
-	output, err = NewOutputConfig("test-file", radigo.AudioFormatMP3, "downloads", "citypop")
+	output, err = NewOutputConfig("test-file", AudioFormatMP3, "downloads", "citypop")
 	if err != nil {
 		t.Fatalf("NewOutputConfig with folder failed: %v", err)
 	}
 	if output == nil {
 		t.Fatal("NewOutputConfig with folder returned nil")
 	}
-	if output.FileFormat != radigo.AudioFormatMP3 {
-		t.Errorf("NewOutputConfig FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatMP3)
+	if output.FileFormat != AudioFormatMP3 {
+		t.Errorf("NewOutputConfig FileFormat => %v, want %v", output.FileFormat, AudioFormatMP3)
 	}
 
 	// Test with custom download directory
-	output, err = NewOutputConfig("test-file", radigo.AudioFormatAAC, "my-downloads", "")
+	output, err = NewOutputConfig("test-file", AudioFormatAAC, "my-downloads", "")
 	if err != nil {
 		t.Errorf("NewOutputConfig with custom dir failed: %v", err)
 	}
@@ -202,13 +200,13 @@ func TestHandleDuplicate_NonexistentFile(t *testing.T) {
 	_, cleanup := setupHandleDuplicateTest(t)
 	defer cleanup()
 
-	output, err := NewOutputConfig("nonexistent-file", radigo.AudioFormatAAC, "downloads", "")
+	output, err := NewOutputConfig("nonexistent-file", AudioFormatAAC, "downloads", "")
 	if err != nil {
 		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
-		ctx, "nonexistent-file", radigo.AudioFormatAAC, "downloads", "",
+		ctx, "nonexistent-file", AudioFormatAAC, "downloads", "",
 		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for non-existent file: %v", err)
@@ -226,12 +224,12 @@ func TestHandleDuplicate_ExistingInDefaultFolder(t *testing.T) {
 	}
 	file.Close()
 
-	output, err := NewOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "")
+	output, err := NewOutputConfig("test-file", AudioFormatAAC, "downloads", "")
 	if err != nil {
 		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
-	err = handleDuplicate(ctx, "test-file", radigo.AudioFormatAAC, "downloads", "", output, Rules{}, "TEST", "Test Program", "20230605100000")
+	err = handleDuplicate(ctx, "test-file", AudioFormatAAC, "downloads", "", output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for existing file in default folder: %v", err)
 	}
@@ -256,11 +254,11 @@ func TestHandleDuplicate_MoveToConfiguredFolder(t *testing.T) {
 	}
 	file.Close()
 
-	output := newOutputConfigFromPath(citypopDir, "move-test", radigo.AudioFormatAAC)
+	output := newOutputConfigFromPath(citypopDir, "move-test", AudioFormatAAC)
 	ctx := context.Background()
 	// Use absolute path for downloadDir to match the test directory
 	err = handleDuplicate(
-		ctx, "move-test", radigo.AudioFormatAAC, downloadsDir, "citypop",
+		ctx, "move-test", AudioFormatAAC, downloadsDir, "citypop",
 		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	// errSkipAfterMove is a sentinel error indicating successful move, not a real error
 	if err != nil && !errors.Is(err, errSkipAfterMove) {
@@ -292,13 +290,13 @@ func TestHandleDuplicate_ExistingInConfiguredFolder(t *testing.T) {
 	}
 	file.Close()
 
-	output, err := NewOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("move-test", AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
 		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
-		ctx, "move-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		ctx, "move-test", AudioFormatAAC, "downloads", "citypop",
 		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error for existing file in configured folder: %v", err)
@@ -331,13 +329,13 @@ func TestHandleDuplicate_ConflictBothLocations(t *testing.T) {
 	}
 	file.Close()
 
-	output, err := NewOutputConfig("conflict-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("conflict-test", AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
 		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
-		ctx, "conflict-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		ctx, "conflict-test", AudioFormatAAC, "downloads", "citypop",
 		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error when file exists in both locations: %v", err)
@@ -381,13 +379,13 @@ func TestHandleDuplicate_ChecksAllConfiguredFolders(t *testing.T) {
 	}
 
 	// Try to handle duplicate with citypop as configured folder, but file exists in jazz
-	output, err := NewOutputConfig("test-file", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("test-file", AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
 		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
 	ctx := context.Background()
 	err = handleDuplicate(
-		ctx, "test-file", radigo.AudioFormatAAC, "downloads", "citypop",
+		ctx, "test-file", AudioFormatAAC, "downloads", "citypop",
 		output, rules, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error: %v", err)
@@ -417,7 +415,7 @@ func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
 	}
 
 	// Create output config for configured folder using absolute path
-	output := newOutputConfigFromPath(configuredDir, "target-exists-test", radigo.AudioFormatAAC)
+	output := newOutputConfigFromPath(configuredDir, "target-exists-test", AudioFormatAAC)
 
 	// Create target file in configured folder (simulating edge case where target exists)
 	// This tests the edge case handling at line 445-451 in handleDuplicate
@@ -432,7 +430,7 @@ func TestHandleDuplicate_TargetExistsBeforeMove(t *testing.T) {
 	// between the initial check and the move attempt
 	ctx := context.Background()
 	err = handleDuplicate(
-		ctx, "target-exists-test", radigo.AudioFormatAAC, "downloads", "citypop",
+		ctx, "target-exists-test", AudioFormatAAC, "downloads", "citypop",
 		output, Rules{}, "TEST", "Test Program", "20230605100000")
 	if err != nil {
 		t.Errorf("handleDuplicate should not return error when target exists: %v", err)
@@ -461,7 +459,7 @@ func TestWriteID3TagMP3(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Test MP3 format
-	testWriteID3Tag(t, tmpDir, radigo.AudioFormatMP3, "test-mp3")
+	testWriteID3Tag(t, tmpDir, AudioFormatMP3, "test-mp3")
 }
 
 func TestWriteID3TagAAC(t *testing.T) {
@@ -473,12 +471,12 @@ func TestWriteID3TagAAC(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Test AAC format
-	testWriteID3Tag(t, tmpDir, radigo.AudioFormatAAC, "test-aac")
+	testWriteID3Tag(t, tmpDir, AudioFormatAAC, "test-aac")
 }
 
 func testWriteID3Tag(t *testing.T, tmpDir, fileFormat, fileBaseName string) {
 	// Create output config
-	output := &radigo.OutputConfig{
+	output := &OutputConfig{
 		DirFullPath:  tmpDir,
 		FileBaseName: fileBaseName,
 		FileFormat:   fileFormat,
@@ -582,10 +580,10 @@ func TestWriteID3TagWithoutRuleName(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	output := &radigo.OutputConfig{
+	output := &OutputConfig{
 		DirFullPath:  tmpDir,
 		FileBaseName: "test-no-rule",
-		FileFormat:   radigo.AudioFormatMP3,
+		FileFormat:   AudioFormatMP3,
 	}
 
 	// Create a minimal file
@@ -868,7 +866,7 @@ func TestMoveFile_ErrorCases(t *testing.T) {
 
 func TestNewOutputConfigFromPath(t *testing.T) {
 	// Test basic functionality
-	output := newOutputConfigFromPath("/tmp/test", "file-name", radigo.AudioFormatAAC)
+	output := newOutputConfigFromPath("/tmp/test", "file-name", AudioFormatAAC)
 	if output == nil {
 		t.Fatal("newOutputConfigFromPath returned nil")
 	}
@@ -878,14 +876,14 @@ func TestNewOutputConfigFromPath(t *testing.T) {
 	if output.FileBaseName != "file-name" {
 		t.Errorf("FileBaseName => %v, want file-name", output.FileBaseName)
 	}
-	if output.FileFormat != radigo.AudioFormatAAC {
-		t.Errorf("FileFormat => %v, want %v", output.FileFormat, radigo.AudioFormatAAC)
+	if output.FileFormat != AudioFormatAAC {
+		t.Errorf("FileFormat => %v, want %v", output.FileFormat, AudioFormatAAC)
 	}
 
 	// Test with MP3 format
-	output2 := newOutputConfigFromPath("/tmp/test2", "file-name2", radigo.AudioFormatMP3)
-	if output2.FileFormat != radigo.AudioFormatMP3 {
-		t.Errorf("FileFormat => %v, want %v", output2.FileFormat, radigo.AudioFormatMP3)
+	output2 := newOutputConfigFromPath("/tmp/test2", "file-name2", AudioFormatMP3)
+	if output2.FileFormat != AudioFormatMP3 {
+		t.Errorf("FileFormat => %v, want %v", output2.FileFormat, AudioFormatMP3)
 	}
 }
 
@@ -894,7 +892,7 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Test: File doesn't exist
-	output := newOutputConfigFromPath(tmpDir, "nonexistent", radigo.AudioFormatAAC)
+	output := newOutputConfigFromPath(tmpDir, "nonexistent", AudioFormatAAC)
 	prog := &Prog{
 		Title: "Test Title",
 		Pfm:   "Test Artist",
@@ -917,7 +915,7 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 			t.Fatalf("Failed to create test directory: %v", err)
 		}
 
-		output2 := newOutputConfigFromPath(tmpDir, "dir", radigo.AudioFormatAAC)
+		output2 := newOutputConfigFromPath(tmpDir, "dir", AudioFormatAAC)
 		err = writeID3Tag(output2, prog)
 		if err == nil {
 			t.Error("writeID3Tag should return error when path is a directory")
@@ -963,7 +961,6 @@ func TestGetTimeshiftChunklist(t *testing.T) { //nolint:gocyclo // transport ass
 	originalLogWriter := log.Writer()
 	t.Cleanup(func() {
 		http.DefaultTransport = originalTransport
-		radiko.SetHTTPClient(&http.Client{Timeout: 120 * time.Second})
 		log.SetOutput(originalLogWriter)
 	})
 
@@ -1030,11 +1027,10 @@ func TestGetTimeshiftChunklist(t *testing.T) { //nolint:gocyclo // transport ass
 		}, nil
 	})
 	http.DefaultTransport = transport
-	radiko.SetHTTPClient(&http.Client{Transport: transport})
 
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
-		t.Fatalf("radiko.New failed: %v", err)
+		t.Fatalf("NewRadikoHTTPClient failed: %v", err)
 	}
 	asset := &Asset{
 		DefaultClient: client,
@@ -1343,7 +1339,7 @@ func TestValidateAndCleanupOutputFile(t *testing.T) {
 	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
 
 	// Test 1: File doesn't exist (should return false)
-	output := newOutputConfigFromPath(downloadsDir, "nonexistent", radigo.AudioFormatAAC)
+	output := newOutputConfigFromPath(downloadsDir, "nonexistent", AudioFormatAAC)
 	shouldRetry := validateAndCleanupOutputFile(ctx, output)
 	if shouldRetry {
 		t.Error("validateAndCleanupOutputFile should return false when file doesn't exist")
@@ -1389,7 +1385,7 @@ func TestValidateAndCleanupOutputFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create small file: %v", err)
 	}
-	output2 := newOutputConfigFromPath(downloadsDir, "small2", radigo.AudioFormatAAC)
+	output2 := newOutputConfigFromPath(downloadsDir, "small2", AudioFormatAAC)
 
 	// Make file read-only to prevent deletion (on Unix)
 	if runtime.GOOS != osWindows {
@@ -1426,7 +1422,7 @@ func TestWriteOutputFile(t *testing.T) {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
 
-	output := newOutputConfigFromPath(downloadsDir, "test-output", radigo.AudioFormatAAC)
+	output := newOutputConfigFromPath(downloadsDir, "test-output", AudioFormatAAC)
 	err = writeOutputFile(ctx, sourceFile, output)
 	if err != nil {
 		t.Errorf("writeOutputFile failed for AAC: %v", err)
@@ -1445,7 +1441,7 @@ func TestWriteOutputFile(t *testing.T) {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
 
-	output2 := newOutputConfigFromPath(downloadsDir, "test-output2", radigo.AudioFormatMP3)
+	output2 := newOutputConfigFromPath(downloadsDir, "test-output2", AudioFormatMP3)
 	err = writeOutputFile(ctx, sourceFile2, output2)
 	if err != nil {
 		// ffmpeg might not be available, that's okay
@@ -1460,7 +1456,7 @@ func TestWriteOutputFile(t *testing.T) {
 	}
 
 	// Test invalid format
-	output3 := &radigo.OutputConfig{
+	output3 := &OutputConfig{
 		DirFullPath:  downloadsDir,
 		FileBaseName: "test-invalid",
 		FileFormat:   "invalid",
@@ -1483,7 +1479,7 @@ func TestDownload_InvalidTimeFormat(t *testing.T) {
 
 	// Create context with asset
 	asset := &Asset{
-		OutputFormat:      radigo.AudioFormatAAC,
+		OutputFormat:      AudioFormatAAC,
 		DownloadDir:       "downloads",
 		MinimumOutputSize: 1024,
 		Rules:             Rules{},
@@ -1518,7 +1514,7 @@ func TestDownload_FutureProgram(t *testing.T) {
 
 	// Create context with asset
 	asset := &Asset{
-		OutputFormat:      radigo.AudioFormatAAC,
+		OutputFormat:      AudioFormatAAC,
 		DownloadDir:       "downloads",
 		MinimumOutputSize: 1024,
 		Rules:             Rules{},
@@ -1583,7 +1579,7 @@ func TestDownload_DuplicateProgram(t *testing.T) {
 		To:        "20230605110000",
 	}
 	asset := &Asset{
-		OutputFormat:      radigo.AudioFormatAAC,
+		OutputFormat:      AudioFormatAAC,
 		DownloadDir:       "downloads",
 		MinimumOutputSize: 1024,
 		Rules:             Rules{},
@@ -1622,7 +1618,7 @@ func TestDownload_InvalidEndTime(t *testing.T) {
 
 	// Create context with asset
 	asset := &Asset{
-		OutputFormat:      radigo.AudioFormatAAC,
+		OutputFormat:      AudioFormatAAC,
 		DownloadDir:       "downloads",
 		MinimumOutputSize: 1024,
 		Rules:             Rules{},
@@ -2120,7 +2116,7 @@ func TestHandleMoveFromDefaultFolder_TargetExists(t *testing.T) {
 	}
 
 	// Create target file (simulating race condition)
-	output := newOutputConfigFromPath(citypopDir, "move-test", radigo.AudioFormatAAC)
+	output := newOutputConfigFromPath(citypopDir, "move-test", AudioFormatAAC)
 	targetFile := output.AbsPath()
 	err = os.WriteFile(targetFile, []byte("existing content"), 0600)
 	if err != nil {
@@ -2156,7 +2152,7 @@ func TestHandleMoveFromDefaultFolder_MoveErrorTargetAppears(t *testing.T) {
 		t.Fatalf("Failed to create default file: %v", err)
 	}
 
-	output, err := NewOutputConfig("move-test", radigo.AudioFormatAAC, "downloads", "citypop")
+	output, err := NewOutputConfig("move-test", AudioFormatAAC, "downloads", "citypop")
 	if err != nil {
 		t.Fatalf("NewOutputConfig failed: %v", err)
 	}
@@ -2342,7 +2338,7 @@ func TestDownloadSkipsProgramStillAiring(t *testing.T) {
 	CurrentTime = time.Date(2023, 6, 5, 12, 0, 0, 0, Location)
 
 	asset := &Asset{
-		OutputFormat:      radigo.AudioFormatAAC,
+		OutputFormat:      AudioFormatAAC,
 		DownloadDir:       t.TempDir(),
 		MinimumOutputSize: 1024,
 		Rules:             Rules{},

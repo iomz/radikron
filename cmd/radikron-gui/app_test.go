@@ -14,7 +14,6 @@ import (
 
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
-	"github.com/yyoshiki41/radigo"
 )
 
 type recordedEvent struct {
@@ -47,7 +46,7 @@ func testConfig(downloadDir string) *config.Config {
 	return &config.Config{
 		AreaID:                    radikron.DefaultArea,
 		ExtraStations:             []string{"TBS"},
-		FileFormat:                radigo.AudioFormatAAC,
+		FileFormat:                radikron.AudioFormatAAC,
 		MinimumOutputSize:         radikron.Kilobytes * radikron.Kilobytes,
 		DownloadDir:               downloadDir,
 		Rules:                     radikron.Rules{},
@@ -161,7 +160,7 @@ func TestGetSchedulesFiltersDownloadedInvalidAndUnsupportedPrograms(t *testing.T
 
 	app := NewApp()
 	app.asset = &radikron.Asset{
-		OutputFormat: radigo.AudioFormatAAC,
+		OutputFormat: radikron.AudioFormatAAC,
 		DownloadDir:  dir,
 		Schedules: radikron.Schedules{
 			{ID: "pending", StationID: "TBS", Title: "Pending", Ft: "20260820130000"},

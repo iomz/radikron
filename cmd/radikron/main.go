@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
-	"github.com/yyoshiki41/go-radiko"
 )
 
 var version = "(devel)"
@@ -29,7 +29,7 @@ type Downloader interface {
 }
 
 // AssetCreator is a function type for creating assets
-type AssetCreator func(client *radiko.Client) (*radikron.Asset, error)
+type AssetCreator func(client *http.Client) (*radikron.Asset, error)
 
 // TimeProvider provides the current time
 type TimeProvider func() time.Time
@@ -183,7 +183,7 @@ func runIteration(
 func runLoopIteration(
 	wg *sync.WaitGroup,
 	configFileName string,
-	client *radiko.Client,
+	client *http.Client,
 	assetCreator AssetCreator,
 	fetcher ProgramFetcher,
 	downloader Downloader,
@@ -213,7 +213,7 @@ func runLoopIteration(
 func run(
 	wg *sync.WaitGroup,
 	configFileName string,
-	client *radiko.Client,
+	client *http.Client,
 	assetCreator AssetCreator,
 	fetcher ProgramFetcher,
 	downloader Downloader,
@@ -250,9 +250,9 @@ func run(
 
 // runWithDefaults runs with default dependencies (for production use)
 func runWithDefaults(wg *sync.WaitGroup, configFileName string, done <-chan struct{}) error {
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
-		return fmt.Errorf("failed to create radiko client: %w", err)
+		return fmt.Errorf("failed to create HTTP client: %w", err)
 	}
 
 	fetcher := &radikronProgramFetcher{}

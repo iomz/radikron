@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +17,6 @@ import (
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 )
 
 const (
@@ -70,7 +69,7 @@ func (wailsEventSink) Emit(ctx context.Context, eventName string, data any) {
 type App struct {
 	ctx                    context.Context
 	asset                  *radikron.Asset
-	client                 *radiko.Client
+	client                 *http.Client
 	config                 *config.Config
 	configFile             string
 	manualInjectionsFile   string
@@ -124,7 +123,7 @@ func getAppConfigDir() (string, error) {
 // createDefaultConfig creates a default configuration file
 func createDefaultConfig(configPath string) (*config.Config, error) {
 	// Get current area ID
-	currentAreaID, err := radiko.AreaID()
+	currentAreaID, err := radikron.CurrentAreaID()
 	if err != nil {
 		currentAreaID = radikron.DefaultArea
 	}
@@ -152,7 +151,7 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 		AreaID:                    currentAreaID,
 		ExtraStations:             []string{},
 		IgnoreStations:            []string{},
-		FileFormat:                radigo.AudioFormatAAC,
+		FileFormat:                radikron.AudioFormatAAC,
 		MinimumOutputSize:         radikron.DefaultMinimumOutputSize * radikron.Kilobytes * radikron.Kilobytes,
 		DownloadDir:               downloadDir,
 		Rules:                     radikron.Rules{},
@@ -185,10 +184,10 @@ func (a *App) OnStartup(ctx context.Context) {
 		a.manualInjectionsFile = filepath.Join(appConfigDir, "manual-injections.json")
 	}
 
-	// Initialize radiko client
-	client, err := radiko.New("")
+	// Initialize the HTTP client used for Radiko requests.
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to create radiko client: %v", err))
+		runtime.LogError(ctx, fmt.Sprintf("Failed to create HTTP client: %v", err))
 		return
 	}
 	a.client = client

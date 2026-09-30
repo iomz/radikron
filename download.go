@@ -21,7 +21,6 @@ import (
 
 	"github.com/bogem/id3v2"
 	"github.com/grafov/m3u8"
-	"github.com/yyoshiki41/radigo"
 )
 
 var (
@@ -203,7 +202,7 @@ func checkDuplicateInSchedules(ctx context.Context, asset *Asset, prog *Prog, ti
 }
 
 // setupOutputConfig creates and sets up the output configuration.
-func setupOutputConfig(ctx context.Context, asset *Asset, prog *Prog, startTime time.Time) (*radigo.OutputConfig, error) {
+func setupOutputConfig(ctx context.Context, asset *Asset, prog *Prog, startTime time.Time) (*OutputConfig, error) {
 	fileBaseName := fmt.Sprintf(
 		"%s_%s_%s",
 		startTime.In(Location).Format(OutputDatetimeLayout),
@@ -232,7 +231,7 @@ func setupOutputConfig(ctx context.Context, asset *Asset, prog *Prog, startTime 
 
 // checkFileExists checks if the output file already exists and handles it.
 // Returns true if file exists (and was handled), false otherwise.
-func checkFileExists(ctx context.Context, output *radigo.OutputConfig, prog *Prog, start string) bool {
+func checkFileExists(ctx context.Context, output *OutputConfig, prog *Prog, start string) bool {
 	if !output.IsExist() {
 		return false
 	}
@@ -389,7 +388,7 @@ func downloadProgram(
 	ctx context.Context, // the context for the request
 	wg *sync.WaitGroup, // the wg to notify
 	prog *Prog, // the program metadata
-	output *radigo.OutputConfig, // the file configuration
+	output *OutputConfig, // the file configuration
 ) {
 	defer wg.Done()
 	var err error
@@ -415,7 +414,7 @@ func downloadProgram(
 	// Download completed - tmp files are ready for concatenation and validation
 	emitDownloadCompleted(ctx, prog.StationID, prog.Title, prog.Ft, output.AbsPath())
 
-	concatedFile, err := radigo.ConcatAACFilesFromList(ctx, aacDir)
+	concatedFile, err := concatAACFilesFromList(ctx, aacDir)
 	if err != nil {
 		log.Printf("failed to concat aac files: %s", err)
 		return
@@ -442,11 +441,11 @@ func downloadProgram(
 
 // writeOutputFile writes the concatenated file to the output location,
 // handling format conversion (AAC to MP3) if needed.
-func writeOutputFile(ctx context.Context, concatedFile string, output *radigo.OutputConfig) error {
+func writeOutputFile(ctx context.Context, concatedFile string, output *OutputConfig) error {
 	switch output.AudioFormat() {
-	case radigo.AudioFormatAAC:
+	case AudioFormatAAC:
 		return moveFile(concatedFile, output.AbsPath())
-	case radigo.AudioFormatMP3:
+	case AudioFormatMP3:
 		// Limit concurrent encoding operations to prevent resource exhaustion
 		encodingSem <- struct{}{}
 		defer func() { <-encodingSem }()
@@ -463,7 +462,7 @@ func writeOutputFile(ctx context.Context, concatedFile string, output *radigo.Ou
 
 // validateAndCleanupOutputFile validates the output file size and removes it
 // if it's too small, scheduling a retry. Returns true if a retry was scheduled.
-func validateAndCleanupOutputFile(ctx context.Context, output *radigo.OutputConfig) bool {
+func validateAndCleanupOutputFile(ctx context.Context, output *OutputConfig) bool {
 	info, err := os.Stat(output.AbsPath())
 	if err != nil {
 		log.Printf("failed to stat the output file: %s", err)
@@ -745,8 +744,8 @@ func GetRadikronPath(path string) (string, error) {
 }
 
 // newOutputConfigFromPath creates an OutputConfig from a directory path, file base name, and format.
-func newOutputConfigFromPath(dirPath, fileBaseName, fileFormat string) *radigo.OutputConfig {
-	return &radigo.OutputConfig{
+func newOutputConfigFromPath(dirPath, fileBaseName, fileFormat string) *OutputConfig {
+	return &OutputConfig{
 		DirFullPath:  dirPath,
 		FileBaseName: fileBaseName,
 		FileFormat:   fileFormat,
@@ -834,7 +833,7 @@ func checkConfiguredFoldersForDuplicate(
 func handleMoveFromDefaultFolder(
 	ctx context.Context,
 	source, targetPath string,
-	output *radigo.OutputConfig,
+	output *OutputConfig,
 	stationID, title, startTime string,
 ) error {
 	// Check if target already exists (edge case: file appeared between checks or race condition)
@@ -868,7 +867,7 @@ func handleMoveFromDefaultFolder(
 func handleDuplicate(
 	ctx context.Context,
 	fileBaseName, fileFormat, downloadDir, configuredFolder string,
-	output *radigo.OutputConfig,
+	output *OutputConfig,
 	rules Rules,
 	stationID, title, startTime string,
 ) error {
@@ -910,7 +909,7 @@ func handleDuplicate(
 }
 
 // NewOutputConfig prepares the outputdir
-func NewOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*radigo.OutputConfig, error) {
+func NewOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*OutputConfig, error) {
 	basePath := downloadDir
 	if folder != "" {
 		basePath = filepath.Join(downloadDir, folder)
@@ -920,7 +919,7 @@ func NewOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*rad
 		return nil, err
 	}
 
-	return &radigo.OutputConfig{
+	return &OutputConfig{
 		DirFullPath:  fullPath,
 		FileBaseName: fileBaseName,
 		FileFormat:   fileFormat,
@@ -940,7 +939,7 @@ func tempAACDir() (string, error) {
 	return aacDir, nil
 }
 
-func writeID3Tag(output *radigo.OutputConfig, prog *Prog) error {
+func writeID3Tag(output *OutputConfig, prog *Prog) error {
 	tag, err := id3v2.Open(output.AbsPath(), id3v2.Options{Parse: true})
 	if err != nil {
 		return fmt.Errorf("error while opening the output file: %w", err)

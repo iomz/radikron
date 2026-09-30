@@ -11,14 +11,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/yyoshiki41/go-radiko"
 )
 
 func TestNewAsset(t *testing.T) {
 	const nAreas = 47
 	const nRegions = 7
 	const minimumStations = 100
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -65,7 +64,7 @@ func TestNewAsset(t *testing.T) {
 }
 
 func TestGenerateGPSForAreaID(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -104,7 +103,7 @@ func TestGenerateGPSForAreaID(t *testing.T) {
 }
 
 func TestGetAreaIDByStationID(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -136,7 +135,7 @@ func TestGetAreaIDByStationID(t *testing.T) {
 }
 
 func TestGetStationIDsByAreaID(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -154,6 +153,7 @@ func TestGetStationIDsByAreaID(t *testing.T) {
 				"INT",
 				"JORF",
 				"LFR",
+				"OC1",
 				"QRR",
 				"RN1",
 				"RN2",
@@ -175,7 +175,7 @@ func TestGetStationIDsByAreaID(t *testing.T) {
 }
 
 func TestGetPartialKey(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -192,7 +192,7 @@ func TestGetPartialKey(t *testing.T) {
 }
 
 func TestNewDevice(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -272,7 +272,7 @@ func TestSchedulesHasDuplicateEmpty(t *testing.T) {
 }
 
 func TestAddExtraStations(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -300,7 +300,7 @@ func TestAddExtraStations(t *testing.T) {
 }
 
 func TestRemoveIgnoreStations(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -331,7 +331,7 @@ func TestRemoveIgnoreStations(t *testing.T) {
 }
 
 func TestLoadAvailableStations(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -340,7 +340,7 @@ func TestLoadAvailableStations(t *testing.T) {
 	asset.LoadAvailableStations("JP13")
 
 	expectedStations := []string{
-		"FMJ", "FMT", "INT", "JORF", "LFR", "QRR", "RN1", "RN2", "TBS",
+		"FMJ", "FMT", "INT", "JORF", "LFR", "OC1", "QRR", "RN1", "RN2", "TBS",
 	}
 	less := func(a, b string) bool { return a < b }
 	if !cmp.Equal(asset.AvailableStations, expectedStations, cmpopts.SortSlices(less)) {
@@ -355,7 +355,7 @@ func TestLoadAvailableStations(t *testing.T) {
 }
 
 func TestGetAsset(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -385,7 +385,7 @@ func TestGetAsset(t *testing.T) {
 }
 
 func TestGetPartialKeyError(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -401,7 +401,7 @@ func TestGetPartialKeyError(t *testing.T) {
 }
 
 func TestGetPartialKeyDifferentOffset(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -418,7 +418,7 @@ func TestGetPartialKeyDifferentOffset(t *testing.T) {
 }
 
 func TestAuthContextCancellation(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -444,7 +444,7 @@ func TestAuthContextCancellation(t *testing.T) {
 }
 
 func TestAuthWithTimeout(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -471,7 +471,7 @@ func TestAuthWithTimeout(t *testing.T) {
 }
 
 func TestUnmarshalJSONError(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
@@ -485,7 +485,7 @@ func TestUnmarshalJSONError(t *testing.T) {
 }
 
 func TestUnmarshalJSONInvalidFormat(t *testing.T) {
-	client, err := radiko.New("")
+	client, err := NewRadikoHTTPClient()
 	if err != nil {
 		t.Error(err)
 	}
