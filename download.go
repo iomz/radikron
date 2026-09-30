@@ -25,9 +25,10 @@ import (
 )
 
 var (
-	downloadingSem = make(chan struct{}, MaxDownloadingConcurrency)
-	encodingSem    = make(chan struct{}, MaxEncodingConcurrency)
-	semMu          sync.Mutex // protects semaphore recreation
+	downloadingSem        = make(chan struct{}, MaxDownloadingConcurrency)
+	encodingSem           = make(chan struct{}, MaxEncodingConcurrency)
+	semMu                 sync.Mutex // protects semaphore recreation
+	downloadingHTTPClient = &http.Client{Timeout: radikoHTTPTimeout}
 )
 
 const (
@@ -323,6 +324,10 @@ func Download(
 }
 
 func bulkDownload(list []string, output string) error {
+	return bulkDownloadWithClient(context.Background(), downloadingHTTPClient, list, output)
+}
+
+func bulkDownloadWithClient(ctx context.Context, client *http.Client, list []string, output string) error {
 	var (
 		errFlag bool
 		mu      sync.Mutex
@@ -336,13 +341,19 @@ func bulkDownload(list []string, output string) error {
 
 			var err error
 			for range MaxRetryAttempts {
-				downloadingSem <- struct{}{}
-				err = downloadLink(link, output)
+				select {
+				case downloadingSem <- struct{}{}:
+				case <-ctx.Done():
+					err = ctx.Err()
+					goto finished
+				}
+				err = downloadLinkWithClient(ctx, client, link, output)
 				<-downloadingSem
 				if err == nil {
 					break
 				}
 			}
+		finished:
 			if err != nil {
 				log.Printf("failed to download: %s", err)
 				mu.Lock()
@@ -364,11 +375,25 @@ func bulkDownload(list []string, output string) error {
 }
 
 func downloadLink(link, output string) error {
-	resp, err := http.Get(link) //nolint:gosec,noctx
+	return downloadLinkWithClient(context.Background(), downloadingHTTPClient, link, output)
+}
+
+func downloadLinkWithClient(ctx context.Context, client *http.Client, link, output string) error {
+	if client == nil {
+		client = downloadingHTTPClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, http.NoBody)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("download %s returned HTTP %s", link, resp.Status)
+	}
 
 	_, fileName := filepath.Split(link)
 	file, err := os.Create(filepath.Join(output, fileName))
@@ -407,7 +432,8 @@ func downloadProgram(
 	}
 	defer os.RemoveAll(aacDir) // clean up
 
-	if err = bulkDownload(chunklist, aacDir); err != nil {
+	asset := GetAsset(ctx)
+	if err = bulkDownloadWithClient(ctx, asset.DefaultClient, chunklist, aacDir); err != nil {
 		log.Printf("failed to download aac files: %s", err)
 		return
 	}
@@ -656,7 +682,7 @@ func getTimeshiftChunklist(
 		if debugTimeshift {
 			log.Printf("timeshift media playlist seek=%s url=%q", seekValue, mediaPlaylistURL)
 		}
-		chunks, err := parseChunklistFromM3U8(mediaPlaylistURL)
+		chunks, err := parseChunklistFromM3U8WithClient(ctx, client, mediaPlaylistURL)
 		if err != nil {
 			return nil, fmt.Errorf("%s -> chunklist parse failed: %v", u.String(), err)
 		}
@@ -1021,11 +1047,25 @@ func extractChunklist(input io.Reader) ([]string, error) {
 }
 
 func parseChunklistFromM3U8(uri string) ([]string, error) {
-	resp, err := http.Get(uri) //nolint:gosec,noctx
+	return parseChunklistFromM3U8WithClient(context.Background(), downloadingHTTPClient, uri)
+}
+
+func parseChunklistFromM3U8WithClient(ctx context.Context, client *http.Client, uri string) ([]string, error) {
+	if client == nil {
+		client = downloadingHTTPClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("playlist %s returned HTTP %s", uri, resp.Status)
+	}
 
 	return extractChunklist(resp.Body)
 }

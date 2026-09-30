@@ -1686,6 +1686,23 @@ func TestDownload_NoAssetInContext(t *testing.T) {
 	}
 }
 
+func TestDownloadRequestsHonorClientTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client := &http.Client{Timeout: 50 * time.Millisecond}
+	if err := downloadLinkWithClient(context.Background(), client, server.URL+"/segment.aac", t.TempDir()); err == nil {
+		t.Fatal("downloadLinkWithClient() succeeded despite response body timeout")
+	}
+	if _, err := parseChunklistFromM3U8WithClient(context.Background(), client, server.URL+"/playlist.m3u8"); err == nil {
+		t.Fatal("parseChunklistFromM3U8WithClient() succeeded despite response body timeout")
+	}
+}
+
 func TestDownloadLink(t *testing.T) {
 	// Create a test HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
