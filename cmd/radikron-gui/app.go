@@ -86,6 +86,7 @@ type App struct {
 	monitorLoop            func(context.Context)
 	startupReady           chan struct{}
 	startupErr             error
+	configChanged          chan struct{}
 	mu                     sync.RWMutex
 }
 
@@ -100,6 +101,7 @@ func NewApp() *App {
 		pendingManualDownloads: make(map[string]string),
 		events:                 wailsEventSink{},
 		startupReady:           startupReady,
+		configChanged:          make(chan struct{}, 1),
 	}
 }
 
@@ -183,8 +185,22 @@ func (a *App) OnStartup(ctx context.Context) {
 		runtime.LogError(ctx, fmt.Sprintf("GUI startup initialization failed: %v", err))
 		return
 	}
+	if err := a.StartMonitoring(); err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("Failed to start automatic downloads: %v", err))
+		a.emit("log-message", map[string]any{
+			"type":    "error",
+			"message": fmt.Sprintf("Failed to start automatic downloads: %v", err),
+		})
+	}
 	go a.refreshStationCatalogInBackground()
 	go a.loadManualInjectionsInBackground()
+}
+
+func (a *App) signalConfigChanged() {
+	select {
+	case a.configChanged <- struct{}{}:
+	default:
+	}
 }
 
 func (a *App) waitForStartup() error {
@@ -1268,7 +1284,7 @@ func (a *App) LoadConfig(filename string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	cfg, err := config.LoadConfig(filename)
+	cfg, err := config.LoadConfigWithoutAreaLookup(filename)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -1285,6 +1301,7 @@ func (a *App) LoadConfig(filename string) error {
 
 	a.config = cfg
 	a.configFile = filename
+	a.signalConfigChanged()
 
 	// Emit event to frontend
 	a.emit("config-loaded", map[string]any{
@@ -1348,6 +1365,7 @@ func (a *App) SaveConfig(filename string) error {
 
 	// Update config file path on success
 	a.configFile = filename
+	a.signalConfigChanged()
 
 	// Emit event to frontend
 	a.emit("config-saved", map[string]any{
@@ -1489,16 +1507,18 @@ func (a *App) RefreshStations() ([]string, error) {
 		a.mu.Unlock()
 		return nil, fmt.Errorf("asset not initialized")
 	}
-	a.asset.Stations = stations
+	updatedAsset := *a.asset
+	updatedAsset.Stations = stations
 	if a.config != nil {
-		if err := a.config.ApplyToAsset(a.asset); err != nil {
+		if err := a.config.ApplyToAsset(&updatedAsset); err != nil {
 			a.mu.Unlock()
 			return nil, fmt.Errorf("failed to apply station configuration: %w", err)
 		}
 	} else {
-		a.asset.LoadAvailableStations(radikron.DefaultArea)
+		updatedAsset.LoadAvailableStations(radikron.DefaultArea)
 	}
-	available := append([]string{}, a.asset.AvailableStations...)
+	a.asset = &updatedAsset
+	available := append([]string{}, updatedAsset.AvailableStations...)
 	a.mu.Unlock()
 	return available, nil
 }
@@ -1694,7 +1714,7 @@ func (a *App) StartMonitoring() error {
 	go a.executeMonitoringLoop(ctx)
 
 	// Log and emit event to frontend
-	log.Printf("monitoring started")
+	log.Printf("automatic downloads enabled")
 	a.emit("monitoring-started", nil)
 
 	return nil
@@ -1742,7 +1762,7 @@ func (a *App) StopMonitoring() error { //nolint:unparam // Keep Wails binding's 
 	a.mu.Unlock()
 
 	// Log and emit event to frontend
-	log.Printf("monitoring stopped")
+	log.Printf("automatic downloads stopped")
 	a.emit("monitoring-stopped", nil)
 
 	// Release concurrent callers only after the stop is fully observable, so they
@@ -1777,7 +1797,7 @@ func (a *App) reloadConfigIfNeeded() error {
 	}
 
 	// Load config using the snapshot (outside lock since it can take time)
-	cfg, err := config.LoadConfig(configFile)
+	cfg, err := config.LoadConfigWithoutAreaLookup(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config from %s: %w", configFile, err)
 	}
@@ -2113,25 +2133,28 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 	}
 	a.mu.RUnlock()
 
-	// Use the local copy to decide whether to create a timer or sleep
+	// Wake early when config changes, or sleep for the next poll interval.
+	sleepDuration := time.Hour
 	if nextFetchTime != nil {
-		sleepDuration := time.Until(*nextFetchTime)
-		if sleepDuration > 0 {
-			timer := time.NewTimer(sleepDuration)
+		sleepDuration = time.Until(*nextFetchTime)
+	}
+	if sleepDuration <= 0 {
+		return
+	}
+
+	timer := time.NewTimer(sleepDuration)
+	defer func() {
+		if !timer.Stop() {
 			select {
-			case <-ctx.Done():
-				timer.Stop()
 			case <-timer.C:
+			default:
 			}
 		}
-	} else {
-		// Default sleep if no next fetch time - use timer with context cancellation
-		timer := time.NewTimer(1 * time.Hour)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+	}()
+	select {
+	case <-ctx.Done():
+	case <-a.configChanged:
+	case <-timer.C:
 	}
 }
 
@@ -2139,10 +2162,10 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 // It continuously fetches programs, matches them against rules, and downloads matching programs.
 // The loop respects the next fetch time and can be canceled via context.
 func (a *App) runMonitoringLoop(ctx context.Context) {
-	log.Printf("monitoring loop started")
+	log.Printf("automatic program checks started")
 	runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 		"type":    "info",
-		"message": "Monitoring loop started",
+		"message": "Automatic program checks started",
 	})
 
 	// Setup logger to capture radikron log messages and emit events
@@ -2175,10 +2198,10 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("monitoring loop stopped (context canceled)")
+			log.Printf("automatic program checks stopped (app is closing)")
 			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 				"type":    "info",
-				"message": "Monitoring loop stopped",
+				"message": "Automatic program checks stopped",
 			})
 			return
 		default:
@@ -2219,7 +2242,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		a.checkAndLogRulesCount(asset)
 
 		// Skip processing if no rules or all rules have no criteria
-		if len(asset.Rules) == 0 || !asset.Rules.HasRuleWithCriteria() {
+		if !hasMonitoringCriteria(asset) {
 			log.Printf("skipping program collection: no rules with criteria configured")
 			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 				"type":    "warning",
@@ -2245,6 +2268,10 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		// Sleep until next fetch time
 		a.logAndSleepUntilNextFetch(asset, ctx)
 	}
+}
+
+func hasMonitoringCriteria(asset *radikron.Asset) bool {
+	return asset != nil && len(asset.Rules) > 0 && asset.Rules.HasRuleWithCriteria()
 }
 
 // radikronProgramFetcher implements ProgramFetcher interface for fetching weekly programs.

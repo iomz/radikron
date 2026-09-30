@@ -86,6 +86,11 @@ func TestConfigLifecycleEmitsEventsAndAppliesValues(t *testing.T) {
 	if err := app.SaveConfig(savedPath); err != nil {
 		t.Fatalf("SaveConfig() error: %v", err)
 	}
+	select {
+	case <-app.configChanged:
+	default:
+		t.Fatal("SaveConfig() did not wake automatic monitoring")
+	}
 	if _, err := os.Stat(savedPath); err != nil {
 		t.Fatalf("saved config missing: %v", err)
 	}
@@ -227,6 +232,65 @@ func TestGetAvailableStationsReturnsEmptyArrayInsteadOfNil(t *testing.T) {
 	}
 	if stations == nil {
 		t.Fatal("GetAvailableStations() returned nil; want an empty array")
+	}
+}
+
+func TestHasMonitoringCriteria(t *testing.T) {
+	tests := []struct {
+		name  string
+		asset *radikron.Asset
+		want  bool
+	}{
+		{name: "nil asset"},
+		{name: "no rules", asset: &radikron.Asset{}},
+		{name: "rule without criteria", asset: &radikron.Asset{Rules: radikron.Rules{{}}}},
+		{
+			name: "rule with keyword",
+			asset: &radikron.Asset{Rules: radikron.Rules{{
+				Criteria: radikron.Criteria{Keyword: "news"},
+			}}},
+			want: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasMonitoringCriteria(test.asset); got != test.want {
+				t.Errorf("hasMonitoringCriteria() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestSleepUntilNextFetchWakesWhenConfigChanges(t *testing.T) {
+	app := NewApp()
+	done := make(chan struct{})
+	go func() {
+		app.sleepUntilNextFetch(context.Background())
+		close(done)
+	}()
+
+	app.signalConfigChanged()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sleepUntilNextFetch() did not wake after config change")
+	}
+}
+
+func TestSleepUntilNextFetchStopsOnContextCancellation(t *testing.T) {
+	app := NewApp()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		app.sleepUntilNextFetch(ctx)
+		close(done)
+	}()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sleepUntilNextFetch() did not stop after cancellation")
 	}
 }
 

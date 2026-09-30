@@ -11,16 +11,13 @@ interface ActivityLogEntry {
 
 interface AppState {
   // State
-  monitoring: boolean;
   configInfo: config.Config | null;
   stations: string[];
   configFile: string;
   activityLogs: ActivityLogEntry[];
   loading: boolean;
-  isToggling: boolean;
 
   // Actions
-  setMonitoring: (monitoring: boolean) => void;
   setConfigInfo: (configInfo: config.Config | null) => void;
   setStations: (stations: string[]) => void;
   setConfigFile: (configFile: string) => void;
@@ -30,25 +27,20 @@ interface AppState {
   // Async actions
   loadConfigInfo: () => Promise<void>;
   loadStations: () => Promise<void>;
-  loadMonitoringStatus: () => Promise<void>;
   loadInitialData: () => Promise<void>;
-  toggleMonitoring: () => Promise<void>;
   loadConfig: (filename: string) => Promise<void>;
   refreshStations: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
-  monitoring: false,
   configInfo: null,
   stations: [],
   configFile: 'config.yml',
   activityLogs: [],
   loading: true,
-  isToggling: false,
 
   // Synchronous actions
-  setMonitoring: (monitoring) => set({ monitoring }),
   setConfigInfo: (configInfo) => set({ configInfo }),
   setStations: (stations) => set({ stations }),
   setConfigFile: (configFile) => set({ configFile }),
@@ -92,61 +84,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loadMonitoringStatus: async () => {
-    try {
-      const status = await App.GetMonitoringStatus();
-      set({ monitoring: status });
-    } catch (error) {
-      console.error('Failed to load monitoring status:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      get().addActivityLog('error', `Load monitoring status failed: ${errorMessage}`);
-    }
-  },
-
   loadInitialData: async () => {
     set({ loading: true });
     try {
       await Promise.all([
         get().loadConfigInfo(),
         get().loadStations(),
-        get().loadMonitoringStatus(),
       ]);
     } finally {
       set({ loading: false });
-    }
-  },
-
-  toggleMonitoring: async () => {
-    const { monitoring, isToggling } = get();
-    
-    // Guard: return early if a toggle is already in progress
-    if (isToggling) {
-      return;
-    }
-    
-    // Set the guard flag before starting the async operation
-    set({ isToggling: true });
-    
-    try {
-      // Call the backend to perform the requested action
-      if (monitoring) {
-        await App.StopMonitoring();
-      } else {
-        await App.StartMonitoring();
-      }
-      
-      // Verify the resulting state by querying the backend
-      const actualState = await App.GetMonitoringStatus();
-      
-      // Update state based on the verified backend state
-      set({ monitoring: actualState });
-    } catch (error) {
-      console.error('Failed to toggle monitoring:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      get().addActivityLog('error', `Failed to ${monitoring ? 'stop' : 'start'} monitoring: ${errorMessage}`);
-    } finally {
-      // Always clear the guard flag so future toggles can proceed
-      set({ isToggling: false });
     }
   },
 
