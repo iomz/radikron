@@ -57,7 +57,8 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
 };
 
 export const ProgramSearchBrowser: React.FC = () => {
-  const stationsRaw = useAppStore((state) => state.stations);
+  const stationsRaw = useAppStore((state) => state.stations) ?? [];
+  const stationLabel = useAppStore((state) => state.stationLabel);
   const addActivityLog = useAppStore((state) => state.addActivityLog);
   // Sort stations alphabetically
   const stations = [...stationsRaw].sort((a, b) => a.localeCompare(b));
@@ -362,7 +363,7 @@ export const ProgramSearchBrowser: React.FC = () => {
                   <SelectItem value="all">All Stations</SelectItem>
                   {stations.map((station) => (
                     <SelectItem key={station} value={station}>
-                      {station}
+                      {stationLabel(station)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -412,7 +413,7 @@ export const ProgramSearchBrowser: React.FC = () => {
                               <p className="text-sm text-muted-foreground">Host: {program.Pfm}</p>
                             )}
                           </div>
-                          <Badge variant="outline">{program.StationID}</Badge>
+                          <Badge variant="outline">{stationLabel(program.StationID)}</Badge>
                         </div>
                         <div className="flex gap-4 text-sm text-muted-foreground">
                           <span>Start: {formatDateTime(program.Ft)}</span>
@@ -477,7 +478,7 @@ export const ProgramSearchBrowser: React.FC = () => {
                 <DialogTitle>{selectedProgram.Title}</DialogTitle>
                 <DialogDescription>
                   <div className="flex items-center gap-2 mt-2">
-                    <Badge variant="outline">{selectedProgram.StationID}</Badge>
+                    <Badge variant="outline">{stationLabel(selectedProgram.StationID)}</Badge>
                     {selectedProgram.Pfm && (
                       <span className="text-sm text-foreground">Host: {selectedProgram.Pfm}</span>
                     )}

@@ -3,7 +3,6 @@ import { ErrorBoundary } from "react-error-boundary";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dashboard } from "@/components/Dashboard";
 import { RulesEditor } from "@/components/RulesEditor";
@@ -21,6 +20,9 @@ interface DownloadEventData {
   title: string;
   start?: string;
   error?: string;
+  stage?: string;
+  completed?: number;
+  total?: number;
 }
 
 interface ConfigLoadedData {
@@ -64,13 +66,11 @@ const ErrorFallback: React.FC<{
 };
 
 const AppComponent: React.FC = () => {
-  const monitoring = useAppStore((state) => state.monitoring);
   const loading = useAppStore((state) => state.loading);
   const loadInitialData = useAppStore((state) => state.loadInitialData);
-  const toggleMonitoring = useAppStore((state) => state.toggleMonitoring);
-  const setMonitoring = useAppStore((state) => state.setMonitoring);
   const addActivityLog = useAppStore((state) => state.addActivityLog);
   const loadConfigInfo = useAppStore((state) => state.loadConfigInfo);
+  const loadStations = useAppStore((state) => state.loadStations);
   const getEffectiveTheme = useThemeStore((state) => state.getEffectiveTheme);
   const theme = useThemeStore((state) => state.theme);
   const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">(() =>
@@ -107,19 +107,6 @@ const AppComponent: React.FC = () => {
 
   // Set up event listeners
   useEffect(() => {
-    // Listen for monitoring status changes
-    const unsubscribeStarted = EventsOn("monitoring-started", () => {
-      setMonitoring(true);
-      addActivityLog("success", "Monitoring started");
-      console.log("Monitoring started");
-    });
-
-    const unsubscribeStopped = EventsOn("monitoring-stopped", () => {
-      setMonitoring(false);
-      addActivityLog("info", "Monitoring stopped");
-      console.log("Monitoring stopped");
-    });
-
     // Listen for download events
     const unsubscribeDownloadStarted = EventsOn(
       "download-started",
@@ -158,10 +145,27 @@ const AppComponent: React.FC = () => {
       (data: DownloadEventData) => {
         addActivityLog(
           "error",
-          `Failed: ${data.title} (${data.station}) - ${data.error || "Unknown error"}`,
+          `Failed ${data.stage ? `during ${data.stage} ` : ""}: ${data.title} (${data.station}) - ${data.error || "Unknown error"}`,
         );
       },
     );
+
+    const unsubscribeDownloadProgress = EventsOn(
+      "download-progress",
+      (data: DownloadEventData) => {
+        const progress = data.total
+          ? ` (${data.completed}/${data.total})`
+          : "";
+        addActivityLog(
+          "info",
+          `Download ${data.stage || "in progress"}${progress}: ${data.title} (${data.station})`,
+        );
+      },
+    );
+
+    const unsubscribeStationsLoaded = EventsOn("stations-loaded", () => {
+      void loadStations();
+    });
 
     const unsubscribeConfigLoaded = EventsOn(
       "config-loaded",
@@ -195,15 +199,15 @@ const AppComponent: React.FC = () => {
 
     // Cleanup
     return () => {
-      unsubscribeStarted();
-      unsubscribeStopped();
       unsubscribeDownloadStarted();
       unsubscribeDownloadCompleted();
       unsubscribeDownloadFailed();
+      unsubscribeDownloadProgress();
+      unsubscribeStationsLoaded();
       unsubscribeConfigLoaded();
       unsubscribeLogMessage();
     };
-  }, [setMonitoring, addActivityLog, loadConfigInfo]);
+  }, [addActivityLog, loadConfigInfo, loadStations]);
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>
@@ -230,20 +234,6 @@ const AppComponent: React.FC = () => {
                 </TabsList>
 
                 <div className="flex items-center gap-4">
-                  <div>
-                    <Badge variant={monitoring ? "default" : "secondary"}>
-                      {monitoring && (
-                        <span
-                          // Positioning and styling using Tailwind classes
-                          className="h-2 w-2 bg-red-500 rounded-full border border-white dark:border-gray-900 animate-pulse-grow"
-                        />
-                      )}
-                      {monitoring ? "Running" : "Stopped"}
-                    </Badge>
-                  </div>
-                  <Button onClick={toggleMonitoring}>
-                    {monitoring ? "Stop Monitoring" : "Start Monitoring"}
-                  </Button>
                   <ThemeToggle />
                 </div>
 

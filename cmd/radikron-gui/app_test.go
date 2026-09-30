@@ -86,6 +86,11 @@ func TestConfigLifecycleEmitsEventsAndAppliesValues(t *testing.T) {
 	if err := app.SaveConfig(savedPath); err != nil {
 		t.Fatalf("SaveConfig() error: %v", err)
 	}
+	select {
+	case <-app.configChanged:
+	default:
+		t.Fatal("SaveConfig() did not wake automatic monitoring")
+	}
 	if _, err := os.Stat(savedPath); err != nil {
 		t.Fatalf("saved config missing: %v", err)
 	}
@@ -128,6 +133,37 @@ func TestConfigLifecycleErrorsDoNotEmitEvents(t *testing.T) {
 	}
 	if got := events.names(); len(got) != 0 {
 		t.Errorf("error paths emitted events: %v", got)
+	}
+}
+
+func TestGetConfigWaitsForStartupAndReturnsStartupError(t *testing.T) {
+	app := NewApp()
+	app.startupReady = make(chan struct{})
+	wantErr := errors.New("asset initialization failed")
+	result := make(chan error, 1)
+	go func() {
+		_, err := app.GetConfig()
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("GetConfig() returned before startup finished: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	app.mu.Lock()
+	app.startupErr = wantErr
+	close(app.startupReady)
+	app.mu.Unlock()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("GetConfig() error = %v, want startup error %v", err, wantErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("GetConfig() remained blocked after startup completed")
 	}
 }
 
@@ -184,6 +220,121 @@ func TestGetSchedulesRequiresAsset(t *testing.T) {
 	_, err := NewApp().GetSchedules()
 	if err == nil || err.Error() != "asset not initialized" {
 		t.Fatalf("GetSchedules() error = %v", err)
+	}
+}
+
+func TestGetAvailableStationsReturnsEmptyArrayInsteadOfNil(t *testing.T) {
+	app := NewApp()
+	app.asset = &radikron.Asset{}
+	stations, err := app.GetAvailableStations()
+	if err != nil {
+		t.Fatalf("GetAvailableStations() error = %v", err)
+	}
+	if stations == nil {
+		t.Fatal("GetAvailableStations() returned nil; want an empty array")
+	}
+}
+
+func TestGetStationNamesReturnsCatalogDisplayNames(t *testing.T) {
+	app := NewApp()
+	app.asset = &radikron.Asset{Stations: radikron.Stations{
+		"FMJ": {Name: "J-WAVE"},
+		"TBS": {Name: "Tokyo Broadcasting System"},
+		"XYZ": nil,
+	}}
+
+	names, err := app.GetStationNames()
+	if err != nil {
+		t.Fatalf("GetStationNames() error: %v", err)
+	}
+	if names["FMJ"] != "J-WAVE" || names["TBS"] != "Tokyo Broadcasting System" {
+		t.Fatalf("GetStationNames() = %#v", names)
+	}
+	if _, ok := names["XYZ"]; ok {
+		t.Errorf("GetStationNames() included station without a display name")
+	}
+}
+
+func TestApplyStationCatalogPreservesAssetAndSchedulingState(t *testing.T) {
+	nextFetch := time.Now().Add(time.Hour)
+	asset := &radikron.Asset{
+		Stations:      radikron.Stations{"OLD": {Areas: []string{radikron.DefaultArea}}},
+		NextFetchTime: &nextFetch,
+	}
+	original := asset
+	newStations := radikron.Stations{"NEW": {Areas: []string{radikron.DefaultArea}, Name: "New Station"}}
+
+	available, err := applyStationCatalog(asset, nil, newStations)
+	if err != nil {
+		t.Fatalf("applyStationCatalog() error: %v", err)
+	}
+	if asset != original {
+		t.Fatal("applyStationCatalog() replaced the monitored asset pointer")
+	}
+	if asset.NextFetchTime != &nextFetch {
+		t.Fatal("applyStationCatalog() changed NextFetchTime pointer")
+	}
+	if asset.Stations["NEW"] == nil || len(available) != 1 || available[0] != "NEW" {
+		t.Fatalf("station catalog not applied: stations=%v available=%v", asset.Stations, available)
+	}
+}
+
+func TestHasMonitoringCriteria(t *testing.T) {
+	tests := []struct {
+		name  string
+		asset *radikron.Asset
+		want  bool
+	}{
+		{name: "nil asset"},
+		{name: "no rules", asset: &radikron.Asset{}},
+		{name: "rule without criteria", asset: &radikron.Asset{Rules: radikron.Rules{{}}}},
+		{
+			name: "rule with keyword",
+			asset: &radikron.Asset{Rules: radikron.Rules{{
+				Criteria: radikron.Criteria{Keyword: "news"},
+			}}},
+			want: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasMonitoringCriteria(test.asset); got != test.want {
+				t.Errorf("hasMonitoringCriteria() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestSleepUntilNextFetchWakesWhenConfigChanges(t *testing.T) {
+	app := NewApp()
+	done := make(chan struct{})
+	go func() {
+		app.sleepUntilNextFetch(context.Background())
+		close(done)
+	}()
+
+	app.signalConfigChanged()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sleepUntilNextFetch() did not wake after config change")
+	}
+}
+
+func TestSleepUntilNextFetchStopsOnContextCancellation(t *testing.T) {
+	app := NewApp()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		app.sleepUntilNextFetch(ctx)
+		close(done)
+	}()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sleepUntilNextFetch() did not stop after cancellation")
 	}
 }
 

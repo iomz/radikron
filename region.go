@@ -34,11 +34,15 @@ func FetchXMLRegion() (XMLRegion, error) {
 }
 
 func fetchXMLRegionWithClient(client *http.Client, endpoint string) (XMLRegion, error) {
+	return fetchXMLRegionWithClientContext(context.Background(), client, endpoint)
+}
+
+func fetchXMLRegionWithClientContext(ctx context.Context, client *http.Client, endpoint string) (XMLRegion, error) {
 	if client == nil {
 		return XMLRegion{}, fmt.Errorf("HTTP client is nil")
 	}
 	region := XMLRegion{}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return region, err
 	}

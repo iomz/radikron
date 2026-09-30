@@ -31,6 +31,7 @@ Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they
   - [🖱️ GUI Features](#gui-features)
   - [🐳 Docker Support](#docker-support)
 - [Requirements](#requirements)
+  - [Installing FFmpeg on Windows](#installing-ffmpeg-on-windows)
 - [Installation](#installation)
   - [CLI Version](#cli-version)
   - [GUI Version](#gui-version)
@@ -101,6 +102,23 @@ Pre-built Docker images with all dependencies included, ready for easy deploymen
 
 - **[FFmpeg](https://ffmpeg.org/download.html)**: Required to combine m3u8 chunks to a single AAC file (or convert to MP3). Make sure `ffmpeg` exists in your `$PATH`. On macOS, Radikron also checks standard Homebrew locations (`/opt/homebrew/bin` and `/usr/local/bin`), including for apps launched from Finder.
   - The [docker image](#try-with-docker) already contains all the requirements including FFmpeg.
+
+### Installing FFmpeg on Windows
+
+The recommended option is the FFmpeg Essentials build from [Gyan's Windows builds](https://www.gyan.dev/ffmpeg/builds/), installed with Windows Package Manager:
+
+```powershell
+winget install "FFmpeg (Essentials Build)"
+```
+
+Radikron locates `ffmpeg.exe` through the process `PATH`. After installation, open a **new** PowerShell window and verify discovery:
+
+```powershell
+Get-Command ffmpeg
+ffmpeg -version
+```
+
+Close and reopen Radikron after installing FFmpeg so it inherits the updated `PATH`. If `Get-Command ffmpeg` cannot find it, add the FFmpeg `bin` directory containing `ffmpeg.exe` to your Windows user `PATH`, then reopen both PowerShell and Radikron. FFmpeg is needed when Radikron combines downloaded audio segments; it is not bundled with the Radikron GUI.
 
 ### GUI-Specific Requirements (for building from source)
 

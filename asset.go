@@ -400,6 +400,21 @@ func NewAsset(client *http.Client) (*Asset, error) {
 	return newAsset(client, APIRegionFull)
 }
 
+// NewAssetWithoutStationCatalog initializes embedded data without waiting on the network.
+// FetchStationCatalog can load remote metadata after startup.
+func NewAssetWithoutStationCatalog(client *http.Client) (*Asset, error) {
+	return newAsset(client, "")
+}
+
+// FetchStationCatalog retrieves current station metadata without mutating an asset.
+func FetchStationCatalog(ctx context.Context, client *http.Client) (Stations, error) {
+	region, err := fetchXMLRegionWithClientContext(ctx, client, APIRegionFull)
+	if err != nil {
+		return nil, err
+	}
+	return stationsFromRegion(region), nil
+}
+
 func newAsset(client *http.Client, stationCatalogEndpoint string) (*Asset, error) {
 	asset := &Asset{}
 	// empty AreaDevices
@@ -451,14 +466,16 @@ func newAsset(client *http.Client, stationCatalogEndpoint string) (*Asset, error
 		return asset, err
 	}
 
-	// Station catalog is remote and may be temporarily unavailable. Keep the
-	// embedded asset usable so GUI startup/config loading can still complete.
-	xmlRegion, err := fetchXMLRegionWithClient(client, stationCatalogEndpoint)
-	if err != nil {
-		log.Printf("warning: failed to fetch station catalog: %v; continuing with configured stations only", err)
-		asset.Stations = Stations{}
-	} else {
-		asset.Stations = stationsFromRegion(xmlRegion)
+	asset.Stations = Stations{}
+	if stationCatalogEndpoint != "" {
+		// Station catalog is remote and may be temporarily unavailable. Keep the
+		// embedded asset usable so callers can continue with configured stations.
+		xmlRegion, err := fetchXMLRegionWithClient(client, stationCatalogEndpoint)
+		if err != nil {
+			log.Printf("warning: failed to fetch station catalog: %v; continuing with configured stations only", err)
+		} else {
+			asset.Stations = stationsFromRegion(xmlRegion)
+		}
 	}
 
 	// Versions

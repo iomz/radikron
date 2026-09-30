@@ -28,6 +28,7 @@ const (
 	loggerCleanupDelay = 10 * time.Minute
 	// manualInjectionsFilePerm is the file permission mode for manual injections file (0600 = read/write for owner only)
 	manualInjectionsFilePerm = 0600
+	stationCatalogTimeout    = 30 * time.Second
 	// maxDownloadRetries is the maximum number of retry attempts for failed downloads
 	maxDownloadRetries = 5
 	// failedDownloadCleanupThreshold is the time after which failed downloads are cleaned up
@@ -84,17 +85,24 @@ type App struct {
 	pendingManualDownloads map[string]string           // program ID -> program ID (for tracking downloads in progress)
 	events                 frontendEventSink
 	monitorLoop            func(context.Context)
+	startupReady           chan struct{}
+	startupErr             error
+	configChanged          chan struct{}
 	mu                     sync.RWMutex
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
+	startupReady := make(chan struct{})
+	close(startupReady)
 	return &App{
 		monitorWg:              &sync.WaitGroup{},
 		programSnapshots:       make(map[string]radikron.Progs),
 		manualInjections:       make(map[string]*manualInjection),
 		pendingManualDownloads: make(map[string]string),
 		events:                 wailsEventSink{},
+		startupReady:           startupReady,
+		configChanged:          make(chan struct{}, 1),
 	}
 }
 
@@ -122,12 +130,6 @@ func getAppConfigDir() (string, error) {
 
 // createDefaultConfig creates a default configuration file
 func createDefaultConfig(configPath string) (*config.Config, error) {
-	// Get current area ID
-	currentAreaID, err := radikron.CurrentAreaID()
-	if err != nil {
-		currentAreaID = radikron.DefaultArea
-	}
-
 	// Get user's Downloads directory (cross-platform)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -148,7 +150,7 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 
 	// Create default config
 	cfg := &config.Config{
-		AreaID:                    currentAreaID,
+		AreaID:                    radikron.DefaultArea,
 		ExtraStations:             []string{},
 		IgnoreStations:            []string{},
 		FileFormat:                radikron.AudioFormatAAC,
@@ -170,7 +172,77 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 // OnStartup is called when the app starts
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
+	a.mu.Lock()
+	a.startupReady = make(chan struct{})
+	a.startupErr = nil
+	a.mu.Unlock()
 
+	err := a.initialize(ctx)
+	a.mu.Lock()
+	a.startupErr = err
+	close(a.startupReady)
+	a.mu.Unlock()
+	if err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("GUI startup initialization failed: %v", err))
+		return
+	}
+	if err := a.StartMonitoring(); err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("Failed to start automatic downloads: %v", err))
+		a.emit("log-message", map[string]any{
+			"type":    "error",
+			"message": fmt.Sprintf("Failed to start automatic downloads: %v", err),
+		})
+	}
+	go a.refreshStationCatalogInBackground()
+	go a.loadManualInjectionsInBackground()
+}
+
+func (a *App) signalConfigChanged() {
+	select {
+	case a.configChanged <- struct{}{}:
+	default:
+	}
+}
+
+func (a *App) waitForStartup() error {
+	a.mu.RLock()
+	ready := a.startupReady
+	a.mu.RUnlock()
+	if ready != nil {
+		<-ready
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.startupErr
+}
+
+func (a *App) refreshStationCatalogInBackground() {
+	if _, err := a.RefreshStations(); err != nil {
+		if a.ctx != nil {
+			runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to refresh station catalog: %v", err))
+			a.emit("log-message", map[string]any{
+				"type":    "error",
+				"message": fmt.Sprintf("Failed to refresh stations: %v. Use Refresh Stations to retry.", err),
+			})
+		}
+		return
+	}
+	a.emit("stations-loaded", nil)
+}
+
+func (a *App) loadManualInjectionsInBackground() {
+	if err := a.loadManualInjections(); err != nil {
+		if a.ctx != nil {
+			runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to load manual injections: %v", err))
+			a.emit("log-message", map[string]any{
+				"type":    "error",
+				"message": fmt.Sprintf("Failed to load manual injections: %v", err),
+			})
+		}
+	}
+}
+
+func (a *App) initialize(ctx context.Context) error {
 	// Get app config directory
 	appConfigDir, err := getAppConfigDir()
 	if err != nil {
@@ -187,16 +259,14 @@ func (a *App) OnStartup(ctx context.Context) {
 	// Initialize the HTTP client used for Radiko requests.
 	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to create HTTP client: %v", err))
-		return
+		return fmt.Errorf("failed to create HTTP client: %w", err)
 	}
 	a.client = client
 
-	// Create initial asset
-	asset, err := radikron.NewAsset(client)
+	// Initialize embedded data without blocking startup on the remote station catalog.
+	asset, err := radikron.NewAssetWithoutStationCatalog(client)
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to create asset: %v", err))
-		return
+		return fmt.Errorf("failed to create asset: %w", err)
 	}
 	a.asset = asset
 
@@ -211,42 +281,28 @@ func (a *App) OnStartup(ctx context.Context) {
 		runtime.LogInfo(ctx, fmt.Sprintf("Config file not found at %s, creating default config", a.configFile))
 		cfg, err = createDefaultConfig(a.configFile)
 		if err != nil {
-			runtime.LogError(ctx, fmt.Sprintf("Failed to create default config: %v", err))
-			// Continue with default values from asset
-			return
+			return fmt.Errorf("failed to create default config: %w", err)
 		}
 		runtime.LogInfo(ctx, fmt.Sprintf("Created default config at %s", a.configFile))
 	} else if configExists {
 		// Config file exists, try to load it
-		cfg, err = config.LoadConfig(a.configFile)
+		cfg, err = config.LoadConfigWithoutAreaLookup(a.configFile)
 		if err != nil {
-			// File exists but failed to load (e.g., malformed YAML, permission issues)
-			runtime.LogError(ctx, fmt.Sprintf("Failed to load config file at %s: %v. Continuing with default values.", a.configFile, err))
-			// Continue with default values from asset, don't overwrite the existing file
-			return
+			return fmt.Errorf("failed to load config file at %s: %w", a.configFile, err)
 		}
 	} else {
-		// Error checking file existence (not IsNotExist)
-		runtime.LogError(ctx, fmt.Sprintf("Failed to check config file at %s: %v. Continuing with default values.", a.configFile, err))
-		// Continue with default values from asset
-		return
+		return fmt.Errorf("failed to check config file at %s: %w", a.configFile, err)
 	}
 
 	// Apply config to asset
 	if err := cfg.ApplyToAsset(a.asset); err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to apply config to asset: %v", err))
-		// Continue with default values
-		return
+		return fmt.Errorf("failed to apply config to asset: %w", err)
 	}
 
 	a.config = cfg
 	runtime.LogInfo(ctx, fmt.Sprintf("Config loaded successfully from %s", a.configFile))
 
-	// Load manually injected programs
-	if err := a.loadManualInjections(); err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to load manual injections: %v", err))
-		// Continue without manual injections
-	}
+	return nil
 }
 
 // fetchProgramDetailsForStations fetches weekly programs for given stations and returns a map of program IDs to full program details
@@ -793,6 +849,9 @@ func (a *App) OnShutdown(_ context.Context) {
 
 // GetConfig returns the current configuration
 func (a *App) GetConfig() (*config.Config, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -1226,7 +1285,7 @@ func (a *App) LoadConfig(filename string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	cfg, err := config.LoadConfig(filename)
+	cfg, err := config.LoadConfigWithoutAreaLookup(filename)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -1243,6 +1302,7 @@ func (a *App) LoadConfig(filename string) error {
 
 	a.config = cfg
 	a.configFile = filename
+	a.signalConfigChanged()
 
 	// Emit event to frontend
 	a.emit("config-loaded", map[string]any{
@@ -1306,6 +1366,7 @@ func (a *App) SaveConfig(filename string) error {
 
 	// Update config file path on success
 	a.configFile = filename
+	a.signalConfigChanged()
 
 	// Emit event to frontend
 	a.emit("config-saved", map[string]any{
@@ -1405,6 +1466,9 @@ func (a *App) SelectDirectory() (string, error) {
 
 // GetAvailableStations returns the list of available stations
 func (a *App) GetAvailableStations() ([]string, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -1412,7 +1476,81 @@ func (a *App) GetAvailableStations() ([]string, error) {
 		return nil, fmt.Errorf("asset not initialized")
 	}
 
-	return a.asset.AvailableStations, nil
+	return append([]string{}, a.asset.AvailableStations...), nil
+}
+
+// GetStationNames returns display names keyed by station ID.
+func (a *App) GetStationNames() (map[string]string, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.asset == nil {
+		return nil, fmt.Errorf("asset not initialized")
+	}
+
+	names := make(map[string]string, len(a.asset.Stations))
+	for stationID, station := range a.asset.Stations {
+		if station != nil && station.Name != "" {
+			names[stationID] = station.Name
+		}
+	}
+	return names, nil
+}
+
+// RefreshStations fetches the station catalog and applies the active station filters.
+func (a *App) RefreshStations() ([]string, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
+	a.mu.RLock()
+	if a.asset == nil {
+		a.mu.RUnlock()
+		return nil, fmt.Errorf("asset not initialized")
+	}
+	client := a.asset.DefaultClient
+	a.mu.RUnlock()
+
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, stationCatalogTimeout)
+	defer cancel()
+	stations, err := radikron.FetchStationCatalog(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch station catalog: %w", err)
+	}
+
+	a.mu.Lock()
+	if a.asset == nil {
+		a.mu.Unlock()
+		return nil, fmt.Errorf("asset not initialized")
+	}
+	available, err := applyStationCatalog(a.asset, a.config, stations)
+	if err != nil {
+		a.mu.Unlock()
+		return nil, fmt.Errorf("failed to apply station configuration: %w", err)
+	}
+	a.mu.Unlock()
+	return available, nil
+}
+
+func applyStationCatalog(asset *radikron.Asset, cfg *config.Config, stations radikron.Stations) ([]string, error) {
+	updatedAsset := &radikron.Asset{Stations: stations}
+	if cfg != nil {
+		if err := cfg.ApplyToAsset(updatedAsset); err != nil {
+			return nil, err
+		}
+	} else {
+		updatedAsset.LoadAvailableStations(radikron.DefaultArea)
+	}
+
+	asset.Stations = updatedAsset.Stations
+	asset.AvailableStations = updatedAsset.AvailableStations
+	return append([]string{}, asset.AvailableStations...), nil
 }
 
 // GetAllStations returns all stations from asset.Stations (all possible stations, not just available ones)
@@ -1567,6 +1705,9 @@ func (a *App) OpenDirectory(dirPath string) error {
 
 // GetMonitoringStatus returns whether monitoring is currently active.
 func (a *App) GetMonitoringStatus() bool {
+	if err := a.waitForStartup(); err != nil {
+		return false
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.monitoring
@@ -1603,7 +1744,7 @@ func (a *App) StartMonitoring() error {
 	go a.executeMonitoringLoop(ctx)
 
 	// Log and emit event to frontend
-	log.Printf("monitoring started")
+	log.Printf("automatic downloads enabled")
 	a.emit("monitoring-started", nil)
 
 	return nil
@@ -1651,7 +1792,7 @@ func (a *App) StopMonitoring() error { //nolint:unparam // Keep Wails binding's 
 	a.mu.Unlock()
 
 	// Log and emit event to frontend
-	log.Printf("monitoring stopped")
+	log.Printf("automatic downloads stopped")
 	a.emit("monitoring-stopped", nil)
 
 	// Release concurrent callers only after the stop is fully observable, so they
@@ -1686,7 +1827,7 @@ func (a *App) reloadConfigIfNeeded() error {
 	}
 
 	// Load config using the snapshot (outside lock since it can take time)
-	cfg, err := config.LoadConfig(configFile)
+	cfg, err := config.LoadConfigWithoutAreaLookup(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config from %s: %w", configFile, err)
 	}
@@ -2022,25 +2163,28 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 	}
 	a.mu.RUnlock()
 
-	// Use the local copy to decide whether to create a timer or sleep
+	// Wake early when config changes, or sleep for the next poll interval.
+	sleepDuration := time.Hour
 	if nextFetchTime != nil {
-		sleepDuration := time.Until(*nextFetchTime)
-		if sleepDuration > 0 {
-			timer := time.NewTimer(sleepDuration)
+		sleepDuration = time.Until(*nextFetchTime)
+	}
+	if sleepDuration <= 0 {
+		return
+	}
+
+	timer := time.NewTimer(sleepDuration)
+	defer func() {
+		if !timer.Stop() {
 			select {
-			case <-ctx.Done():
-				timer.Stop()
 			case <-timer.C:
+			default:
 			}
 		}
-	} else {
-		// Default sleep if no next fetch time - use timer with context cancellation
-		timer := time.NewTimer(1 * time.Hour)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+	}()
+	select {
+	case <-ctx.Done():
+	case <-a.configChanged:
+	case <-timer.C:
 	}
 }
 
@@ -2048,10 +2192,10 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 // It continuously fetches programs, matches them against rules, and downloads matching programs.
 // The loop respects the next fetch time and can be canceled via context.
 func (a *App) runMonitoringLoop(ctx context.Context) {
-	log.Printf("monitoring loop started")
+	log.Printf("automatic program checks started")
 	runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 		"type":    "info",
-		"message": "Monitoring loop started",
+		"message": "Automatic program checks started",
 	})
 
 	// Setup logger to capture radikron log messages and emit events
@@ -2084,10 +2228,10 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("monitoring loop stopped (context canceled)")
+			log.Printf("automatic program checks stopped (app is closing)")
 			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 				"type":    "info",
-				"message": "Monitoring loop stopped",
+				"message": "Automatic program checks stopped",
 			})
 			return
 		default:
@@ -2128,7 +2272,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		a.checkAndLogRulesCount(asset)
 
 		// Skip processing if no rules or all rules have no criteria
-		if len(asset.Rules) == 0 || !asset.Rules.HasRuleWithCriteria() {
+		if !hasMonitoringCriteria(asset) {
 			log.Printf("skipping program collection: no rules with criteria configured")
 			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
 				"type":    "warning",
@@ -2154,6 +2298,10 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		// Sleep until next fetch time
 		a.logAndSleepUntilNextFetch(asset, ctx)
 	}
+}
+
+func hasMonitoringCriteria(asset *radikron.Asset) bool {
+	return asset != nil && len(asset.Rules) > 0 && asset.Rules.HasRuleWithCriteria()
 }
 
 // radikronProgramFetcher implements ProgramFetcher interface for fetching weekly programs.

@@ -67,9 +67,10 @@ func concatAACFiles(ctx context.Context, files []string, tempDir, output string)
 	}
 	ffmpeg, err := exec.LookPath("ffmpeg")
 	if err != nil {
-		return err
+		return fmt.Errorf("ffmpeg not found; install FFmpeg and ensure it is available in PATH: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, ffmpeg, "-f", "concat", "-safe", "0", "-y", "-i", listPath, "-c", "copy", output)
+	hideFFmpegConsole(cmd)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg AAC concatenation failed: %w", err)
 	}

@@ -1930,6 +1930,14 @@ type mockEventEmitter struct {
 	encodingStarted   []string
 	encodingCompleted []string
 	logMessages       []struct{ level, message string }
+	downloadFailures  []struct {
+		stationID, title, startTime, stage string
+		err                                error
+	}
+	downloadProgress []struct {
+		stationID, title, startTime, stage string
+		completed, total                   int
+	}
 }
 
 func (m *mockEventEmitter) EmitDownloadStarted(stationID, title, startTime string) {
@@ -1963,6 +1971,49 @@ func (m *mockEventEmitter) EmitEncodingCompleted(filePath string) {
 
 func (m *mockEventEmitter) EmitLogMessage(level, message string) {
 	m.logMessages = append(m.logMessages, struct{ level, message string }{level, message})
+}
+
+func (m *mockEventEmitter) EmitDownloadFailed(stationID, title, startTime, stage string, err error) {
+	m.downloadFailures = append(m.downloadFailures, struct {
+		stationID, title, startTime, stage string
+		err                                error
+	}{stationID, title, startTime, stage, err})
+}
+
+func (m *mockEventEmitter) EmitDownloadProgress(stationID, title, startTime, stage string, completed, total int) {
+	m.downloadProgress = append(m.downloadProgress, struct {
+		stationID, title, startTime, stage string
+		completed, total                   int
+	}{stationID, title, startTime, stage, completed, total})
+}
+
+func TestEmitDownloadFailedAndProgress(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)
+	prog := &Prog{StationID: "FMT", Title: "Test Program", Ft: "20230605100000"}
+	wantErr := errors.New("request timed out")
+
+	emitDownloadFailed(ctx, prog, "fetching playlist", wantErr)
+	emitDownloadProgress(ctx, prog, "fetching playlist", 5, 10)
+
+	if len(emitter.downloadFailures) != 1 || !errors.Is(emitter.downloadFailures[0].err, wantErr) {
+		t.Fatalf("download failures = %+v, want timed-out failure", emitter.downloadFailures)
+	}
+	if got := emitter.downloadFailures[0]; got.stage != "fetching playlist" || got.stationID != "FMT" {
+		t.Errorf("download failure = %+v", got)
+	}
+	if len(emitter.downloadProgress) != 1 || emitter.downloadProgress[0].completed != 5 || emitter.downloadProgress[0].total != 10 {
+		t.Errorf("download progress = %+v, want 5/10", emitter.downloadProgress)
+	}
+}
+
+func TestConcatAACFilesExplainsMissingFFmpeg(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	tempDir := t.TempDir()
+	err := concatAACFiles(context.Background(), nil, tempDir, filepath.Join(tempDir, "output.aac"))
+	if err == nil || !strings.Contains(err.Error(), "ffmpeg not found; install FFmpeg and ensure it is available in PATH") {
+		t.Fatalf("concatAACFiles() error = %v, want actionable FFmpeg guidance", err)
+	}
 }
 
 func TestEmitDownloadStarted_WithEmitter(t *testing.T) {
@@ -2294,6 +2345,31 @@ func TestConvertAACtoMP3_ConversionError(t *testing.T) {
 	}
 	if err != nil && !strings.Contains(err.Error(), "ffmpeg conversion failed") {
 		t.Logf("convertAACtoMP3 returned error (expected): %v", err)
+	}
+}
+
+func TestConvertAACtoMP3RemovesPartialOutputOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fake ffmpeg is not supported on Windows")
+	}
+	tmpDir := t.TempDir()
+	destFile := filepath.Join(tmpDir, "partial.mp3")
+	fakeFFmpeg := filepath.Join(tmpDir, "ffmpeg")
+	script := "#!/bin/sh\nprintf partial > \"${12}\"\nexit 1\n"
+	if err := os.WriteFile(fakeFFmpeg, []byte(script), 0600); err != nil {
+		t.Fatalf("create fake ffmpeg: %v", err)
+	}
+	if err := os.Chmod(fakeFFmpeg, 0700); err != nil {
+		t.Fatalf("make fake ffmpeg executable: %v", err)
+	}
+	t.Setenv("PATH", tmpDir)
+
+	err := convertAACtoMP3(context.Background(), "source.aac", destFile)
+	if err == nil || !strings.Contains(err.Error(), "ffmpeg conversion failed") {
+		t.Fatalf("convertAACtoMP3() error = %v, want conversion failure", err)
+	}
+	if _, err := os.Stat(destFile); !os.IsNotExist(err) {
+		t.Fatalf("partial output still exists (stat error: %v)", err)
 	}
 }
 

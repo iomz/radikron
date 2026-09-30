@@ -5,23 +5,21 @@ import { useAppStore } from './useAppStore';
 vi.mock('../../wailsjs/go/main/App', () => ({
   GetAvailableStations: vi.fn(),
   GetConfig: vi.fn(),
-  GetMonitoringStatus: vi.fn(),
+  GetStationNames: vi.fn(),
   LoadConfig: vi.fn(),
-  StartMonitoring: vi.fn(),
-  StopMonitoring: vi.fn(),
+  RefreshStations: vi.fn(),
 }));
 
 const backend = vi.mocked(Backend);
 
 function resetStore() {
   useAppStore.setState({
-    monitoring: false,
     configInfo: null,
     stations: [],
+    stationNames: {},
     configFile: 'config.yml',
     activityLogs: [],
     loading: true,
-    isToggling: false,
   });
 }
 
@@ -36,52 +34,27 @@ describe('useAppStore', () => {
     const cfg = { AreaID: 'JP13' } as Awaited<ReturnType<typeof Backend.GetConfig>>;
     backend.GetConfig.mockResolvedValue(cfg);
     backend.GetAvailableStations.mockResolvedValue(['TBS', 'FMT']);
-    backend.GetMonitoringStatus.mockResolvedValue(true);
-
+    backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System', FMT: 'Tokyo FM' });
     await useAppStore.getState().loadInitialData();
 
     expect(backend.GetConfig).toHaveBeenCalledOnce();
     expect(backend.GetAvailableStations).toHaveBeenCalledOnce();
-    expect(backend.GetMonitoringStatus).toHaveBeenCalledOnce();
     expect(useAppStore.getState()).toMatchObject({
       configInfo: cfg,
       stations: ['TBS', 'FMT'],
-      monitoring: true,
+      stationNames: { TBS: 'Tokyo Broadcasting System', FMT: 'Tokyo FM' },
       loading: false,
     });
   });
 
-  it('serializes monitoring toggles and trusts verified backend state', async () => {
-    let releaseStart: (() => void) | undefined;
-    backend.StartMonitoring.mockImplementation(() => new Promise<void>((resolve) => {
-      releaseStart = resolve;
-    }));
-    backend.GetMonitoringStatus.mockResolvedValue(true);
+  it('normalizes a null station response to an empty list', async () => {
+    backend.GetAvailableStations.mockResolvedValue(null as unknown as string[]);
+    backend.GetStationNames.mockResolvedValue({});
 
-    const firstToggle = useAppStore.getState().toggleMonitoring();
-    const secondToggle = useAppStore.getState().toggleMonitoring();
+    await useAppStore.getState().loadStations();
 
-    expect(backend.StartMonitoring).toHaveBeenCalledOnce();
-    expect(useAppStore.getState().isToggling).toBe(true);
-    releaseStart?.();
-    await Promise.all([firstToggle, secondToggle]);
-
-    expect(backend.GetMonitoringStatus).toHaveBeenCalledOnce();
-    expect(useAppStore.getState()).toMatchObject({ monitoring: true, isToggling: false });
-  });
-
-  it('records backend toggle errors and clears guard', async () => {
-    backend.StartMonitoring.mockRejectedValue(new Error('backend unavailable'));
-
-    await useAppStore.getState().toggleMonitoring();
-
-    expect(useAppStore.getState().monitoring).toBe(false);
-    expect(useAppStore.getState().isToggling).toBe(false);
-    const logs = useAppStore.getState().activityLogs;
-    expect(logs[logs.length - 1]).toMatchObject({
-      type: 'error',
-      message: 'Failed to start monitoring: backend unavailable',
-    });
+    expect(useAppStore.getState().stations).toEqual([]);
+    expect(useAppStore.getState().stationLabel('UNKNOWN')).toBe('UNKNOWN');
   });
 
   it('refreshes configuration and stations after loading a file', async () => {
@@ -89,10 +62,22 @@ describe('useAppStore', () => {
     backend.LoadConfig.mockResolvedValue(undefined);
     backend.GetConfig.mockResolvedValue(cfg);
     backend.GetAvailableStations.mockResolvedValue(['FM802']);
+    backend.GetStationNames.mockResolvedValue({ FM802: 'FM802' });
 
     await useAppStore.getState().loadConfig('/tmp/radikron.yml');
 
     expect(backend.LoadConfig).toHaveBeenCalledWith('/tmp/radikron.yml');
-    expect(useAppStore.getState()).toMatchObject({ configInfo: cfg, stations: ['FM802'] });
+    expect(useAppStore.getState()).toMatchObject({ configInfo: cfg, stations: ['FM802'], stationNames: { FM802: 'FM802' } });
+  });
+
+  it('retries station catalog refresh and updates visible stations', async () => {
+    backend.RefreshStations.mockResolvedValue(['TBS', 'QRR']);
+    backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System', QRR: '文化放送' });
+
+    await useAppStore.getState().refreshStations();
+
+    expect(backend.RefreshStations).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().stations).toEqual(['TBS', 'QRR']);
+    expect(useAppStore.getState().stationLabel('QRR')).toBe('文化放送');
   });
 });

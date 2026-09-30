@@ -11,18 +11,17 @@ interface ActivityLogEntry {
 
 interface AppState {
   // State
-  monitoring: boolean;
   configInfo: config.Config | null;
   stations: string[];
+  stationNames: Record<string, string>;
   configFile: string;
   activityLogs: ActivityLogEntry[];
   loading: boolean;
-  isToggling: boolean;
 
   // Actions
-  setMonitoring: (monitoring: boolean) => void;
   setConfigInfo: (configInfo: config.Config | null) => void;
   setStations: (stations: string[]) => void;
+  stationLabel: (stationID: string) => string;
   setConfigFile: (configFile: string) => void;
   addActivityLog: (type: 'info' | 'success' | 'error', message: string) => void;
   setLoading: (loading: boolean) => void;
@@ -30,27 +29,24 @@ interface AppState {
   // Async actions
   loadConfigInfo: () => Promise<void>;
   loadStations: () => Promise<void>;
-  loadMonitoringStatus: () => Promise<void>;
   loadInitialData: () => Promise<void>;
-  toggleMonitoring: () => Promise<void>;
   loadConfig: (filename: string) => Promise<void>;
   refreshStations: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
-  monitoring: false,
   configInfo: null,
   stations: [],
+  stationNames: {},
   configFile: 'config.yml',
   activityLogs: [],
   loading: true,
-  isToggling: false,
 
   // Synchronous actions
-  setMonitoring: (monitoring) => set({ monitoring }),
   setConfigInfo: (configInfo) => set({ configInfo }),
   setStations: (stations) => set({ stations }),
+  stationLabel: (stationID) => get().stationNames[stationID] || stationID,
   setConfigFile: (configFile) => set({ configFile }),
   setLoading: (loading) => set({ loading }),
 
@@ -84,22 +80,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadStations: async () => {
     try {
       const stationList = await App.GetAvailableStations();
-      set({ stations: stationList });
+      const stationNames = await App.GetStationNames();
+      set({
+        stations: Array.isArray(stationList) ? stationList : [],
+        stationNames: stationNames || {},
+      });
     } catch (error) {
       console.error('Failed to load stations:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       get().addActivityLog('error', `Failed to load stations: ${errorMessage}`);
-    }
-  },
-
-  loadMonitoringStatus: async () => {
-    try {
-      const status = await App.GetMonitoringStatus();
-      set({ monitoring: status });
-    } catch (error) {
-      console.error('Failed to load monitoring status:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      get().addActivityLog('error', `Load monitoring status failed: ${errorMessage}`);
     }
   },
 
@@ -109,44 +98,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       await Promise.all([
         get().loadConfigInfo(),
         get().loadStations(),
-        get().loadMonitoringStatus(),
       ]);
     } finally {
       set({ loading: false });
-    }
-  },
-
-  toggleMonitoring: async () => {
-    const { monitoring, isToggling } = get();
-    
-    // Guard: return early if a toggle is already in progress
-    if (isToggling) {
-      return;
-    }
-    
-    // Set the guard flag before starting the async operation
-    set({ isToggling: true });
-    
-    try {
-      // Call the backend to perform the requested action
-      if (monitoring) {
-        await App.StopMonitoring();
-      } else {
-        await App.StartMonitoring();
-      }
-      
-      // Verify the resulting state by querying the backend
-      const actualState = await App.GetMonitoringStatus();
-      
-      // Update state based on the verified backend state
-      set({ monitoring: actualState });
-    } catch (error) {
-      console.error('Failed to toggle monitoring:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      get().addActivityLog('error', `Failed to ${monitoring ? 'stop' : 'start'} monitoring: ${errorMessage}`);
-    } finally {
-      // Always clear the guard flag so future toggles can proceed
-      set({ isToggling: false });
     }
   },
 
@@ -166,7 +120,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   refreshStations: async () => {
-    await get().loadStations();
+    try {
+      const stationList = await App.RefreshStations();
+      const stationNames = await App.GetStationNames();
+      const stations = Array.isArray(stationList) ? stationList : [];
+      set({ stations, stationNames: stationNames || {} });
+      get().addActivityLog('success', `Loaded ${stations.length} stations`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      get().addActivityLog('error', `Failed to refresh stations: ${errorMessage}`);
+    }
   },
 }));
-

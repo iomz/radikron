@@ -5,8 +5,12 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 
 export const Stations: React.FC = () => {
-  const stations = useAppStore((state) => state.stations);
+  const stations = useAppStore((state) => state.stations) ?? [];
+  const stationLabel = useAppStore((state) => state.stationLabel);
   const refreshStations = useAppStore((state) => state.refreshStations);
+  const sortedStations = [...stations].sort((a, b) =>
+    stationLabel(a).localeCompare(stationLabel(b), undefined, { sensitivity: 'base' }) || a.localeCompare(b),
+  );
 
   return (
     <Card>
@@ -21,9 +25,9 @@ export const Stations: React.FC = () => {
               No stations available
             </Badge>
           ) : (
-            stations.map((station) => (
+            sortedStations.map((station) => (
               <Badge key={station} variant="outline">
-                {station}
+                {stationLabel(station)}
               </Badge>
             ))
           )}
@@ -35,4 +39,3 @@ export const Stations: React.FC = () => {
     </Card>
   );
 };
-

@@ -36,6 +36,8 @@ const (
 	timeshiftChunklistDumpEnv      = "RADIKRON_TIMESHIFT_CHUNKLIST_DUMP"
 	timeshiftDiagnosticPerm        = 0600
 	windowsUserPathPrefixPartCount = 2
+	downloadOperationTimeout       = 30 * time.Minute
+	progressUpdateDivisor          = 10
 )
 
 // emitDownloadStarted emits a download started event if emitter is available, otherwise logs it
@@ -53,6 +55,25 @@ func emitDownloadCompleted(ctx context.Context, stationID, title, startTime, fil
 		emitter.EmitDownloadCompleted(stationID, title, startTime, filePath)
 	} else {
 		log.Printf("download completed [%s]%s: %s", stationID, title, filePath)
+	}
+}
+
+type downloadLifecycleEmitter interface {
+	EmitDownloadFailed(stationID, title, startTime, stage string, err error)
+	EmitDownloadProgress(stationID, title, startTime, stage string, completed, total int)
+}
+
+func emitDownloadFailed(ctx context.Context, prog *Prog, stage string, err error) {
+	if emitter, ok := GetEventEmitter(ctx).(downloadLifecycleEmitter); ok {
+		emitter.EmitDownloadFailed(prog.StationID, prog.Title, prog.Ft, stage, err)
+		return
+	}
+	emitLogMessage(ctx, "error", fmt.Sprintf("Download failed during %s for [%s]%s: %v", stage, prog.StationID, prog.Title, err))
+}
+
+func emitDownloadProgress(ctx context.Context, prog *Prog, stage string, completed, total int) {
+	if emitter, ok := GetEventEmitter(ctx).(downloadLifecycleEmitter); ok {
+		emitter.EmitDownloadProgress(prog.StationID, prog.Title, prog.Ft, stage, completed, total)
 	}
 }
 
@@ -329,9 +350,20 @@ func bulkDownload(list []string, output string) error {
 }
 
 func bulkDownloadWithClient(ctx context.Context, client *http.Client, list []string, output string) error {
+	return bulkDownloadWithClientProgress(ctx, client, list, output, nil)
+}
+
+func bulkDownloadWithClientProgress(
+	ctx context.Context,
+	client *http.Client,
+	list []string,
+	output string,
+	progress func(completed, total int),
+) error {
 	var (
-		errFlag bool
-		mu      sync.Mutex
+		errFlag   bool
+		completed int
+		mu        sync.Mutex
 	)
 	var wg sync.WaitGroup
 
@@ -355,6 +387,13 @@ func bulkDownloadWithClient(ctx context.Context, client *http.Client, list []str
 				}
 			}
 		finished:
+			mu.Lock()
+			completed++
+			progressCount := completed
+			mu.Unlock()
+			if progress != nil && (progressCount == len(list) || progressCount%max(1, len(list)/progressUpdateDivisor) == 0) {
+				progress(progressCount, len(list))
+			}
 			if err != nil {
 				log.Printf("failed to download: %s", err)
 				mu.Lock()
@@ -418,45 +457,62 @@ func downloadProgram(
 	output *OutputConfig, // the file configuration
 ) {
 	defer wg.Done()
-	var err error
+	ctx, cancel := context.WithTimeout(ctx, downloadOperationTimeout)
+	defer cancel()
+	stage := "fetching program playlist"
+	failed := func(err error) {
+		emitDownloadFailed(ctx, prog, stage, err)
+	}
+	emitDownloadProgress(ctx, prog, stage, 0, 0)
 
-	chunklist, err := getTimeshiftChunklist(ctx, prog)
+	chunklist, err := getTimeshiftChunklistWithProgress(ctx, prog, func(completed, total int) {
+		emitDownloadProgress(ctx, prog, stage, completed, total)
+	})
 	if err != nil {
-		log.Printf("failed to get chunklist: %s", err)
+		failed(err)
 		return
 	}
 
+	stage = "downloading audio segments"
+	emitDownloadProgress(ctx, prog, stage, 0, len(chunklist))
 	aacDir, err := tempAACDir()
 	if err != nil {
-		log.Printf("failed to create the aac dir: %s", err)
+		failed(err)
 		return
 	}
 	defer os.RemoveAll(aacDir) // clean up
 
 	asset := GetAsset(ctx)
-	if err = bulkDownloadWithClient(ctx, asset.DefaultClient, chunklist, aacDir); err != nil {
-		log.Printf("failed to download aac files: %s", err)
+	if err = bulkDownloadWithClientProgress(ctx, asset.DefaultClient, chunklist, aacDir, func(completed, total int) {
+		emitDownloadProgress(ctx, prog, stage, completed, total)
+	}); err != nil {
+		failed(err)
 		return
 	}
 
+	stage = "combining audio segments"
+	emitDownloadProgress(ctx, prog, stage, len(chunklist), len(chunklist))
 	concatedFile, err := concatAACFilesFromList(ctx, aacDir)
 	if err != nil {
-		log.Printf("failed to concat aac files: %s", err)
+		failed(err)
 		return
 	}
 
+	stage = "saving output file"
 	if err = writeOutputFile(ctx, concatedFile, output); err != nil {
-		log.Printf("failed to write the output file: %s", err)
+		failed(err)
 		return
 	}
 
 	if shouldRetry := validateAndCleanupOutputFile(ctx, output); shouldRetry {
+		failed(errors.New("output validation failed; download will be retried"))
 		return
 	}
 
+	stage = "writing metadata"
 	err = writeID3Tag(output, prog)
 	if err != nil {
-		emitLogMessage(ctx, "error", fmt.Sprintf("ID3v2: %v", err))
+		failed(err)
 		return
 	}
 
@@ -534,12 +590,16 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 		"-loglevel", "error",
 		destFile,
 	)
+	hideFFmpegConsole(cmd)
 
 	// Capture stderr for error messages
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if removeErr := os.Remove(destFile); removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("ffmpeg conversion failed: %w (stderr: %s; failed to remove partial output: %v)", err, stderr.String(), removeErr)
+		}
 		return fmt.Errorf("ffmpeg conversion failed: %w (stderr: %s)", err, stderr.String())
 	}
 
@@ -547,11 +607,18 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 }
 
 // getTimeshiftChunklist returns a slice of chunk urls.
-//
-//nolint:gocyclo,funlen // keep this function monolithic
 func getTimeshiftChunklist(
 	ctx context.Context,
 	prog *Prog,
+) ([]string, error) {
+	return getTimeshiftChunklistWithProgress(ctx, prog, nil)
+}
+
+//nolint:gocyclo,funlen // playlist parsing keeps request state local
+func getTimeshiftChunklistWithProgress(
+	ctx context.Context,
+	prog *Prog,
+	progress func(completed, total int),
 ) ([]string, error) {
 	const (
 		seekStep       = 15 * time.Second
@@ -626,13 +693,21 @@ func getTimeshiftChunklist(
 
 	seen := map[string]bool{}
 	var chunklist []string
+	totalSeeks := int(to.Sub(ft) / seekStep)
+	if to.Sub(ft)%seekStep != 0 {
+		totalSeeks++
+	}
+	completedSeeks := 0
 
 	// Overlap requests because HLS segment boundaries may not align with fixed seek intervals.
 	for seek := ft; seek.Before(to); seek = seek.Add(seekStep) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// build m3u8 request uri
 		u, err := url.Parse(APIPlaylistM3U8)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		// set query parameters
@@ -720,6 +795,10 @@ func getTimeshiftChunklist(
 				seen[key] = true
 				chunklist = append(chunklist, c)
 			}
+		}
+		completedSeeks++
+		if progress != nil && (completedSeeks == totalSeeks || completedSeeks%max(1, totalSeeks/progressUpdateDivisor) == 0) {
+			progress(completedSeeks, totalSeeks)
 		}
 	}
 	if debugTimeshift {

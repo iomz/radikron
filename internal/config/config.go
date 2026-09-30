@@ -34,6 +34,19 @@ type Config struct {
 
 // LoadConfig loads and validates configuration from the specified file
 func LoadConfig(filename string) (*Config, error) {
+	areaID, err := radikron.CurrentAreaID()
+	if err != nil {
+		areaID = radikron.DefaultArea
+	}
+	return loadConfig(filename, areaID)
+}
+
+// LoadConfigWithoutAreaLookup avoids network access when loading GUI startup config.
+func LoadConfigWithoutAreaLookup(filename string) (*Config, error) {
+	return loadConfig(filename, radikron.DefaultArea)
+}
+
+func loadConfig(filename, defaultAreaID string) (*Config, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current directory: %w", err)
@@ -50,7 +63,7 @@ func LoadConfig(filename string) (*Config, error) {
 	}
 
 	// Set defaults
-	setDefaults()
+	setDefaults(defaultAreaID)
 
 	// Validate and build config
 	cfg := &Config{}
@@ -115,13 +128,7 @@ func setupViper(filename, cwd string) error {
 }
 
 // setDefaults sets default values for configuration
-func setDefaults() {
-	currentAreaID, err := radikron.CurrentAreaID()
-	if err != nil {
-		// If we can't get the area ID, use the default
-		currentAreaID = radikron.DefaultArea
-	}
-
+func setDefaults(defaultAreaID string) {
 	// Get default downloads directory (cross-platform: $HOME/Downloads/radiko)
 	var defaultDownloads string
 	homeDir, err := os.UserHomeDir()
@@ -138,7 +145,7 @@ func setDefaults() {
 		defaultDownloads = filepath.Join(homeDir, "Downloads", "radiko")
 	}
 
-	viper.SetDefault("area-id", currentAreaID)
+	viper.SetDefault("area-id", defaultAreaID)
 	viper.SetDefault("extra-stations", []string{})
 	viper.SetDefault("ignore-stations", []string{})
 	viper.SetDefault("file-format", radikron.AudioFormatAAC)

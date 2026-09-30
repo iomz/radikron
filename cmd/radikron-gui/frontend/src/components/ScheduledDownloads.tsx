@@ -50,6 +50,7 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
 
 export const ScheduledDownloads: React.FC = () => {
   const addActivityLog = useAppStore((state) => state.addActivityLog);
+  const stationLabel = useAppStore((state) => state.stationLabel);
   const [schedules, setSchedules] = useState<radikron.Prog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,7 +249,7 @@ export const ScheduledDownloads: React.FC = () => {
                             <div className="flex-1">
                               <h3 className="font-semibold text-lg mb-1">{program.Title}</h3>
                               <div className="flex items-center gap-2 flex-wrap">
-                                <Badge variant="outline">{program.StationID}</Badge>
+                                <Badge variant="outline">{stationLabel(program.StationID)}</Badge>
                                 {program.Pfm && (
                                   <span className="text-sm text-muted-foreground">
                                     Host: {program.Pfm}
@@ -311,7 +312,7 @@ export const ScheduledDownloads: React.FC = () => {
                 <DialogTitle>{selectedProgram.Title}</DialogTitle>
                 <DialogDescription>
                   <div className="flex items-center gap-2 mt-2">
-                    <Badge variant="outline">{selectedProgram.StationID}</Badge>
+                    <Badge variant="outline">{stationLabel(selectedProgram.StationID)}</Badge>
                     {selectedProgram.Pfm && (
                       <span className="text-sm text-foreground">Host: {selectedProgram.Pfm}</span>
                     )}
@@ -402,4 +403,3 @@ export const ScheduledDownloads: React.FC = () => {
     </div>
   );
 };
-

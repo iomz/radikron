@@ -9,9 +9,7 @@ import { useAppStore } from './store/useAppStore';
 vi.mock('../wailsjs/go/main/App', () => ({
   GetAvailableStations: vi.fn(),
   GetConfig: vi.fn(),
-  GetMonitoringStatus: vi.fn(),
-  StartMonitoring: vi.fn(),
-  StopMonitoring: vi.fn(),
+  GetStationNames: vi.fn(),
 }));
 
 vi.mock('../wailsjs/runtime/runtime', () => ({
@@ -29,7 +27,7 @@ const backend = vi.mocked(Backend);
 const eventsOn = vi.mocked(EventsOn);
 let eventHandlers: Map<string, (data?: unknown) => void>;
 
-describe('App event transitions', () => {
+describe('App shell events', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -40,14 +38,13 @@ describe('App event transitions', () => {
     });
     backend.GetConfig.mockResolvedValue({ AreaID: 'JP13' } as Awaited<ReturnType<typeof Backend.GetConfig>>);
     backend.GetAvailableStations.mockResolvedValue(['TBS']);
-    backend.GetMonitoringStatus.mockResolvedValue(false);
+    backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System' });
     useAppStore.setState({
-      monitoring: false,
       configInfo: null,
       stations: [],
+      stationNames: {},
       activityLogs: [],
       loading: true,
-      isToggling: false,
     });
     window.matchMedia = vi.fn().mockReturnValue({
       matches: false,
@@ -56,24 +53,27 @@ describe('App event transitions', () => {
     });
   });
 
-  it('updates monitoring state from backend events and unsubscribes on unmount', async () => {
+  it('omits monitoring controls and unsubscribes on unmount', async () => {
     const { unmount } = render(<App />);
-    await screen.findByText('Stopped');
+    await screen.findByText('Dashboard content');
     expect(screen.getByText('Dashboard content')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /start monitoring|stop monitoring/i })).toBeNull();
+    expect(screen.queryByText('Running')).toBeNull();
+    expect(screen.queryByText('Stopped')).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Rules Editor' }));
     expect(screen.getByText('Rules content')).toBeTruthy();
     expect(screen.queryByText('Dashboard content')).toBeNull();
 
-    act(() => eventHandlers.get('monitoring-started')?.());
-    expect(screen.getByText('Running')).toBeTruthy();
-    let logs = useAppStore.getState().activityLogs;
-    expect(logs[logs.length - 1]?.message).toBe('Monitoring started');
-
-    act(() => eventHandlers.get('monitoring-stopped')?.());
-    expect(screen.getByText('Stopped')).toBeTruthy();
-    logs = useAppStore.getState().activityLogs;
-    expect(logs[logs.length - 1]?.message).toBe('Monitoring stopped');
+    act(() => eventHandlers.get('download-progress')?.({
+      station: 'TBS',
+      title: 'Show',
+      stage: 'fetching playlist',
+      completed: 5,
+      total: 10,
+    }));
+    const logs = useAppStore.getState().activityLogs;
+    expect(logs[logs.length - 1]?.message).toContain('Download fetching playlist (5/10): Show (TBS)');
 
     const unsubscribers = eventsOn.mock.results.map((result) => result.value);
     unmount();
@@ -83,7 +83,7 @@ describe('App event transitions', () => {
 
   it('refreshes config after successful config-loaded event', async () => {
     render(<App />);
-    await screen.findByText('Stopped');
+    await screen.findByText('Dashboard content');
     backend.GetConfig.mockClear();
 
     act(() => eventHandlers.get('config-loaded')?.({ success: true }));
