@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/iomz/radikron"
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 )
 
 func TestMainPrintsVersion(t *testing.T) {
@@ -68,7 +67,7 @@ func TestConfig(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,8 +81,8 @@ func TestConfig(t *testing.T) {
 		t.Error(err)
 	}
 
-	if asset.OutputFormat != radigo.AudioFormatAAC {
-		t.Errorf("%v => want %v", asset.OutputFormat, radigo.AudioFormatAAC)
+	if asset.OutputFormat != radikron.AudioFormatAAC {
+		t.Errorf("%v => want %v", asset.OutputFormat, radikron.AudioFormatAAC)
 	}
 
 	if len(cfg.Rules) != 4 {
@@ -91,7 +90,7 @@ func TestConfig(t *testing.T) {
 	}
 
 	got := len(asset.AvailableStations)
-	nStations := 10
+	nStations := 11
 	if got != nStations {
 		t.Errorf("asset.AvailableStations: %v => want %v", got, nStations)
 	}
@@ -243,7 +242,7 @@ func TestRunIteration(t *testing.T) {
 		t.Fatalf("Failed to load location: %v", err)
 	}
 
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("Failed to create radiko client: %v", err)
 	}
@@ -296,7 +295,7 @@ func TestRunLoopIteration(t *testing.T) {
 		t.Fatalf("Failed to load location: %v", err)
 	}
 
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("Failed to create radiko client: %v", err)
 	}
@@ -335,8 +334,8 @@ func TestRunLoopIteration_AssetCreationError(t *testing.T) {
 	timeSetter := defaultTimeSetter
 
 	// Use a nil client to cause asset creation to fail
-	var nilClient *radiko.Client
-	assetCreator := func(client *radiko.Client) (*radikron.Asset, error) {
+	var nilClient *http.Client
+	assetCreator := func(client *http.Client) (*radikron.Asset, error) {
 		if client == nil {
 			return nil, fmt.Errorf("client is nil")
 		}
@@ -434,7 +433,7 @@ func TestReloadConfig_InvalidConfigFile(t *testing.T) {
 		t.Fatalf("Failed to load location: %v", err)
 	}
 
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("Failed to create radiko client: %v", err)
 	}
@@ -476,7 +475,7 @@ func TestRunIteration_AssetNotFoundAfterConfig(t *testing.T) {
 		t.Fatalf("Failed to load location: %v", err)
 	}
 
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("Failed to create radiko client: %v", err)
 	}
@@ -510,7 +509,7 @@ func TestRun_WithDoneChannel(t *testing.T) {
 		t.Fatalf("Failed to load location: %v", err)
 	}
 
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("Failed to create radiko client: %v", err)
 	}
@@ -541,7 +540,7 @@ func TestRun_WithIterationError(t *testing.T) {
 		t.Fatalf("Failed to load location: %v", err)
 	}
 
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("Failed to create radiko client: %v", err)
 	}
@@ -569,7 +568,7 @@ func TestRun_WithTimer(t *testing.T) {
 		t.Fatalf("Failed to load location: %v", err)
 	}
 
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("Failed to create radiko client: %v", err)
 	}

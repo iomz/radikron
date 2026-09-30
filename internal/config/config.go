@@ -9,8 +9,6 @@ import (
 
 	"github.com/iomz/radikron"
 	"github.com/spf13/viper"
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -118,7 +116,7 @@ func setupViper(filename, cwd string) error {
 
 // setDefaults sets default values for configuration
 func setDefaults() {
-	currentAreaID, err := radiko.AreaID()
+	currentAreaID, err := radikron.CurrentAreaID()
 	if err != nil {
 		// If we can't get the area ID, use the default
 		currentAreaID = radikron.DefaultArea
@@ -143,7 +141,7 @@ func setDefaults() {
 	viper.SetDefault("area-id", currentAreaID)
 	viper.SetDefault("extra-stations", []string{})
 	viper.SetDefault("ignore-stations", []string{})
-	viper.SetDefault("file-format", radigo.AudioFormatAAC)
+	viper.SetDefault("file-format", radikron.AudioFormatAAC)
 	viper.SetDefault("minimum-output-size", radikron.DefaultMinimumOutputSize)
 	viper.SetDefault("downloads", defaultDownloads)
 	viper.SetDefault("max-downloading-concurrency", radikron.MaxDownloadingConcurrency)
@@ -154,7 +152,7 @@ func setDefaults() {
 func (c *Config) buildConfig() error {
 	// Validate file format
 	fileFormat := viper.GetString("file-format")
-	if fileFormat != radigo.AudioFormatAAC && fileFormat != radigo.AudioFormatMP3 {
+	if fileFormat != radikron.AudioFormatAAC && fileFormat != radikron.AudioFormatMP3 {
 		return fmt.Errorf("unsupported audio format: %s", fileFormat)
 	}
 

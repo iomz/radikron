@@ -9,14 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"reflect"
 	"strconv"
 	"time"
-
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 )
 
 var (
@@ -44,7 +42,7 @@ type Asset struct {
 	AreaDevices       Devices
 	Base64Key         string
 	Coordinates       Coordinates
-	DefaultClient     *radiko.Client
+	DefaultClient     *http.Client
 	// MinimumOutputSize in bytes for the downloaded audio
 	MinimumOutputSize int64
 	NextFetchTime     *time.Time
@@ -102,7 +100,9 @@ func (a *Asset) GenerateGPSForAreaID(areaID string) string {
 // GetAreaIDByStationID returns the first AreaID for the station
 func (a *Asset) GetAreaIDByStationID(stationID string) string {
 	if s, ok := a.Stations[stationID]; ok {
-		return s.Areas[0]
+		if len(s.Areas) > 0 {
+			return s.Areas[0]
+		}
 	}
 	return ""
 }
@@ -396,7 +396,11 @@ func GetAsset(ctx context.Context) *Asset {
 	return asset
 }
 
-func NewAsset(client *radiko.Client) (*Asset, error) {
+func NewAsset(client *http.Client) (*Asset, error) {
+	return newAsset(client, APIRegionFull)
+}
+
+func newAsset(client *http.Client, stationCatalogEndpoint string) (*Asset, error) {
 	asset := &Asset{}
 	// empty AreaDevices
 	asset.AreaDevices = map[string]*Device{}
@@ -409,7 +413,7 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 	// default client
 	asset.DefaultClient = client
 	// empty FileFormat
-	asset.OutputFormat = radigo.AudioFormatAAC
+	asset.OutputFormat = AudioFormatAAC
 	// default DownloadDir
 	asset.DownloadDir = "radiko"
 	// default concurrency values
@@ -447,12 +451,15 @@ func NewAsset(client *radiko.Client) (*Asset, error) {
 		return asset, err
 	}
 
-	// Station
-	xmlRegion, err := FetchXMLRegion()
+	// Station catalog is remote and may be temporarily unavailable. Keep the
+	// embedded asset usable so GUI startup/config loading can still complete.
+	xmlRegion, err := fetchXMLRegionWithClient(client, stationCatalogEndpoint)
 	if err != nil {
-		return asset, err
+		log.Printf("warning: failed to fetch station catalog: %v; continuing with configured stations only", err)
+		asset.Stations = Stations{}
+	} else {
+		asset.Stations = stationsFromRegion(xmlRegion)
 	}
-	asset.Stations = stationsFromRegion(xmlRegion)
 
 	// Versions
 	versionsJSON, err := VersionsJSON.Open("assets/versions.json")

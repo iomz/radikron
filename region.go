@@ -1,7 +1,9 @@
 package radikron
 
 import (
+	"context"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -24,13 +26,30 @@ type XMLRegionStation struct {
 }
 
 func FetchXMLRegion() (XMLRegion, error) {
-	region := XMLRegion{}
+	client, err := NewRadikoHTTPClient()
+	if err != nil {
+		return XMLRegion{}, err
+	}
+	return fetchXMLRegionWithClient(client, APIRegionFull)
+}
 
-	resp, err := http.Get(APIRegionFull) //nolint:noctx
+func fetchXMLRegionWithClient(client *http.Client, endpoint string) (XMLRegion, error) {
+	if client == nil {
+		return XMLRegion{}, fmt.Errorf("HTTP client is nil")
+	}
+	region := XMLRegion{}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return region, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return region, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return region, fmt.Errorf("station catalog returned HTTP %s", resp.Status)
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return region, err

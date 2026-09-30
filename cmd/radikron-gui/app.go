@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +17,6 @@ import (
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 )
 
 const (
@@ -70,7 +69,7 @@ func (wailsEventSink) Emit(ctx context.Context, eventName string, data any) {
 type App struct {
 	ctx                    context.Context
 	asset                  *radikron.Asset
-	client                 *radiko.Client
+	client                 *http.Client
 	config                 *config.Config
 	configFile             string
 	manualInjectionsFile   string
@@ -124,7 +123,7 @@ func getAppConfigDir() (string, error) {
 // createDefaultConfig creates a default configuration file
 func createDefaultConfig(configPath string) (*config.Config, error) {
 	// Get current area ID
-	currentAreaID, err := radiko.AreaID()
+	currentAreaID, err := radikron.CurrentAreaID()
 	if err != nil {
 		currentAreaID = radikron.DefaultArea
 	}
@@ -152,7 +151,7 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 		AreaID:                    currentAreaID,
 		ExtraStations:             []string{},
 		IgnoreStations:            []string{},
-		FileFormat:                radigo.AudioFormatAAC,
+		FileFormat:                radikron.AudioFormatAAC,
 		MinimumOutputSize:         radikron.DefaultMinimumOutputSize * radikron.Kilobytes * radikron.Kilobytes,
 		DownloadDir:               downloadDir,
 		Rules:                     radikron.Rules{},
@@ -185,10 +184,10 @@ func (a *App) OnStartup(ctx context.Context) {
 		a.manualInjectionsFile = filepath.Join(appConfigDir, "manual-injections.json")
 	}
 
-	// Initialize radiko client
-	client, err := radiko.New("")
+	// Initialize the HTTP client used for Radiko requests.
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to create radiko client: %v", err))
+		runtime.LogError(ctx, fmt.Sprintf("Failed to create HTTP client: %v", err))
 		return
 	}
 	a.client = client
@@ -751,16 +750,7 @@ func (a *App) DeleteManualInjection(programID string) error {
 		return fmt.Errorf("program %s is not a manual injection", programID)
 	}
 
-	// Remove from schedules
-	if a.asset != nil {
-		newSchedules := make(radikron.Schedules, 0, len(a.asset.Schedules))
-		for _, prog := range a.asset.Schedules {
-			if prog.ID != programID {
-				newSchedules = append(newSchedules, prog)
-			}
-		}
-		a.asset.Schedules = newSchedules
-	}
+	a.removeScheduledProgramLocked(programID)
 
 	// Remove from pending manual downloads
 	delete(a.pendingManualDownloads, programID)
@@ -778,6 +768,20 @@ func (a *App) DeleteManualInjection(programID string) error {
 
 	runtime.LogInfo(a.ctx, fmt.Sprintf("Deleted manual injection: %s", programID))
 	return nil
+}
+
+// removeScheduledProgramLocked removes a program from schedules. Caller must hold a.mu.
+func (a *App) removeScheduledProgramLocked(programID string) {
+	if a.asset == nil {
+		return
+	}
+	schedules := a.asset.Schedules[:0]
+	for _, prog := range a.asset.Schedules {
+		if prog.ID != programID {
+			schedules = append(schedules, prog)
+		}
+	}
+	a.asset.Schedules = schedules
 }
 
 // OnShutdown is called when the app closes
@@ -993,13 +997,7 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 
 	// Find matching rule
 	matchedRule := a.findMatchingRuleForInjection(prog, ruleName)
-	if matchedRule != nil {
-		prog.RuleName = matchedRule.Name
-		prog.RuleFolder = matchedRule.Folder
-	} else {
-		prog.RuleName = ""
-		prog.RuleFolder = ""
-	}
+	a.applyInjectionRule(prog, matchedRule)
 
 	// Check for duplicates
 	if err := a.handleDuplicateCheckForInjection(prog, startTime); err != nil {
@@ -1009,87 +1007,72 @@ func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
 
 	// Handle past vs future programs
 	if !startTime.After(radikron.CurrentTime) {
-		// Past program - prepare for download outside the lock
-		// Create a copy of prog to avoid issues after releasing the lock
-		progCopy := *prog
-		a.mu.Unlock() // Release lock before download to avoid deadlock
+		return a.injectPastProgramLocked(prog)
+	}
+	return a.injectFutureProgramLocked(prog)
+}
 
-		// Download outside the lock (downloadProgramImmediately will acquire its own lock)
-		downloadErr := a.downloadPastInjectedProgram(&progCopy)
+// applyInjectionRule copies matching rule metadata to the injected program.
+func (a *App) applyInjectionRule(prog *radikron.Prog, matchedRule *radikron.Rule) {
+	if matchedRule == nil {
+		prog.RuleName = ""
+		prog.RuleFolder = ""
+		return
+	}
+	prog.RuleName = matchedRule.Name
+	prog.RuleFolder = matchedRule.Folder
+}
 
-		// Re-acquire lock to update schedules
-		a.mu.Lock()
-		// Even if download fails, we add to schedules so user can see what failed
-		// The failure is tracked in the manual injection for retry logic
-		if !a.asset.Schedules.HasDuplicate(&progCopy) {
-			a.asset.Schedules = append(a.asset.Schedules, &progCopy)
-		}
-
-		// Save as manual injection
-		inj := &manualInjection{
-			ProgramID:  progCopy.ID,
-			StationID:  progCopy.StationID,
-			Ft:         progCopy.Ft,
-			To:         progCopy.To,
-			Title:      progCopy.Title,
-			RuleName:   progCopy.RuleName,
-			RuleFolder: progCopy.RuleFolder,
-		}
-		a.manualInjections[progCopy.ID] = inj
-		a.mu.Unlock()
-
-		// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
-		if err := a.saveManualInjections(); err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
-			// Continue anyway - the program is in schedules
-		}
-
-		// If download failed, the failure is already tracked in downloadPastInjectedProgram
-		if downloadErr != nil {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
-				"Past program [%s]%s download failed, will be retried automatically",
-				progCopy.StationID, progCopy.Title))
-		}
-	} else {
-		// Future program - add to schedules and update next fetch time
-		a.asset.Schedules = append(a.asset.Schedules, prog)
-		endTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.To, radikron.Location)
-		if err == nil {
-			next := endTime.Add(radikron.BufferMinutes * time.Minute)
-			if a.asset.NextFetchTime == nil || a.asset.NextFetchTime.After(next) {
-				a.asset.NextFetchTime = &next
-			}
-		}
-
-		// Save as manual injection
-		inj := &manualInjection{
-			ProgramID:  prog.ID,
-			StationID:  prog.StationID,
-			Ft:         prog.Ft,
-			To:         prog.To,
-			Title:      prog.Title,
-			RuleName:   prog.RuleName,
-			RuleFolder: prog.RuleFolder,
-		}
-		a.manualInjections[prog.ID] = inj
-		a.mu.Unlock() // Release lock before saving to avoid deadlock
-
-		// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
-		if err := a.saveManualInjections(); err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
-			// Continue anyway - the program is in schedules
-		}
-
-		// Reload monitoring to recalculate next fetch timer
-		// This is done by triggering a reload of the monitoring loop
-		// Since we can't directly trigger it, we'll emit an event
-		// The monitoring loop will pick up the change on its next iteration
-		runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
-			"program": prog.Title,
-			"station": prog.StationID,
-		})
+// injectPastProgramLocked registers and downloads a past program. Caller holds a.mu.
+func (a *App) injectPastProgramLocked(prog *radikron.Prog) error {
+	progCopy := *prog
+	a.manualInjections[progCopy.ID] = &manualInjection{
+		ProgramID: progCopy.ID, StationID: progCopy.StationID, Ft: progCopy.Ft,
+		To: progCopy.To, Title: progCopy.Title, RuleName: progCopy.RuleName,
+		RuleFolder: progCopy.RuleFolder,
+	}
+	a.mu.Unlock()
+	if err := a.saveManualInjections(); err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
 	}
 
+	downloadErr := a.downloadPastInjectedProgram(&progCopy)
+	a.mu.Lock()
+	if a.manualInjections[progCopy.ID] != nil && !a.asset.Schedules.HasDuplicate(&progCopy) {
+		a.asset.Schedules = append(a.asset.Schedules, &progCopy)
+	}
+	a.mu.Unlock()
+	if downloadErr != nil {
+		runtime.LogInfo(a.ctx, fmt.Sprintf(
+			"Past program [%s]%s download failed, will be retried automatically",
+			progCopy.StationID, progCopy.Title))
+	}
+	return nil
+}
+
+// injectFutureProgramLocked schedules a future program. Caller holds a.mu.
+func (a *App) injectFutureProgramLocked(prog *radikron.Prog) error {
+	a.asset.Schedules = append(a.asset.Schedules, prog)
+	endTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.To, radikron.Location)
+	if err == nil {
+		next := endTime.Add(radikron.BufferMinutes * time.Minute)
+		if a.asset.NextFetchTime == nil || a.asset.NextFetchTime.After(next) {
+			a.asset.NextFetchTime = &next
+		}
+	}
+	a.manualInjections[prog.ID] = &manualInjection{
+		ProgramID: prog.ID, StationID: prog.StationID, Ft: prog.Ft,
+		To: prog.To, Title: prog.Title, RuleName: prog.RuleName,
+		RuleFolder: prog.RuleFolder,
+	}
+	a.mu.Unlock()
+	if err := a.saveManualInjections(); err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
+	}
+	runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
+		"program": prog.Title,
+		"station": prog.StationID,
+	})
 	return nil
 }
 
@@ -1128,12 +1111,13 @@ func (a *App) removeManualInjectionAndSave(programID, stationID, title string) {
 	a.mu.Lock()
 	delete(a.manualInjections, programID)
 	delete(a.pendingManualDownloads, programID)
+	a.removeScheduledProgramLocked(programID)
 	a.mu.Unlock()
 
 	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
 	if err := a.saveManualInjections(); err != nil {
 		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after download: %v", err))
-	} else {
+	} else if a.ctx != nil {
 		runtime.LogInfo(a.ctx, fmt.Sprintf("Removed manually injected program [%s]%s after download completion", stationID, title))
 	}
 }
@@ -1165,22 +1149,10 @@ func (a *App) HandleDownloadCompletedByID(programID, stationID, title, _ string)
 
 	// Check if this program ID is in manual injections
 	_, exists := a.manualInjections[programID]
-	if exists {
-		// Remove from manual injections and pending downloads
-		delete(a.manualInjections, programID)
-		delete(a.pendingManualDownloads, programID)
-	}
 	a.mu.Unlock()
 
-	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
 	if exists {
-		if err := a.saveManualInjections(); err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after download: %v", err))
-		} else {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
-				"Removed manually injected program [%s]%s (ID: %s) after download completion",
-				stationID, title, programID))
-		}
+		a.removeManualInjectionAndSave(programID, stationID, title)
 	}
 }
 

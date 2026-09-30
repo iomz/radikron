@@ -9,8 +9,6 @@ import (
 
 	"github.com/iomz/radikron"
 	"github.com/spf13/viper"
-	"github.com/yyoshiki41/go-radiko"
-	"github.com/yyoshiki41/radigo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,8 +42,8 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("expected AreaID to be JP13, got %s", cfg.AreaID)
 	}
 
-	if cfg.FileFormat != radigo.AudioFormatAAC {
-		t.Errorf("expected FileFormat to be %s, got %s", radigo.AudioFormatAAC, cfg.FileFormat)
+	if cfg.FileFormat != radikron.AudioFormatAAC {
+		t.Errorf("expected FileFormat to be %s, got %s", radikron.AudioFormatAAC, cfg.FileFormat)
 	}
 
 	if len(cfg.Rules) == 0 {
@@ -70,8 +68,8 @@ func TestLoadConfigWithDefaults(t *testing.T) {
 		t.Fatalf("expected no error loading config, got: %v", err)
 	}
 
-	if cfg.FileFormat != radigo.AudioFormatAAC {
-		t.Errorf("expected FileFormat to be %s, got %s", radigo.AudioFormatAAC, cfg.FileFormat)
+	if cfg.FileFormat != radikron.AudioFormatAAC {
+		t.Errorf("expected FileFormat to be %s, got %s", radikron.AudioFormatAAC, cfg.FileFormat)
 	}
 
 	// Check that defaults are set
@@ -482,7 +480,7 @@ ignore-stations:
 	if os.Getenv("RADIKRON_NETWORK_TESTS") != "1" || testing.Short() {
 		t.Skip("skipping network-dependent test; set RADIKRON_NETWORK_TESTS=1 to run")
 	}
-	client, err := radiko.New("")
+	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		t.Fatalf("failed to create radiko client: %v", err)
 	}
@@ -537,8 +535,8 @@ func TestLoadConfigMP3Format(t *testing.T) {
 		t.Fatalf("expected no error loading config, got: %v", err)
 	}
 
-	if cfg.FileFormat != radigo.AudioFormatMP3 {
-		t.Errorf("expected FileFormat to be %s, got %s", radigo.AudioFormatMP3, cfg.FileFormat)
+	if cfg.FileFormat != radikron.AudioFormatMP3 {
+		t.Errorf("expected FileFormat to be %s, got %s", radikron.AudioFormatMP3, cfg.FileFormat)
 	}
 }
 
@@ -1021,7 +1019,7 @@ func TestSaveConfigPreservesRuleOrder(t *testing.T) {
 	// Create a config with multiple rules in a specific order
 	cfg := &Config{
 		AreaID:     "JP13",
-		FileFormat: radigo.AudioFormatAAC,
+		FileFormat: radikron.AudioFormatAAC,
 		Rules: radikron.Rules{
 			&radikron.Rule{Name: "first-rule", Criteria: radikron.Criteria{Title: "First", StationID: "FMT"}},
 			&radikron.Rule{Name: "second-rule", Criteria: radikron.Criteria{Title: "Second", StationID: "TBS"}},
@@ -1161,7 +1159,7 @@ func TestSaveConfig_WithRulesOrder(t *testing.T) {
 	// Create config with rules in specific order
 	cfg := &Config{
 		AreaID:     "JP13",
-		FileFormat: radigo.AudioFormatAAC,
+		FileFormat: radikron.AudioFormatAAC,
 		Rules: radikron.Rules{
 			&radikron.Rule{Name: "rule1", Criteria: radikron.Criteria{Title: "First", StationID: "FMT"}},
 			&radikron.Rule{Name: "rule2", Criteria: radikron.Criteria{Title: "Second", StationID: "TBS"}},
@@ -1200,7 +1198,7 @@ func TestSaveConfig_EmptyRules(t *testing.T) {
 
 	cfg := &Config{
 		AreaID:     "JP13",
-		FileFormat: radigo.AudioFormatAAC,
+		FileFormat: radikron.AudioFormatAAC,
 		Rules:      radikron.Rules{},
 	}
 
@@ -1299,7 +1297,7 @@ func TestConvertRulesToYAML_AllRuleFields(t *testing.T) {
 func TestSaveConfig_ErrorPaths(t *testing.T) {
 	cfg := &Config{
 		AreaID:     "JP13",
-		FileFormat: radigo.AudioFormatAAC,
+		FileFormat: radikron.AudioFormatAAC,
 		Rules:      radikron.Rules{},
 	}
 
@@ -1420,7 +1418,7 @@ func TestExcludeRoundTripsThroughConfigFile(t *testing.T) {
 
 	original := &Config{
 		AreaID:     "JP13",
-		FileFormat: radigo.AudioFormatAAC,
+		FileFormat: radikron.AudioFormatAAC,
 		Rules: radikron.Rules{
 			&radikron.Rule{
 				Name:     "midday",

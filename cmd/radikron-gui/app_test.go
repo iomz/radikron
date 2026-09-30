@@ -14,7 +14,6 @@ import (
 
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
-	"github.com/yyoshiki41/radigo"
 )
 
 type recordedEvent struct {
@@ -47,7 +46,7 @@ func testConfig(downloadDir string) *config.Config {
 	return &config.Config{
 		AreaID:                    radikron.DefaultArea,
 		ExtraStations:             []string{"TBS"},
-		FileFormat:                radigo.AudioFormatAAC,
+		FileFormat:                radikron.AudioFormatAAC,
 		MinimumOutputSize:         radikron.Kilobytes * radikron.Kilobytes,
 		DownloadDir:               downloadDir,
 		Rules:                     radikron.Rules{},
@@ -161,7 +160,7 @@ func TestGetSchedulesFiltersDownloadedInvalidAndUnsupportedPrograms(t *testing.T
 
 	app := NewApp()
 	app.asset = &radikron.Asset{
-		OutputFormat: radigo.AudioFormatAAC,
+		OutputFormat: radikron.AudioFormatAAC,
 		DownloadDir:  dir,
 		Schedules: radikron.Schedules{
 			{ID: "pending", StationID: "TBS", Title: "Pending", Ft: "20260820130000"},
@@ -185,6 +184,40 @@ func TestGetSchedulesRequiresAsset(t *testing.T) {
 	_, err := NewApp().GetSchedules()
 	if err == nil || err.Error() != "asset not initialized" {
 		t.Fatalf("GetSchedules() error = %v", err)
+	}
+}
+
+func TestHandleDownloadCompletedByIDRemovesInjectionAndSchedule(t *testing.T) {
+	manualInjectionsFile := filepath.Join(t.TempDir(), "manual-injections.json")
+	app := NewApp()
+	app.manualInjectionsFile = manualInjectionsFile
+	app.asset = &radikron.Asset{
+		Schedules: radikron.Schedules{{ID: "program-1", StationID: "TBS", Title: "Test"}},
+	}
+	app.manualInjections["program-1"] = &manualInjection{
+		ProgramID: "program-1",
+		StationID: "TBS",
+		Title:     "Test",
+	}
+	app.pendingManualDownloads["program-1"] = "program-1"
+
+	app.HandleDownloadCompletedByID("program-1", "TBS", "Test", "20260820120000")
+
+	if len(app.asset.Schedules) != 0 {
+		t.Errorf("completed program remains scheduled: %+v", app.asset.Schedules)
+	}
+	if app.IsManualInjection("program-1") {
+		t.Error("completed program remains a manual injection")
+	}
+	if _, exists := app.pendingManualDownloads["program-1"]; exists {
+		t.Error("completed program remains pending")
+	}
+	data, err := os.ReadFile(manualInjectionsFile)
+	if err != nil {
+		t.Fatalf("manual injection state not saved: %v", err)
+	}
+	if string(data) != "[]" {
+		t.Errorf("saved manual injections = %s, want []", data)
 	}
 }
 

@@ -1,6 +1,11 @@
 package radikron
 
 const (
+	// AudioFormatAAC is the native Radiko audio format.
+	AudioFormatAAC = "aac"
+	// AudioFormatMP3 is the converted output format.
+	AudioFormatMP3 = "mp3"
+
 	// BufferMinutes for fetching the playlist.m3u8 chunks
 	BufferMinutes = 5
 	// DatetimeLayout for time strings from radiko
