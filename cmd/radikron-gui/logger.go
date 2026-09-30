@@ -91,6 +91,29 @@ func (e *WailsEventEmitter) EmitDownloadCompleted(stationID, title, startTime, f
 	}
 }
 
+// EmitDownloadFailed reports an asynchronous failure with its stage and cause.
+func (e *WailsEventEmitter) EmitDownloadFailed(stationID, title, startTime, stage string, err error) {
+	e.emit("download-failed", map[string]any{
+		"station": stationID,
+		"title":   title,
+		"start":   startTime,
+		"stage":   stage,
+		"error":   err.Error(),
+	})
+}
+
+// EmitDownloadProgress reports bounded progress through archive playlist discovery.
+func (e *WailsEventEmitter) EmitDownloadProgress(stationID, title, startTime, stage string, completed, total int) {
+	e.emit("download-progress", map[string]any{
+		"station":   stationID,
+		"title":     title,
+		"start":     startTime,
+		"stage":     stage,
+		"completed": completed,
+		"total":     total,
+	})
+}
+
 // EmitFileSaved implements radikron.EventEmitter
 func (e *WailsEventEmitter) EmitFileSaved(stationID, title, filePath string) {
 	// Extract station and title from filePath if not provided

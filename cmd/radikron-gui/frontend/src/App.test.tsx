@@ -75,9 +75,19 @@ describe('App event transitions', () => {
     logs = useAppStore.getState().activityLogs;
     expect(logs[logs.length - 1]?.message).toBe('Monitoring stopped');
 
+    act(() => eventHandlers.get('download-progress')?.({
+      station: 'TBS',
+      title: 'Show',
+      stage: 'fetching playlist',
+      completed: 5,
+      total: 10,
+    }));
+    logs = useAppStore.getState().activityLogs;
+    expect(logs[logs.length - 1]?.message).toContain('Download fetching playlist (5/10): Show (TBS)');
+
     const unsubscribers = eventsOn.mock.results.map((result) => result.value);
     unmount();
-    expect(unsubscribers).toHaveLength(7);
+    expect(unsubscribers).toHaveLength(8);
     unsubscribers.forEach((unsubscribe) => expect(unsubscribe).toHaveBeenCalledOnce());
   });
 

@@ -21,6 +21,9 @@ interface DownloadEventData {
   title: string;
   start?: string;
   error?: string;
+  stage?: string;
+  completed?: number;
+  total?: number;
 }
 
 interface ConfigLoadedData {
@@ -158,7 +161,20 @@ const AppComponent: React.FC = () => {
       (data: DownloadEventData) => {
         addActivityLog(
           "error",
-          `Failed: ${data.title} (${data.station}) - ${data.error || "Unknown error"}`,
+          `Failed ${data.stage ? `during ${data.stage} ` : ""}: ${data.title} (${data.station}) - ${data.error || "Unknown error"}`,
+        );
+      },
+    );
+
+    const unsubscribeDownloadProgress = EventsOn(
+      "download-progress",
+      (data: DownloadEventData) => {
+        const progress = data.total
+          ? ` (${data.completed}/${data.total})`
+          : "";
+        addActivityLog(
+          "info",
+          `Download ${data.stage || "in progress"}${progress}: ${data.title} (${data.station})`,
         );
       },
     );
@@ -200,6 +216,7 @@ const AppComponent: React.FC = () => {
       unsubscribeDownloadStarted();
       unsubscribeDownloadCompleted();
       unsubscribeDownloadFailed();
+      unsubscribeDownloadProgress();
       unsubscribeConfigLoaded();
       unsubscribeLogMessage();
     };

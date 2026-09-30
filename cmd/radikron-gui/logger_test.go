@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 )
@@ -24,10 +25,12 @@ func TestWailsEventEmitterEmitsStructuredEvents(t *testing.T) {
 	emitter.EmitEncodingStarted("/tmp/show.aac")
 	emitter.EmitEncodingCompleted("/tmp/show.mp3")
 	emitter.EmitLogMessage("error", "failed")
+	emitter.EmitDownloadFailed("TBS", "Show", "20260820120000", "fetching playlist", errors.New("request timed out"))
+	emitter.EmitDownloadProgress("TBS", "Show", "20260820120000", "fetching playlist", 5, 10)
 
 	wantNames := []string{
 		"download-started", "download-completed", "file-saved", "download-skipped",
-		"encoding-started", "encoding-completed", "log-message",
+		"encoding-started", "encoding-completed", "log-message", "download-failed", "download-progress",
 	}
 	gotNames := make([]string, 0, len(events))
 	for _, event := range events {
