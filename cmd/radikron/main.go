@@ -286,21 +286,37 @@ func main() {
 	// Setup signal handling
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
 
 	// Create done channel for graceful shutdown
 	done := make(chan struct{})
 
 	// Run main loop in goroutine
 	wg := sync.WaitGroup{}
+	loopDone := make(chan error, 1)
 	go func() {
-		if err := runWithDefaults(&wg, *conf, done); err != nil {
-			log.Fatalf("fatal error in main loop: %v", err)
-		}
+		loopDone <- runWithDefaults(&wg, *conf, done)
 	}()
 
-	// Wait for signal
-	<-quit
+	// Stop scheduling work before waiting for downloads. Waiting on wg while
+	// runWithDefaults can still call wg.Add races WaitGroup Add against Wait,
+	// which can let shutdown return while downloads still hold files open.
+	loopFinished := false
+	select {
+	case sig := <-quit:
+		log.Printf("received signal %v", sig)
+	case err := <-loopDone:
+		loopFinished = true
+		if err != nil {
+			log.Printf("fatal error in main loop: %v", err)
+		}
+	}
 	close(done)
+	if !loopFinished {
+		if err := <-loopDone; err != nil {
+			log.Printf("fatal error in main loop: %v", err)
+		}
+	}
 
 	// Finish downloads in progress
 	log.Println("exit once all the downloads complete")
