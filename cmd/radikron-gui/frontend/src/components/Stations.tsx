@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 
 export const Stations: React.FC = () => {
-  const stations = useAppStore((state) => state.stations);
+  const stations = useAppStore((state) => state.stations) ?? [];
   const refreshStations = useAppStore((state) => state.refreshStations);
 
   return (
@@ -35,4 +35,3 @@ export const Stations: React.FC = () => {
     </Card>
   );
 };
-

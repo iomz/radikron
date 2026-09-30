@@ -87,7 +87,7 @@ describe('App event transitions', () => {
 
     const unsubscribers = eventsOn.mock.results.map((result) => result.value);
     unmount();
-    expect(unsubscribers).toHaveLength(8);
+    expect(unsubscribers).toHaveLength(9);
     unsubscribers.forEach((unsubscribe) => expect(unsubscribe).toHaveBeenCalledOnce());
   });
 

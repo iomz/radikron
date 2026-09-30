@@ -87,6 +87,25 @@ func TestNewAssetContinuesWhenStationCatalogUnavailable(t *testing.T) {
 	}
 }
 
+func TestNewAssetWithoutStationCatalogDoesNotRequestNetwork(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+
+	asset, err := NewAssetWithoutStationCatalog(server.Client())
+	if err != nil {
+		t.Fatalf("NewAssetWithoutStationCatalog() error = %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("station catalog requests = %d, want 0", requests)
+	}
+	if len(asset.Stations) != 0 || len(asset.Versions.Apps) == 0 {
+		t.Fatalf("asset missing embedded data or unexpectedly has remote stations: %+v", asset)
+	}
+}
+
 func TestGenerateGPSForAreaID(t *testing.T) {
 	client, err := NewRadikoHTTPClient()
 	if err != nil {

@@ -37,6 +37,8 @@ export function OpenDirectory(arg1:string):Promise<void>;
 
 export function ReadConfigFile():Promise<string>;
 
+export function RefreshStations():Promise<Array<string>>;
+
 export function SaveConfig(arg1:string):Promise<void>;
 
 export function SearchWeeklyPrograms(arg1:string,arg2:string,arg3:string,arg4:string):Promise<radikron.Progs>;

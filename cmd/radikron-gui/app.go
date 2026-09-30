@@ -84,17 +84,22 @@ type App struct {
 	pendingManualDownloads map[string]string           // program ID -> program ID (for tracking downloads in progress)
 	events                 frontendEventSink
 	monitorLoop            func(context.Context)
+	startupReady           chan struct{}
+	startupErr             error
 	mu                     sync.RWMutex
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
+	startupReady := make(chan struct{})
+	close(startupReady)
 	return &App{
 		monitorWg:              &sync.WaitGroup{},
 		programSnapshots:       make(map[string]radikron.Progs),
 		manualInjections:       make(map[string]*manualInjection),
 		pendingManualDownloads: make(map[string]string),
 		events:                 wailsEventSink{},
+		startupReady:           startupReady,
 	}
 }
 
@@ -122,12 +127,6 @@ func getAppConfigDir() (string, error) {
 
 // createDefaultConfig creates a default configuration file
 func createDefaultConfig(configPath string) (*config.Config, error) {
-	// Get current area ID
-	currentAreaID, err := radikron.CurrentAreaID()
-	if err != nil {
-		currentAreaID = radikron.DefaultArea
-	}
-
 	// Get user's Downloads directory (cross-platform)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -148,7 +147,7 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 
 	// Create default config
 	cfg := &config.Config{
-		AreaID:                    currentAreaID,
+		AreaID:                    radikron.DefaultArea,
 		ExtraStations:             []string{},
 		IgnoreStations:            []string{},
 		FileFormat:                radikron.AudioFormatAAC,
@@ -170,7 +169,63 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 // OnStartup is called when the app starts
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
+	a.mu.Lock()
+	a.startupReady = make(chan struct{})
+	a.startupErr = nil
+	a.mu.Unlock()
 
+	err := a.initialize(ctx)
+	a.mu.Lock()
+	a.startupErr = err
+	close(a.startupReady)
+	a.mu.Unlock()
+	if err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("GUI startup initialization failed: %v", err))
+		return
+	}
+	go a.refreshStationCatalogInBackground()
+	go a.loadManualInjectionsInBackground()
+}
+
+func (a *App) waitForStartup() error {
+	a.mu.RLock()
+	ready := a.startupReady
+	a.mu.RUnlock()
+	if ready != nil {
+		<-ready
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.startupErr
+}
+
+func (a *App) refreshStationCatalogInBackground() {
+	if _, err := a.RefreshStations(); err != nil {
+		if a.ctx != nil {
+			runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to refresh station catalog: %v", err))
+			a.emit("log-message", map[string]any{
+				"type":    "error",
+				"message": fmt.Sprintf("Failed to refresh stations: %v. Use Refresh Stations to retry.", err),
+			})
+		}
+		return
+	}
+	a.emit("stations-loaded", nil)
+}
+
+func (a *App) loadManualInjectionsInBackground() {
+	if err := a.loadManualInjections(); err != nil {
+		if a.ctx != nil {
+			runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to load manual injections: %v", err))
+			a.emit("log-message", map[string]any{
+				"type":    "error",
+				"message": fmt.Sprintf("Failed to load manual injections: %v", err),
+			})
+		}
+	}
+}
+
+func (a *App) initialize(ctx context.Context) error {
 	// Get app config directory
 	appConfigDir, err := getAppConfigDir()
 	if err != nil {
@@ -187,16 +242,14 @@ func (a *App) OnStartup(ctx context.Context) {
 	// Initialize the HTTP client used for Radiko requests.
 	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to create HTTP client: %v", err))
-		return
+		return fmt.Errorf("failed to create HTTP client: %w", err)
 	}
 	a.client = client
 
-	// Create initial asset
-	asset, err := radikron.NewAsset(client)
+	// Initialize embedded data without blocking startup on the remote station catalog.
+	asset, err := radikron.NewAssetWithoutStationCatalog(client)
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to create asset: %v", err))
-		return
+		return fmt.Errorf("failed to create asset: %w", err)
 	}
 	a.asset = asset
 
@@ -211,42 +264,28 @@ func (a *App) OnStartup(ctx context.Context) {
 		runtime.LogInfo(ctx, fmt.Sprintf("Config file not found at %s, creating default config", a.configFile))
 		cfg, err = createDefaultConfig(a.configFile)
 		if err != nil {
-			runtime.LogError(ctx, fmt.Sprintf("Failed to create default config: %v", err))
-			// Continue with default values from asset
-			return
+			return fmt.Errorf("failed to create default config: %w", err)
 		}
 		runtime.LogInfo(ctx, fmt.Sprintf("Created default config at %s", a.configFile))
 	} else if configExists {
 		// Config file exists, try to load it
-		cfg, err = config.LoadConfig(a.configFile)
+		cfg, err = config.LoadConfigWithoutAreaLookup(a.configFile)
 		if err != nil {
-			// File exists but failed to load (e.g., malformed YAML, permission issues)
-			runtime.LogError(ctx, fmt.Sprintf("Failed to load config file at %s: %v. Continuing with default values.", a.configFile, err))
-			// Continue with default values from asset, don't overwrite the existing file
-			return
+			return fmt.Errorf("failed to load config file at %s: %w", a.configFile, err)
 		}
 	} else {
-		// Error checking file existence (not IsNotExist)
-		runtime.LogError(ctx, fmt.Sprintf("Failed to check config file at %s: %v. Continuing with default values.", a.configFile, err))
-		// Continue with default values from asset
-		return
+		return fmt.Errorf("failed to check config file at %s: %w", a.configFile, err)
 	}
 
 	// Apply config to asset
 	if err := cfg.ApplyToAsset(a.asset); err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to apply config to asset: %v", err))
-		// Continue with default values
-		return
+		return fmt.Errorf("failed to apply config to asset: %w", err)
 	}
 
 	a.config = cfg
 	runtime.LogInfo(ctx, fmt.Sprintf("Config loaded successfully from %s", a.configFile))
 
-	// Load manually injected programs
-	if err := a.loadManualInjections(); err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to load manual injections: %v", err))
-		// Continue without manual injections
-	}
+	return nil
 }
 
 // fetchProgramDetailsForStations fetches weekly programs for given stations and returns a map of program IDs to full program details
@@ -793,6 +832,9 @@ func (a *App) OnShutdown(_ context.Context) {
 
 // GetConfig returns the current configuration
 func (a *App) GetConfig() (*config.Config, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -1405,6 +1447,9 @@ func (a *App) SelectDirectory() (string, error) {
 
 // GetAvailableStations returns the list of available stations
 func (a *App) GetAvailableStations() ([]string, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -1412,7 +1457,50 @@ func (a *App) GetAvailableStations() ([]string, error) {
 		return nil, fmt.Errorf("asset not initialized")
 	}
 
-	return a.asset.AvailableStations, nil
+	return append([]string{}, a.asset.AvailableStations...), nil
+}
+
+// RefreshStations fetches the station catalog and applies the active station filters.
+func (a *App) RefreshStations() ([]string, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
+	a.mu.RLock()
+	if a.asset == nil {
+		a.mu.RUnlock()
+		return nil, fmt.Errorf("asset not initialized")
+	}
+	client := a.asset.DefaultClient
+	a.mu.RUnlock()
+
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	stations, err := radikron.FetchStationCatalog(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch station catalog: %w", err)
+	}
+
+	a.mu.Lock()
+	if a.asset == nil {
+		a.mu.Unlock()
+		return nil, fmt.Errorf("asset not initialized")
+	}
+	a.asset.Stations = stations
+	if a.config != nil {
+		if err := a.config.ApplyToAsset(a.asset); err != nil {
+			a.mu.Unlock()
+			return nil, fmt.Errorf("failed to apply station configuration: %w", err)
+		}
+	} else {
+		a.asset.LoadAvailableStations(radikron.DefaultArea)
+	}
+	available := append([]string{}, a.asset.AvailableStations...)
+	a.mu.Unlock()
+	return available, nil
 }
 
 // GetAllStations returns all stations from asset.Stations (all possible stations, not just available ones)
@@ -1567,6 +1655,9 @@ func (a *App) OpenDirectory(dirPath string) error {
 
 // GetMonitoringStatus returns whether monitoring is currently active.
 func (a *App) GetMonitoringStatus() bool {
+	if err := a.waitForStartup(); err != nil {
+		return false
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.monitoring

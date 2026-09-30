@@ -74,6 +74,7 @@ const AppComponent: React.FC = () => {
   const setMonitoring = useAppStore((state) => state.setMonitoring);
   const addActivityLog = useAppStore((state) => state.addActivityLog);
   const loadConfigInfo = useAppStore((state) => state.loadConfigInfo);
+  const loadStations = useAppStore((state) => state.loadStations);
   const getEffectiveTheme = useThemeStore((state) => state.getEffectiveTheme);
   const theme = useThemeStore((state) => state.theme);
   const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">(() =>
@@ -179,6 +180,10 @@ const AppComponent: React.FC = () => {
       },
     );
 
+    const unsubscribeStationsLoaded = EventsOn("stations-loaded", () => {
+      void loadStations();
+    });
+
     const unsubscribeConfigLoaded = EventsOn(
       "config-loaded",
       (data: ConfigLoadedData) => {
@@ -217,10 +222,11 @@ const AppComponent: React.FC = () => {
       unsubscribeDownloadCompleted();
       unsubscribeDownloadFailed();
       unsubscribeDownloadProgress();
+      unsubscribeStationsLoaded();
       unsubscribeConfigLoaded();
       unsubscribeLogMessage();
     };
-  }, [setMonitoring, addActivityLog, loadConfigInfo]);
+  }, [setMonitoring, addActivityLog, loadConfigInfo, loadStations]);
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>

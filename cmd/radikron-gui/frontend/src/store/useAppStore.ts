@@ -84,7 +84,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadStations: async () => {
     try {
       const stationList = await App.GetAvailableStations();
-      set({ stations: stationList });
+      set({ stations: Array.isArray(stationList) ? stationList : [] });
     } catch (error) {
       console.error('Failed to load stations:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -166,7 +166,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   refreshStations: async () => {
-    await get().loadStations();
+    try {
+      const stationList = await App.RefreshStations();
+      const stations = Array.isArray(stationList) ? stationList : [];
+      set({ stations });
+      get().addActivityLog('success', `Loaded ${stations.length} stations`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      get().addActivityLog('error', `Failed to refresh stations: ${errorMessage}`);
+    }
   },
 }));
-

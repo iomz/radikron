@@ -2007,6 +2007,15 @@ func TestEmitDownloadFailedAndProgress(t *testing.T) {
 	}
 }
 
+func TestConcatAACFilesExplainsMissingFFmpeg(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	tempDir := t.TempDir()
+	err := concatAACFiles(context.Background(), nil, tempDir, filepath.Join(tempDir, "output.aac"))
+	if err == nil || !strings.Contains(err.Error(), "ffmpeg not found; install FFmpeg and ensure it is available in PATH") {
+		t.Fatalf("concatAACFiles() error = %v, want actionable FFmpeg guidance", err)
+	}
+}
+
 func TestEmitDownloadStarted_WithEmitter(t *testing.T) {
 	emitter := &mockEventEmitter{}
 	ctx := context.WithValue(context.Background(), ContextKey("eventEmitter"), emitter)

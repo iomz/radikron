@@ -70,6 +70,10 @@ export function ReadConfigFile() {
   return window['go']['main']['App']['ReadConfigFile']();
 }
 
+export function RefreshStations() {
+  return window['go']['main']['App']['RefreshStations']();
+}
+
 export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
 }

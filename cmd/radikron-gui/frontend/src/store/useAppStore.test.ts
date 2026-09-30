@@ -7,6 +7,7 @@ vi.mock('../../wailsjs/go/main/App', () => ({
   GetConfig: vi.fn(),
   GetMonitoringStatus: vi.fn(),
   LoadConfig: vi.fn(),
+  RefreshStations: vi.fn(),
   StartMonitoring: vi.fn(),
   StopMonitoring: vi.fn(),
 }));
@@ -49,6 +50,14 @@ describe('useAppStore', () => {
       monitoring: true,
       loading: false,
     });
+  });
+
+  it('normalizes a null station response to an empty list', async () => {
+    backend.GetAvailableStations.mockResolvedValue(null as unknown as string[]);
+
+    await useAppStore.getState().loadStations();
+
+    expect(useAppStore.getState().stations).toEqual([]);
   });
 
   it('serializes monitoring toggles and trusts verified backend state', async () => {
@@ -94,5 +103,14 @@ describe('useAppStore', () => {
 
     expect(backend.LoadConfig).toHaveBeenCalledWith('/tmp/radikron.yml');
     expect(useAppStore.getState()).toMatchObject({ configInfo: cfg, stations: ['FM802'] });
+  });
+
+  it('retries station catalog refresh and updates visible stations', async () => {
+    backend.RefreshStations.mockResolvedValue(['TBS', 'QRR']);
+
+    await useAppStore.getState().refreshStations();
+
+    expect(backend.RefreshStations).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().stations).toEqual(['TBS', 'QRR']);
   });
 });

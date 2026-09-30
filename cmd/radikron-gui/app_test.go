@@ -131,6 +131,37 @@ func TestConfigLifecycleErrorsDoNotEmitEvents(t *testing.T) {
 	}
 }
 
+func TestGetConfigWaitsForStartupAndReturnsStartupError(t *testing.T) {
+	app := NewApp()
+	app.startupReady = make(chan struct{})
+	wantErr := errors.New("asset initialization failed")
+	result := make(chan error, 1)
+	go func() {
+		_, err := app.GetConfig()
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("GetConfig() returned before startup finished: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	app.mu.Lock()
+	app.startupErr = wantErr
+	close(app.startupReady)
+	app.mu.Unlock()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("GetConfig() error = %v, want startup error %v", err, wantErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("GetConfig() remained blocked after startup completed")
+	}
+}
+
 func TestUpdateConfigRejectsUnsupportedStationWithoutMutation(t *testing.T) {
 	events := &recordingEventSink{}
 	app := NewApp()
@@ -184,6 +215,18 @@ func TestGetSchedulesRequiresAsset(t *testing.T) {
 	_, err := NewApp().GetSchedules()
 	if err == nil || err.Error() != "asset not initialized" {
 		t.Fatalf("GetSchedules() error = %v", err)
+	}
+}
+
+func TestGetAvailableStationsReturnsEmptyArrayInsteadOfNil(t *testing.T) {
+	app := NewApp()
+	app.asset = &radikron.Asset{}
+	stations, err := app.GetAvailableStations()
+	if err != nil {
+		t.Fatalf("GetAvailableStations() error = %v", err)
+	}
+	if stations == nil {
+		t.Fatal("GetAvailableStations() returned nil; want an empty array")
 	}
 }
 
