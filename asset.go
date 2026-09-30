@@ -100,7 +100,9 @@ func (a *Asset) GenerateGPSForAreaID(areaID string) string {
 // GetAreaIDByStationID returns the first AreaID for the station
 func (a *Asset) GetAreaIDByStationID(stationID string) string {
 	if s, ok := a.Stations[stationID]; ok {
-		return s.Areas[0]
+		if len(s.Areas) > 0 {
+			return s.Areas[0]
+		}
 	}
 	return ""
 }

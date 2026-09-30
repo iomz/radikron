@@ -71,5 +71,13 @@ func concatAACFiles(ctx context.Context, files []string, tempDir, output string)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg AAC concatenation failed: %w", err)
 	}
+	for _, file := range files {
+		if file == output {
+			continue
+		}
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove consumed AAC input %q: %w", file, err)
+		}
+	}
 	return nil
 }

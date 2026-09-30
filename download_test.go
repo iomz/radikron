@@ -36,6 +36,15 @@ func TestDownloadRejectsUnsupportedArchiveStation(t *testing.T) {
 	}
 }
 
+func TestGetTimeshiftChunklistRejectsMissingStationArea(t *testing.T) {
+	asset := &Asset{Stations: Stations{}}
+	ctx := context.WithValue(context.Background(), ContextKey("asset"), asset)
+	_, err := getTimeshiftChunklist(ctx, &Prog{StationID: "TBS"})
+	if err == nil || !strings.Contains(err.Error(), "area mapping unavailable") {
+		t.Fatalf("getTimeshiftChunklist() error = %v, want missing area mapping error", err)
+	}
+}
+
 const (
 	osWindows       = "windows"
 	testInvalidTime = "invalid"

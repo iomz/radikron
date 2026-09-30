@@ -594,6 +594,9 @@ func getTimeshiftChunklist(
 	var err error
 
 	areaID := asset.GetAreaIDByStationID(prog.StationID)
+	if areaID == "" {
+		return nil, fmt.Errorf("area mapping unavailable for station %s; refresh station catalog before downloading", prog.StationID)
+	}
 
 	device, ok := asset.AreaDevices[areaID]
 	if !ok {
@@ -749,8 +752,9 @@ func GetRadikronPath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get current working directory: %w", err)
 	}
-	if runtime.GOOS == "windows" && strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") {
-		relativePath, ok := windowsUserPathRelative(path)
+	slashPath := filepath.ToSlash(path)
+	if runtime.GOOS == "windows" && strings.HasPrefix(slashPath, "/") && !strings.HasPrefix(slashPath, "//") {
+		relativePath, ok := windowsUserPathRelative(slashPath)
 		if !ok {
 			return "", fmt.Errorf("POSIX download path %q is not valid on Windows", path)
 		}

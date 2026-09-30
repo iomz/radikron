@@ -302,24 +302,25 @@ func main() {
 	// runWithDefaults can still call wg.Add races WaitGroup Add against Wait,
 	// which can let shutdown return while downloads still hold files open.
 	loopFinished := false
+	var loopErr error
 	select {
 	case sig := <-quit:
 		log.Printf("received signal %v", sig)
 	case err := <-loopDone:
 		loopFinished = true
-		if err != nil {
-			log.Printf("fatal error in main loop: %v", err)
-		}
+		loopErr = err
 	}
 	close(done)
 	if !loopFinished {
-		if err := <-loopDone; err != nil {
-			log.Printf("fatal error in main loop: %v", err)
-		}
+		loopErr = <-loopDone
 	}
 
 	// Finish downloads in progress
 	log.Println("exit once all the downloads complete")
 	wg.Wait()
 	log.Println("exiting radikron")
+	if loopErr != nil {
+		signal.Stop(quit)
+		log.Fatalf("fatal error in main loop: %v", loopErr)
+	}
 }
