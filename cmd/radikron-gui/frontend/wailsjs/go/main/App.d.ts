@@ -23,6 +23,8 @@ export function GetMonitoringStatus():Promise<boolean>;
 
 export function GetSchedules():Promise<radikron.Progs>;
 
+export function GetStationNames():Promise<Record<string, string>>;
+
 export function HandleDownloadCompleted(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function HandleDownloadCompletedByID(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;

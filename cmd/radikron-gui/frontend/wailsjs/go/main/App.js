@@ -42,6 +42,10 @@ export function GetSchedules() {
   return window['go']['main']['App']['GetSchedules']();
 }
 
+export function GetStationNames() {
+  return window['go']['main']['App']['GetStationNames']();
+}
+
 export function HandleDownloadCompleted(arg1, arg2, arg3) {
   return window['go']['main']['App']['HandleDownloadCompleted'](arg1, arg2, arg3);
 }

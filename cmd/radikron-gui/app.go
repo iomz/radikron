@@ -1478,6 +1478,27 @@ func (a *App) GetAvailableStations() ([]string, error) {
 	return append([]string{}, a.asset.AvailableStations...), nil
 }
 
+// GetStationNames returns display names keyed by station ID.
+func (a *App) GetStationNames() (map[string]string, error) {
+	if err := a.waitForStartup(); err != nil {
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.asset == nil {
+		return nil, fmt.Errorf("asset not initialized")
+	}
+
+	names := make(map[string]string, len(a.asset.Stations))
+	for stationID, station := range a.asset.Stations {
+		if station != nil && station.Name != "" {
+			names[stationID] = station.Name
+		}
+	}
+	return names, nil
+}
+
 // RefreshStations fetches the station catalog and applies the active station filters.
 func (a *App) RefreshStations() ([]string, error) {
 	if err := a.waitForStartup(); err != nil {

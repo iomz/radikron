@@ -13,6 +13,7 @@ interface AppState {
   // State
   configInfo: config.Config | null;
   stations: string[];
+  stationNames: Record<string, string>;
   configFile: string;
   activityLogs: ActivityLogEntry[];
   loading: boolean;
@@ -20,6 +21,7 @@ interface AppState {
   // Actions
   setConfigInfo: (configInfo: config.Config | null) => void;
   setStations: (stations: string[]) => void;
+  stationLabel: (stationID: string) => string;
   setConfigFile: (configFile: string) => void;
   addActivityLog: (type: 'info' | 'success' | 'error', message: string) => void;
   setLoading: (loading: boolean) => void;
@@ -36,6 +38,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
   configInfo: null,
   stations: [],
+  stationNames: {},
   configFile: 'config.yml',
   activityLogs: [],
   loading: true,
@@ -43,6 +46,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Synchronous actions
   setConfigInfo: (configInfo) => set({ configInfo }),
   setStations: (stations) => set({ stations }),
+  stationLabel: (stationID) => get().stationNames[stationID] || stationID,
   setConfigFile: (configFile) => set({ configFile }),
   setLoading: (loading) => set({ loading }),
 
@@ -76,7 +80,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadStations: async () => {
     try {
       const stationList = await App.GetAvailableStations();
-      set({ stations: Array.isArray(stationList) ? stationList : [] });
+      const stationNames = await App.GetStationNames();
+      set({
+        stations: Array.isArray(stationList) ? stationList : [],
+        stationNames: stationNames || {},
+      });
     } catch (error) {
       console.error('Failed to load stations:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -114,8 +122,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   refreshStations: async () => {
     try {
       const stationList = await App.RefreshStations();
+      const stationNames = await App.GetStationNames();
       const stations = Array.isArray(stationList) ? stationList : [];
-      set({ stations });
+      set({ stations, stationNames: stationNames || {} });
       get().addActivityLog('success', `Loaded ${stations.length} stations`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

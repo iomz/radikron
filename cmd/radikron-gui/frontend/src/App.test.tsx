@@ -9,6 +9,7 @@ import { useAppStore } from './store/useAppStore';
 vi.mock('../wailsjs/go/main/App', () => ({
   GetAvailableStations: vi.fn(),
   GetConfig: vi.fn(),
+  GetStationNames: vi.fn(),
 }));
 
 vi.mock('../wailsjs/runtime/runtime', () => ({
@@ -37,9 +38,11 @@ describe('App shell events', () => {
     });
     backend.GetConfig.mockResolvedValue({ AreaID: 'JP13' } as Awaited<ReturnType<typeof Backend.GetConfig>>);
     backend.GetAvailableStations.mockResolvedValue(['TBS']);
+    backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System' });
     useAppStore.setState({
       configInfo: null,
       stations: [],
+      stationNames: {},
       activityLogs: [],
       loading: true,
     });

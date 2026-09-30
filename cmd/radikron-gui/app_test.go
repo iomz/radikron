@@ -235,6 +235,26 @@ func TestGetAvailableStationsReturnsEmptyArrayInsteadOfNil(t *testing.T) {
 	}
 }
 
+func TestGetStationNamesReturnsCatalogDisplayNames(t *testing.T) {
+	app := NewApp()
+	app.asset = &radikron.Asset{Stations: radikron.Stations{
+		"FMJ": {Name: "J-WAVE"},
+		"TBS": {Name: "Tokyo Broadcasting System"},
+		"XYZ": nil,
+	}}
+
+	names, err := app.GetStationNames()
+	if err != nil {
+		t.Fatalf("GetStationNames() error: %v", err)
+	}
+	if names["FMJ"] != "J-WAVE" || names["TBS"] != "Tokyo Broadcasting System" {
+		t.Fatalf("GetStationNames() = %#v", names)
+	}
+	if _, ok := names["XYZ"]; ok {
+		t.Errorf("GetStationNames() included station without a display name")
+	}
+}
+
 func TestHasMonitoringCriteria(t *testing.T) {
 	tests := []struct {
 		name  string
