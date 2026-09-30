@@ -37,6 +37,7 @@ const (
 	timeshiftDiagnosticPerm        = 0600
 	windowsUserPathPrefixPartCount = 2
 	downloadOperationTimeout       = 30 * time.Minute
+	progressUpdateDivisor          = 10
 )
 
 // emitDownloadStarted emits a download started event if emitter is available, otherwise logs it
@@ -390,7 +391,7 @@ func bulkDownloadWithClientProgress(
 			completed++
 			progressCount := completed
 			mu.Unlock()
-			if progress != nil && (progressCount == len(list) || progressCount%max(1, len(list)/10) == 0) {
+			if progress != nil && (progressCount == len(list) || progressCount%max(1, len(list)/progressUpdateDivisor) == 0) {
 				progress(progressCount, len(list))
 			}
 			if err != nil {
@@ -596,6 +597,9 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if removeErr := os.Remove(destFile); removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("ffmpeg conversion failed: %w (stderr: %s; failed to remove partial output: %v)", err, stderr.String(), removeErr)
+		}
 		return fmt.Errorf("ffmpeg conversion failed: %w (stderr: %s)", err, stderr.String())
 	}
 
@@ -603,8 +607,6 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 }
 
 // getTimeshiftChunklist returns a slice of chunk urls.
-//
-//nolint:gocyclo,funlen // keep this function monolithic
 func getTimeshiftChunklist(
 	ctx context.Context,
 	prog *Prog,
@@ -612,6 +614,7 @@ func getTimeshiftChunklist(
 	return getTimeshiftChunklistWithProgress(ctx, prog, nil)
 }
 
+//nolint:gocyclo,funlen // playlist parsing keeps request state local
 func getTimeshiftChunklistWithProgress(
 	ctx context.Context,
 	prog *Prog,
@@ -794,7 +797,7 @@ func getTimeshiftChunklistWithProgress(
 			}
 		}
 		completedSeeks++
-		if progress != nil && (completedSeeks == totalSeeks || completedSeeks%max(1, totalSeeks/10) == 0) {
+		if progress != nil && (completedSeeks == totalSeeks || completedSeeks%max(1, totalSeeks/progressUpdateDivisor) == 0) {
 			progress(completedSeeks, totalSeeks)
 		}
 	}

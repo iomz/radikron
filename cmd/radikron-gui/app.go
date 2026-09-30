@@ -28,6 +28,7 @@ const (
 	loggerCleanupDelay = 10 * time.Minute
 	// manualInjectionsFilePerm is the file permission mode for manual injections file (0600 = read/write for owner only)
 	manualInjectionsFilePerm = 0600
+	stationCatalogTimeout    = 30 * time.Second
 	// maxDownloadRetries is the maximum number of retry attempts for failed downloads
 	maxDownloadRetries = 5
 	// failedDownloadCleanupThreshold is the time after which failed downloads are cleaned up
@@ -1516,7 +1517,7 @@ func (a *App) RefreshStations() ([]string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, stationCatalogTimeout)
 	defer cancel()
 	stations, err := radikron.FetchStationCatalog(ctx, client)
 	if err != nil {
@@ -1528,20 +1529,28 @@ func (a *App) RefreshStations() ([]string, error) {
 		a.mu.Unlock()
 		return nil, fmt.Errorf("asset not initialized")
 	}
-	updatedAsset := *a.asset
-	updatedAsset.Stations = stations
-	if a.config != nil {
-		if err := a.config.ApplyToAsset(&updatedAsset); err != nil {
-			a.mu.Unlock()
-			return nil, fmt.Errorf("failed to apply station configuration: %w", err)
+	available, err := applyStationCatalog(a.asset, a.config, stations)
+	if err != nil {
+		a.mu.Unlock()
+		return nil, fmt.Errorf("failed to apply station configuration: %w", err)
+	}
+	a.mu.Unlock()
+	return available, nil
+}
+
+func applyStationCatalog(asset *radikron.Asset, cfg *config.Config, stations radikron.Stations) ([]string, error) {
+	updatedAsset := &radikron.Asset{Stations: stations}
+	if cfg != nil {
+		if err := cfg.ApplyToAsset(updatedAsset); err != nil {
+			return nil, err
 		}
 	} else {
 		updatedAsset.LoadAvailableStations(radikron.DefaultArea)
 	}
-	a.asset = &updatedAsset
-	available := append([]string{}, updatedAsset.AvailableStations...)
-	a.mu.Unlock()
-	return available, nil
+
+	asset.Stations = updatedAsset.Stations
+	asset.AvailableStations = updatedAsset.AvailableStations
+	return append([]string{}, asset.AvailableStations...), nil
 }
 
 // GetAllStations returns all stations from asset.Stations (all possible stations, not just available ones)

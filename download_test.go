@@ -2348,6 +2348,31 @@ func TestConvertAACtoMP3_ConversionError(t *testing.T) {
 	}
 }
 
+func TestConvertAACtoMP3RemovesPartialOutputOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fake ffmpeg is not supported on Windows")
+	}
+	tmpDir := t.TempDir()
+	destFile := filepath.Join(tmpDir, "partial.mp3")
+	fakeFFmpeg := filepath.Join(tmpDir, "ffmpeg")
+	script := "#!/bin/sh\nprintf partial > \"${12}\"\nexit 1\n"
+	if err := os.WriteFile(fakeFFmpeg, []byte(script), 0600); err != nil {
+		t.Fatalf("create fake ffmpeg: %v", err)
+	}
+	if err := os.Chmod(fakeFFmpeg, 0700); err != nil {
+		t.Fatalf("make fake ffmpeg executable: %v", err)
+	}
+	t.Setenv("PATH", tmpDir)
+
+	err := convertAACtoMP3(context.Background(), "source.aac", destFile)
+	if err == nil || !strings.Contains(err.Error(), "ffmpeg conversion failed") {
+		t.Fatalf("convertAACtoMP3() error = %v, want conversion failure", err)
+	}
+	if _, err := os.Stat(destFile); !os.IsNotExist(err) {
+		t.Fatalf("partial output still exists (stat error: %v)", err)
+	}
+}
+
 func TestCheckProgramUnavailable(t *testing.T) {
 	Location, _ = time.LoadLocation(TZTokyo)
 	now := time.Date(2023, 6, 5, 12, 0, 0, 0, Location)

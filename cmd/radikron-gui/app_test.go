@@ -255,6 +255,30 @@ func TestGetStationNamesReturnsCatalogDisplayNames(t *testing.T) {
 	}
 }
 
+func TestApplyStationCatalogPreservesAssetAndSchedulingState(t *testing.T) {
+	nextFetch := time.Now().Add(time.Hour)
+	asset := &radikron.Asset{
+		Stations:      radikron.Stations{"OLD": {Areas: []string{radikron.DefaultArea}}},
+		NextFetchTime: &nextFetch,
+	}
+	original := asset
+	newStations := radikron.Stations{"NEW": {Areas: []string{radikron.DefaultArea}, Name: "New Station"}}
+
+	available, err := applyStationCatalog(asset, nil, newStations)
+	if err != nil {
+		t.Fatalf("applyStationCatalog() error: %v", err)
+	}
+	if asset != original {
+		t.Fatal("applyStationCatalog() replaced the monitored asset pointer")
+	}
+	if asset.NextFetchTime != &nextFetch {
+		t.Fatal("applyStationCatalog() changed NextFetchTime pointer")
+	}
+	if asset.Stations["NEW"] == nil || len(available) != 1 || available[0] != "NEW" {
+		t.Fatalf("station catalog not applied: stations=%v available=%v", asset.Stations, available)
+	}
+}
+
 func TestHasMonitoringCriteria(t *testing.T) {
 	tests := []struct {
 		name  string
