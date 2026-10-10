@@ -160,7 +160,8 @@ Verify a download against the public key in this repository:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/iomz/radikron/main/internal/releasekey/public_key.pem
-openssl dgst -sha256 -verify public_key.pem -signature <asset>.sig <asset>
+asset="radikron-gui_darwin_arm64-installer.dmg"
+openssl dgst -sha256 -verify public_key.pem -signature "$asset.sig" "$asset"
 ```
 
 `checksums.txt` lists the SHA-256 digests of all assets and is signed the same way.
