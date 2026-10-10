@@ -43,8 +43,9 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
 
+# The release workflow writes one checksums.txt covering CLI and GUI assets.
 checksum:
-  name_template: checksums.txt
+  disable: true
 
 snapshot:
   version_template: "{{ .Tag }}-next"

@@ -82,6 +82,10 @@ jobs:
         run: |
           mkdir -p artifacts
           ARTIFACTS_DIR="${{ github.workspace }}/artifacts"
+          # Asset names carry Go GOOS/GOARCH values so updaters can select them.
+          # The radikron-gui_ prefix keeps them apart from CLI archives, and the
+          # -installer suffix marks first-install packages that updaters skip.
+          ASSET_BASE="radikron-gui_${{ matrix.goos }}_${{ matrix.goarch }}"
           cd cmd/radikron-gui
           # Wails outputs to build/bin/ directory
           # macOS: .app bundle
@@ -102,6 +106,13 @@ jobs:
               fi
               codesign --force --deep --sign - build/bin/Radikron.app
               codesign --verify --deep --strict --verbose=2 build/bin/Radikron.app
+              echo "Creating update archive with Radikron.app as its only top-level entry..."
+              ditto -c -k --norsrc --noextattr --keepParent build/bin/Radikron.app "$ARTIFACTS_DIR/${ASSET_BASE}.app.zip"
+              top_level=$(zipinfo -1 "$ARTIFACTS_DIR/${ASSET_BASE}.app.zip" | cut -d/ -f1 | sort -u)
+              if [ "$top_level" != "Radikron.app" ]; then
+                echo "Expected Radikron.app as the only top-level entry, got: $top_level"
+                exit 1
+              fi
               echo "Found Radikron.app, creating DMG with drag-and-drop interface..."
               # Create DMG using create-dmg for better user experience
               # --volname: Volume name shown when DMG is mounted
@@ -115,11 +126,8 @@ jobs:
                 --icon-size 100 \
                 --app-drop-link 450 185 \
                 --hdiutil-quiet \
-                "$ARTIFACTS_DIR/Radikron_${{ matrix.platform }}.dmg" \
+                "$ARTIFACTS_DIR/${ASSET_BASE}-installer.dmg" \
                 build/bin/Radikron.app
-            elif [ -f "build/bin/radikron-gui" ]; then
-              echo "Found radikron-gui binary, copying..."
-              cp build/bin/radikron-gui "$ARTIFACTS_DIR/radikron-gui_${{ matrix.platform }}"
             else
               echo "ERROR: No macOS build output found in build/bin/"
               ls -la build/bin/ || echo "build/bin/ does not exist"
@@ -130,14 +138,16 @@ jobs:
             echo "Checking for Windows build output..."
             if [ -f "build/bin/radikron-gui.exe" ]; then
               echo "Found radikron-gui.exe, copying..."
-              cp build/bin/radikron-gui.exe "$ARTIFACTS_DIR/radikron-gui_${{ matrix.platform }}.exe"
+              cp build/bin/radikron-gui.exe "$ARTIFACTS_DIR/${ASSET_BASE}.exe"
             else
               echo "ERROR: radikron-gui.exe not found in build/bin/"
               ls -la build/bin/ || echo "build/bin/ does not exist"
               exit 1
             fi
-            # Check for NSIS installer (if generated)
-            find build/bin -name "*.exe" -type f ! -name "radikron-gui.exe" -exec cp {} "$ARTIFACTS_DIR/" \;
+            # Copy an NSIS installer, if generated, under the installer naming rule
+            find build/bin -name "*.exe" -type f ! -name "radikron-gui.exe" | while read -r installer; do
+              cp "$installer" "$ARTIFACTS_DIR/${ASSET_BASE}-installer.exe"
+            done
           fi
           echo "Artifacts prepared:"
           ls -la "$ARTIFACTS_DIR/" || echo "artifacts/ directory is empty or does not exist"
@@ -183,15 +193,21 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
-            dist/checksums.txt
           if-no-files-found: error
 
   upload-release:
     needs: [build-gui, build-cli]
     runs-on: ubuntu-latest
+    # The signing key is an environment secret so only release runs can read it.
+    environment: release
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -201,6 +217,28 @@ jobs:
         run: |
           mkdir -p release-assets
           find release-artifacts -type f -exec cp {} release-assets/ \;
+          cd release-assets
+          sha256sum -- * > ../checksums.txt
+          mv ../checksums.txt checksums.txt
+
+      - name: Sign release assets
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "RELEASE_SIGNING_KEY is not set; refusing to publish unsigned assets"
+            exit 1
+          fi
+          key_file="$RUNNER_TEMP/release-signing-key.pem"
+          trap 'rm -f "$key_file"' EXIT
+          (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key_file")
+          for asset in release-assets/*; do
+            # ECDSA P-256 over SHA-256 of the asset, DER-encoded
+            openssl dgst -sha256 -sign "$key_file" -out "$asset.sig" "$asset"
+            # Fail if the secret does not match the public key shipped in the binaries
+            openssl dgst -sha256 -verify internal/releasekey/public_key.pem \
+              -signature "$asset.sig" "$asset"
+          done
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

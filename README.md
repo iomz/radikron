@@ -146,10 +146,25 @@ go install github.com/iomz/radikron/cmd/radikron@latest
 
 Pre-built binaries are available for macOS and Windows. Download the latest release from the [Releases page](https://github.com/iomz/radikron/releases):
 
-- **macOS**: Download the `.dmg` file for your architecture (Intel or Apple Silicon)
-- **Windows**: Download the `.exe` file for your architecture (x64 or ARM64)
+- **macOS**: Download `radikron-gui_darwin_arm64-installer.dmg` (Apple Silicon) or `radikron-gui_darwin_amd64-installer.dmg` (Intel)
+- **Windows**: Download `radikron-gui_windows_amd64.exe` (x64) or `radikron-gui_windows_arm64.exe` (ARM64)
+
+The `radikron-gui_darwin_*.app.zip` assets contain the same app and are intended for automatic updates.
 
 macOS downloads are ad-hoc signed but not notarized. Gatekeeper may require manual approval: only if you downloaded Radikron from the official Releases page, Control-click `Radikron.app`, choose **Open**, then confirm **Open**. The app is not signed with a paid Apple Developer ID.
+
+#### Verifying Downloads
+
+Every release asset has a matching `.sig` file: an ECDSA P-256 signature over the asset's SHA-256 digest.
+Verify a download against the public key in this repository:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/iomz/radikron/main/internal/releasekey/public_key.pem
+asset="radikron-gui_darwin_arm64-installer.dmg"
+openssl dgst -sha256 -verify public_key.pem -signature "$asset.sig" "$asset"
+```
+
+`checksums.txt` lists the SHA-256 digests of all assets and is signed the same way.
 
 #### Linux Users
 
