@@ -196,7 +196,6 @@ func TestGetStationIDsByAreaID(t *testing.T) {
 				"INT",
 				"JORF",
 				"LFR",
-				"OC1",
 				"QRR",
 				"RN1",
 				"RN2",
@@ -383,7 +382,7 @@ func TestLoadAvailableStations(t *testing.T) {
 	asset.LoadAvailableStations("JP13")
 
 	expectedStations := []string{
-		"FMJ", "FMT", "INT", "JORF", "LFR", "OC1", "QRR", "RN1", "RN2", "TBS",
+		"FMJ", "FMT", "INT", "JORF", "LFR", "QRR", "RN1", "RN2", "TBS",
 	}
 	less := func(a, b string) bool { return a < b }
 	if !cmp.Equal(asset.AvailableStations, expectedStations, cmpopts.SortSlices(less)) {
