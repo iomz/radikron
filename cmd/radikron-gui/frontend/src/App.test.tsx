@@ -11,6 +11,7 @@ vi.mock('../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
   GetConfig: vi.fn(),
   GetStationNames: vi.fn(),
   GetStatus: vi.fn(),
+  GetDownloads: vi.fn(),
 }));
 
 vi.mock('@wailsio/runtime', () => ({
@@ -44,6 +45,7 @@ describe('App shell events', () => {
     backend.GetAvailableStations.mockResolvedValue(['TBS']);
     backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System' });
     backend.GetStatus.mockResolvedValue({ monitoring: true } as Awaited<ReturnType<typeof Backend.GetStatus>>);
+    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [] } as Awaited<ReturnType<typeof Backend.GetDownloads>>);
     useAppStore.setState({
       configInfo: null,
       stations: [],
@@ -51,6 +53,7 @@ describe('App shell events', () => {
       activityLogs: [],
       loading: true,
       status: null,
+      downloads: null,
     });
     window.matchMedia = vi.fn().mockReturnValue({
       matches: false,
@@ -84,9 +87,13 @@ describe('App shell events', () => {
     act(() => eventHandlers.get('status-changed')?.({ monitoring: true, configError: 'bad config' }));
     expect(useAppStore.getState().status?.configError).toBe('bad config');
 
+    backend.GetDownloads.mockClear();
+    act(() => eventHandlers.get('downloads-changed')?.());
+    await waitFor(() => expect(backend.GetDownloads).toHaveBeenCalledOnce());
+
     const unsubscribers = eventsOn.mock.results.map((result) => result.value);
     unmount();
-    expect(unsubscribers).toHaveLength(8);
+    expect(unsubscribers).toHaveLength(9);
     unsubscribers.forEach((unsubscribe) => expect(unsubscribe).toHaveBeenCalledOnce());
   });
 

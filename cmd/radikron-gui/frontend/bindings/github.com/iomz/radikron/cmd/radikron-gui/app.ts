@@ -106,6 +106,16 @@ export function GetDesignatedFolder(prog: radikron$0.Prog | null, ruleFolder: st
 }
 
 /**
+ * GetDownloads returns scheduled programs with their download state and the
+ * downloads finished in this session.
+ */
+export function GetDownloads(): $CancellablePromise<$models.Downloads> {
+    return $Call.ByID(3093261880).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * GetMonitoringStatus returns whether monitoring is currently active.
  */
 export function GetMonitoringStatus(): $CancellablePromise<boolean> {
@@ -118,7 +128,7 @@ export function GetMonitoringStatus(): $CancellablePromise<boolean> {
  */
 export function GetSchedules(): $CancellablePromise<radikron$0.Progs> {
     return $Call.ByID(3303491591).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
@@ -127,7 +137,7 @@ export function GetSchedules(): $CancellablePromise<radikron$0.Progs> {
  */
 export function GetStationNames(): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(2645635047).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType8($result);
     });
 }
 
@@ -137,7 +147,7 @@ export function GetStationNames(): $CancellablePromise<{ [_ in string]?: string 
  */
 export function GetStatus(): $CancellablePromise<$models.Status> {
     return $Call.ByID(1043986649).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType9($result);
     });
 }
 
@@ -231,7 +241,7 @@ export function SaveConfig(filename: string): $CancellablePromise<void> {
  */
 export function SearchWeeklyPrograms(ruleTitle: string, rulePfm: string, ruleKeyword: string, ruleStationID: string): $CancellablePromise<radikron$0.Progs> {
     return $Call.ByID(749168059, ruleTitle, rulePfm, ruleKeyword, ruleStationID).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
@@ -277,14 +287,15 @@ export function UpdatesSupported(): $CancellablePromise<boolean> {
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = config$0.Config.createFrom;
 const $$createType2 = $Create.Nullable($$createType1);
-var $$createType3 = (function $$initCreateType3(...args: any[]): any {
-    if ($$createType3 === $$initCreateType3) {
-        $$createType3 = $$createType6;
+const $$createType3 = $models.Downloads.createFrom;
+var $$createType4 = (function $$initCreateType4(...args: any[]): any {
+    if ($$createType4 === $$initCreateType4) {
+        $$createType4 = $$createType7;
     }
-    return $$createType3(...args);
+    return $$createType4(...args);
 });
-const $$createType4 = radikron$0.Prog.createFrom;
-const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = $Create.Map($Create.Any, $Create.Any);
-const $$createType8 = $models.Status.createFrom;
+const $$createType5 = radikron$0.Prog.createFrom;
+const $$createType6 = $Create.Nullable($$createType5);
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = $Create.Map($Create.Any, $Create.Any);
+const $$createType9 = $models.Status.createFrom;
