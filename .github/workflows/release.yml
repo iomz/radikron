@@ -144,10 +144,6 @@ jobs:
               ls -la bin/ || echo "bin/ does not exist"
               exit 1
             fi
-            # Copy an NSIS installer, if generated, under the installer naming rule
-            find build/bin -name "*.exe" -type f ! -name "radikron-gui.exe" | while read -r installer; do
-              cp "$installer" "$ARTIFACTS_DIR/${ASSET_BASE}-installer.exe"
-            done
           fi
           echo "Artifacts prepared:"
           ls -la "$ARTIFACTS_DIR/" || echo "artifacts/ directory is empty or does not exist"
