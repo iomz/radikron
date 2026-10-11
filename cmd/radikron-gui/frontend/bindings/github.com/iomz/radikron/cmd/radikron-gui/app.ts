@@ -17,6 +17,10 @@ import * as radikron$0 from "../../models.js";
 // @ts-ignore: Unused imports
 import * as config$0 from "../../internal/config/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 /**
  * AvailableUpdate returns the newest release version found by a background
  * check, or "" when none is known. The frontend reads it on load because the
@@ -128,6 +132,16 @@ export function GetStationNames(): $CancellablePromise<{ [_ in string]?: string 
 }
 
 /**
+ * GetStatus returns the current Status. Unlike most methods it does not wait
+ * for startup, so the GUI can show that startup is still running.
+ */
+export function GetStatus(): $CancellablePromise<$models.Status> {
+    return $Call.ByID(1043986649).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+/**
  * HandleDownloadCompleted is called when a download completes.
  * It checks if the program was manually injected and removes it if so.
  * This version matches by station, title, and start time (for backward compatibility).
@@ -191,6 +205,15 @@ export function RefreshStations(): $CancellablePromise<string[]> {
     return $Call.ByID(2921949673).then(($result: any) => {
         return $$createType0($result);
     });
+}
+
+/**
+ * Retry retries what failed: startup when the configuration could not be
+ * loaded, otherwise the last configuration reload and station catalog fetch.
+ * It returns the first failure that remains.
+ */
+export function Retry(): $CancellablePromise<void> {
+    return $Call.ByID(1182829889);
 }
 
 /**
@@ -264,3 +287,4 @@ const $$createType4 = radikron$0.Prog.createFrom;
 const $$createType5 = $Create.Nullable($$createType4);
 const $$createType6 = $Create.Array($$createType5);
 const $$createType7 = $Create.Map($Create.Any, $Create.Any);
+const $$createType8 = $models.Status.createFrom;

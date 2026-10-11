@@ -42,6 +42,14 @@ func (s *recordingEventSink) names() []string {
 	return names
 }
 
+// namesExcept returns the recorded event names without the given ones, such
+// as status-changed, which accompanies most state transitions.
+func (s *recordingEventSink) namesExcept(excluded ...string) []string {
+	return slices.DeleteFunc(s.names(), func(name string) bool {
+		return slices.Contains(excluded, name)
+	})
+}
+
 func testConfig(downloadDir string) *config.Config {
 	return &config.Config{
 		AreaID:                    radikron.DefaultArea,
@@ -97,7 +105,7 @@ func TestConfigLifecycleEmitsEventsAndAppliesValues(t *testing.T) {
 	if app.asset.DownloadDir != updatedDir {
 		t.Errorf("asset download dir = %q, want %q", app.asset.DownloadDir, updatedDir)
 	}
-	if got := events.names(); !slices.Equal(got, []string{"config-loaded", "config-updated", "config-saved"}) {
+	if got := events.namesExcept(statusChangedEvent); !slices.Equal(got, []string{"config-loaded", "config-updated", "config-saved"}) {
 		t.Errorf("events = %v", got)
 	}
 }
@@ -406,7 +414,7 @@ func TestMonitoringLifecycleEmitsStateTransitions(t *testing.T) {
 	if err := app.StopMonitoring(); err != nil {
 		t.Fatalf("second StopMonitoring() error: %v", err)
 	}
-	if got := events.names(); !slices.Equal(got, []string{"monitoring-started", "monitoring-stopped"}) {
+	if got := events.namesExcept(statusChangedEvent); !slices.Equal(got, []string{"monitoring-started", "monitoring-stopped"}) {
 		t.Errorf("events = %v", got)
 	}
 }

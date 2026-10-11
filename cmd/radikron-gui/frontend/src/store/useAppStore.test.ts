@@ -6,8 +6,10 @@ vi.mock('../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
   GetAvailableStations: vi.fn(),
   GetConfig: vi.fn(),
   GetStationNames: vi.fn(),
+  GetStatus: vi.fn(),
   LoadConfig: vi.fn(),
   RefreshStations: vi.fn(),
+  Retry: vi.fn(),
 }));
 
 const backend = vi.mocked(Backend);
@@ -20,8 +22,11 @@ function resetStore() {
     configFile: 'config.yml',
     activityLogs: [],
     loading: true,
+    status: null,
   });
 }
+
+type Status = Awaited<ReturnType<typeof Backend.GetStatus>>;
 
 describe('useAppStore', () => {
   beforeEach(() => {
@@ -79,5 +84,38 @@ describe('useAppStore', () => {
     expect(backend.RefreshStations).toHaveBeenCalledOnce();
     expect(useAppStore.getState().stations).toEqual(['TBS', 'QRR']);
     expect(useAppStore.getState().stationLabel('QRR')).toBe('文化放送');
+  });
+
+  it('retries failures and reloads the data that recovered', async () => {
+    const failed = { configError: 'yaml: bad indentation' } as Status;
+    const recovered = { monitoring: true, configError: '' } as Status;
+    backend.Retry.mockResolvedValue(undefined);
+    backend.GetConfig.mockResolvedValue({ AreaID: 'JP13' } as Awaited<ReturnType<typeof Backend.GetConfig>>);
+    backend.GetAvailableStations.mockResolvedValue(['TBS']);
+    backend.GetStationNames.mockResolvedValue({});
+    backend.GetStatus.mockResolvedValue(recovered);
+    useAppStore.setState({ status: failed });
+
+    await useAppStore.getState().retry();
+
+    expect(backend.Retry).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().status).toEqual(recovered);
+    expect(useAppStore.getState().configInfo?.AreaID).toBe('JP13');
+    expect(useAppStore.getState().stations).toEqual(['TBS']);
+  });
+
+  it('logs a failed retry and keeps the reported status', async () => {
+    const stillFailing = { stationsError: 'radiko is unreachable' } as Status;
+    backend.Retry.mockRejectedValue(new Error('failed to fetch station catalog'));
+    backend.GetConfig.mockResolvedValue({ AreaID: 'JP13' } as Awaited<ReturnType<typeof Backend.GetConfig>>);
+    backend.GetAvailableStations.mockResolvedValue([]);
+    backend.GetStationNames.mockResolvedValue({});
+    backend.GetStatus.mockResolvedValue(stillFailing);
+
+    await useAppStore.getState().retry();
+
+    const logs = useAppStore.getState().activityLogs;
+    expect(logs[logs.length - 1]?.message).toBe('Retry failed: failed to fetch station catalog');
+    expect(useAppStore.getState().status).toEqual(stillFailing);
   });
 });

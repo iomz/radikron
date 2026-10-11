@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as config from '../../bindings/github.com/iomz/radikron/internal/config';
 import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
+import type { Status } from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
 
 interface ActivityLogEntry {
   id: number;
@@ -17,6 +18,8 @@ interface AppState {
   configFile: string;
   activityLogs: ActivityLogEntry[];
   loading: boolean;
+  // Backend status: automatic checks and failures that need attention.
+  status: Status | null;
 
   // Actions
   setConfigInfo: (configInfo: config.Config | null) => void;
@@ -25,6 +28,7 @@ interface AppState {
   setConfigFile: (configFile: string) => void;
   addActivityLog: (type: 'info' | 'success' | 'error', message: string) => void;
   setLoading: (loading: boolean) => void;
+  setStatus: (status: Status) => void;
 
   // Async actions
   loadConfigInfo: () => Promise<void>;
@@ -32,6 +36,10 @@ interface AppState {
   loadInitialData: () => Promise<void>;
   loadConfig: (filename: string) => Promise<void>;
   refreshStations: () => Promise<void>;
+  loadStatus: () => Promise<void>;
+  // Retries what failed (startup, config reload, station catalog) and reloads
+  // the data that depends on it.
+  retry: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -42,6 +50,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   configFile: 'config.yml',
   activityLogs: [],
   loading: true,
+  status: null,
 
   // Synchronous actions
   setConfigInfo: (configInfo) => set({ configInfo }),
@@ -49,6 +58,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   stationLabel: (stationID) => get().stationNames[stationID] || stationID,
   setConfigFile: (configFile) => set({ configFile }),
   setLoading: (loading) => set({ loading }),
+  setStatus: (status) => set({ status }),
 
   addActivityLog: (type, message) => {
     const now = new Date();
@@ -98,6 +108,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await Promise.all([
         get().loadConfigInfo(),
         get().loadStations(),
+        get().loadStatus(),
       ]);
     } finally {
       set({ loading: false });
@@ -126,9 +137,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       const stations = Array.isArray(stationList) ? stationList : [];
       set({ stations, stationNames: (stationNames || {}) as Record<string, string> });
       get().addActivityLog('success', `Loaded ${stations.length} stations`);
+      // A successful refresh clears a station error shown in the status.
+      await get().loadStatus();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       get().addActivityLog('error', `Failed to refresh stations: ${errorMessage}`);
+      await get().loadStatus();
     }
+  },
+
+  loadStatus: async () => {
+    try {
+      set({ status: await App.GetStatus() });
+    } catch (error) {
+      console.error('Failed to load status:', error);
+    }
+  },
+
+  retry: async () => {
+    try {
+      await App.Retry();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      get().addActivityLog('error', `Retry failed: ${errorMessage}`);
+    }
+    // Reload whatever recovered; failures stay visible in the status.
+    await Promise.all([get().loadConfigInfo(), get().loadStations(), get().loadStatus()]);
   },
 }));

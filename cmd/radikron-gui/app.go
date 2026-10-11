@@ -99,7 +99,17 @@ type App struct {
 	configChanged          chan struct{}
 	updatesEnabled         bool   // set by main when this build can update itself
 	availableUpdate        string // newest release version found by a background check
+	startupMu              sync.Mutex
+	checking               bool      // a check is fetching programs and matching rules
+	lastCheck              time.Time // when the last check finished
+	nextCheck              time.Time // when the next check is due
+	configErr              string    // last failure to reload the configuration
+	stationsErr            string    // last failure to fetch the station catalog
 	mu                     sync.RWMutex
+
+	// Test seams; nil uses the real implementation.
+	initFunc            func() error
+	fetchStationCatalog func(context.Context, *http.Client) (radikron.Stations, error)
 }
 
 // NewApp creates a new App application struct
@@ -191,33 +201,14 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 // ServiceStartup is called by Wails when the app starts. Initialization
 // failures are reported to the frontend instead of aborting the app, so the
 // user can still fix the configuration from the GUI.
-func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error { //nolint:unparam // Wails service interface
+func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	a.ctx = ctx
 	// Updates do not depend on the configuration, so check even when it fails to load.
 	a.startBackgroundUpdateChecks(ctx)
-	a.mu.Lock()
-	a.startupReady = make(chan struct{})
-	a.startupErr = nil
-	a.mu.Unlock()
-
-	err := a.initialize()
-	a.mu.Lock()
-	a.startupErr = err
-	close(a.startupReady)
-	a.mu.Unlock()
-	if err != nil {
-		a.logger.Error(fmt.Sprintf("GUI startup initialization failed: %v", err))
-		return nil
-	}
-	if err := a.StartMonitoring(); err != nil {
-		a.logger.Error(fmt.Sprintf("Failed to start automatic downloads: %v", err))
-		a.emit("log-message", map[string]any{
-			"type":    "error",
-			"message": fmt.Sprintf("Failed to start automatic downloads: %v", err),
-		})
-	}
-	go a.refreshStationCatalogInBackground()
-	go a.loadManualInjectionsInBackground()
+	a.startupMu.Lock()
+	defer a.startupMu.Unlock()
+	// A failed startup is reported through GetStatus, and Retry runs it again.
+	_ = a.startup()
 	return nil
 }
 
@@ -267,64 +258,70 @@ func (a *App) loadManualInjectionsInBackground() {
 }
 
 func (a *App) initialize() error {
-	// Get app config directory
-	appConfigDir, err := getAppConfigDir()
-	if err != nil {
+	// Build everything first and publish it under the lock at the end: Retry
+	// can run this again while the GUI is reading the previous state.
+	configFile := "config.yml"
+	manualInjectionsFile := "manual-injections.json"
+	if appConfigDir, err := getAppConfigDir(); err != nil {
 		a.logger.Error(fmt.Sprintf("Failed to get app config directory: %v", err))
-		// Fallback to current directory
-		a.configFile = "config.yml"
-		a.manualInjectionsFile = "manual-injections.json"
+		// Fall back to the current directory.
 	} else {
-		// Use config.yml in app config directory
-		a.configFile = filepath.Join(appConfigDir, "config.yml")
-		a.manualInjectionsFile = filepath.Join(appConfigDir, "manual-injections.json")
+		configFile = filepath.Join(appConfigDir, "config.yml")
+		manualInjectionsFile = filepath.Join(appConfigDir, "manual-injections.json")
 	}
+	a.mu.Lock()
+	a.configFile = configFile
+	a.manualInjectionsFile = manualInjectionsFile
+	a.mu.Unlock()
 
 	// Initialize the HTTP client used for Radiko requests.
 	client, err := radikron.NewRadikoHTTPClient()
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP client: %w", err)
 	}
-	a.client = client
 
 	// Initialize embedded data without blocking startup on the remote station catalog.
 	asset, err := radikron.NewAssetWithoutStationCatalog(client)
 	if err != nil {
 		return fmt.Errorf("failed to create asset: %w", err)
 	}
-	a.asset = asset
 
 	// Check if config file exists before attempting to load
-	_, err = os.Stat(a.configFile)
+	_, err = os.Stat(configFile)
 	configExists := err == nil
 	configNotFound := err != nil && os.IsNotExist(err)
 
 	var cfg *config.Config
 	if configNotFound {
 		// Config file doesn't exist, create default config
-		a.logger.Info(fmt.Sprintf("Config file not found at %s, creating default config", a.configFile))
-		cfg, err = createDefaultConfig(a.configFile)
+		a.logger.Info(fmt.Sprintf("Config file not found at %s, creating default config", configFile))
+		cfg, err = createDefaultConfig(configFile)
 		if err != nil {
 			return fmt.Errorf("failed to create default config: %w", err)
 		}
-		a.logger.Info(fmt.Sprintf("Created default config at %s", a.configFile))
+		a.logger.Info(fmt.Sprintf("Created default config at %s", configFile))
 	} else if configExists {
 		// Config file exists, try to load it
-		cfg, err = config.LoadConfigWithoutAreaLookup(a.configFile)
+		cfg, err = config.LoadConfigWithoutAreaLookup(configFile)
 		if err != nil {
-			return fmt.Errorf("failed to load config file at %s: %w", a.configFile, err)
+			return fmt.Errorf("failed to load config file at %s: %w", configFile, err)
 		}
 	} else {
-		return fmt.Errorf("failed to check config file at %s: %w", a.configFile, err)
+		return fmt.Errorf("failed to check config file at %s: %w", configFile, err)
 	}
 
 	// Apply config to asset
-	if err := cfg.ApplyToAsset(a.asset); err != nil {
+	if err := cfg.ApplyToAsset(asset); err != nil {
 		return fmt.Errorf("failed to apply config to asset: %w", err)
 	}
 
+	a.mu.Lock()
+	a.client = client
+	a.asset = asset
 	a.config = cfg
-	a.logger.Info(fmt.Sprintf("Config loaded successfully from %s", a.configFile))
+	a.configErr = ""
+	a.mu.Unlock()
+	a.logger.Info(fmt.Sprintf("Config loaded successfully from %s", configFile))
 
 	return nil
 }
@@ -1307,6 +1304,14 @@ func (a *App) checkAndCleanupManualInjections() {
 
 // LoadConfig loads configuration from a file
 func (a *App) LoadConfig(filename string) error {
+	if err := a.loadConfig(filename); err != nil {
+		return err
+	}
+	a.publishStatus()
+	return nil
+}
+
+func (a *App) loadConfig(filename string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -1327,13 +1332,13 @@ func (a *App) LoadConfig(filename string) error {
 
 	a.config = cfg
 	a.configFile = filename
+	a.configErr = ""
 	a.signalConfigChanged()
 
 	// Emit event to frontend
 	a.emit("config-loaded", map[string]any{
 		"success": true,
 	})
-
 	return nil
 }
 
@@ -1534,7 +1539,7 @@ func (a *App) GetStationNames() (map[string]string, error) {
 }
 
 // RefreshStations fetches the station catalog and applies the active station filters.
-func (a *App) RefreshStations() ([]string, error) {
+func (a *App) RefreshStations() ([]string, error) { //nolint:unparam // The frontend reads the station list.
 	if err := a.waitForStartup(); err != nil {
 		return nil, fmt.Errorf("startup failed: %w", err)
 	}
@@ -1552,22 +1557,29 @@ func (a *App) RefreshStations() ([]string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, stationCatalogTimeout)
 	defer cancel()
-	stations, err := radikron.FetchStationCatalog(ctx, client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch station catalog: %w", err)
+	fetch := radikron.FetchStationCatalog
+	if a.fetchStationCatalog != nil {
+		fetch = a.fetchStationCatalog
 	}
+	available, err := a.applyFetchedStations(fetch(ctx, client))
+	a.updateStatus(func() { a.stationsErr = errorText(err) })
+	return available, err
+}
 
+// applyFetchedStations applies a fetched station catalog to the asset.
+func (a *App) applyFetchedStations(stations radikron.Stations, fetchErr error) ([]string, error) {
+	if fetchErr != nil {
+		return nil, fmt.Errorf("failed to fetch station catalog: %w", fetchErr)
+	}
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.asset == nil {
-		a.mu.Unlock()
 		return nil, fmt.Errorf("asset not initialized")
 	}
 	available, err := applyStationCatalog(a.asset, a.config, stations)
 	if err != nil {
-		a.mu.Unlock()
 		return nil, fmt.Errorf("failed to apply station configuration: %w", err)
 	}
-	a.mu.Unlock()
 	return available, nil
 }
 
@@ -1749,6 +1761,14 @@ func (a *App) GetMonitoringStatus() bool {
 // StartMonitoring starts the monitoring loop.
 // It creates a context, sets up the monitoring goroutine, and begins continuous program monitoring.
 func (a *App) StartMonitoring() error {
+	if err := a.startMonitoring(); err != nil {
+		return err
+	}
+	a.publishStatus()
+	return nil
+}
+
+func (a *App) startMonitoring() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -1779,7 +1799,6 @@ func (a *App) StartMonitoring() error {
 	// Log and emit event to frontend
 	log.Printf("automatic downloads enabled")
 	a.emit("monitoring-started", nil)
-
 	return nil
 }
 
@@ -1822,11 +1841,14 @@ func (a *App) StopMonitoring() error { //nolint:unparam // Keep Wails binding's 
 	a.monitorCancel = nil
 	a.monitorDone = nil
 	a.monitorStopped = nil
+	a.checking = false
+	a.nextCheck = time.Time{}
 	a.mu.Unlock()
 
 	// Log and emit event to frontend
 	log.Printf("automatic downloads stopped")
 	a.emit("monitoring-stopped", nil)
+	a.publishStatus()
 
 	// Release concurrent callers only after the stop is fully observable, so they
 	// cannot start a new run that emits monitoring-started before this event.
@@ -1846,9 +1868,17 @@ func (a *App) executeMonitoringLoop(ctx context.Context) {
 	a.runMonitoringLoop(ctx)
 }
 
-// reloadConfigIfNeeded reloads and applies configuration if available.
-// It loads the config file and applies it to the asset without blocking on I/O.
+// reloadConfigIfNeeded reloads the configuration file and records the result
+// in the status.
 func (a *App) reloadConfigIfNeeded() error {
+	err := a.reloadConfig()
+	a.updateStatus(func() { a.configErr = errorText(err) })
+	return err
+}
+
+// reloadConfig reloads and applies configuration if available.
+// It loads the config file and applies it to the asset without blocking on I/O.
+func (a *App) reloadConfig() error {
 	// RLock to capture current configFile snapshot
 	a.mu.RLock()
 	configFile := a.configFile
@@ -2204,6 +2234,7 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 	if sleepDuration <= 0 {
 		return
 	}
+	a.updateStatus(func() { a.nextCheck = time.Now().Add(sleepDuration) })
 
 	timer := time.NewTimer(sleepDuration)
 	defer func() {
@@ -2317,6 +2348,10 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		}
 
 		// Collect and process programs
+		a.updateStatus(func() {
+			a.checking = true
+			a.nextCheck = time.Time{}
+		})
 		a.processAllPrograms(asset, fetcher, downloadCtx, downloader)
 
 		// Check and cleanup manually injected programs that are no longer available
@@ -2327,6 +2362,10 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 
 		// Cleanup stale failed downloads
 		a.cleanupStaleFailedDownloads()
+		a.updateStatus(func() {
+			a.checking = false
+			a.lastCheck = time.Now()
+		})
 
 		// Sleep until next fetch time
 		a.logAndSleepUntilNextFetch(asset, ctx)
