@@ -13,6 +13,10 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v4
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        # Wails v3 compiles against GTK4 and WebKitGTK 6.0 on Linux.
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
       - name: Set up go
         uses: actions/setup-go@v5
         with:

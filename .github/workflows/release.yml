@@ -57,25 +57,25 @@ jobs:
           brew install create-dmg
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
         working-directory: cmd/radikron-gui/frontend
 
-      - name: Build frontend
-        run: pnpm run build
-        working-directory: cmd/radikron-gui/frontend
-
       - name: Build GUI application
         working-directory: cmd/radikron-gui
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+        shell: bash
         run: |
-          # Wails builds natively for the runner's architecture
-          # For cross-compilation (e.g., Windows ARM64), GOOS and GOARCH are set via env
-          wails build -clean
+          # The Wails v3 Taskfiles build the frontend and bindings, then the
+          # binary for ARCH. On macOS, `package` also assembles and ad-hoc
+          # signs bin/Radikron.app. Use `wails3 task`: the `wails3 package`
+          # and `wails3 build` shortcuts do not forward ARCH to the tasks.
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            wails3 task package ARCH=${{ matrix.goarch }}
+          else
+            wails3 task build ARCH=${{ matrix.goarch }}
+          fi
 
       - name: Prepare artifacts
         shell: bash
@@ -87,27 +87,27 @@ jobs:
           # -installer suffix marks first-install packages that updaters skip.
           ASSET_BASE="radikron-gui_${{ matrix.goos }}_${{ matrix.goarch }}"
           cd cmd/radikron-gui
-          # Wails outputs to build/bin/ directory
+          # Wails v3 outputs to the bin/ directory
           # macOS: .app bundle
           if [ "${{ matrix.goos }}" = "darwin" ]; then
             echo "Checking for macOS build output..."
-            ls -la build/bin/ || echo "build/bin/ does not exist"
-            if [ -d "build/bin/Radikron.app" ]; then
+            ls -la bin/ || echo "bin/ does not exist"
+            if [ -d "bin/Radikron.app" ]; then
               case "${{ matrix.goarch }}" in
                 amd64) expected_arch=x86_64 ;;
                 arm64) expected_arch=arm64 ;;
                 *) echo "Unsupported macOS architecture: ${{ matrix.goarch }}"; exit 1 ;;
               esac
-              app_binary="build/bin/Radikron.app/Contents/MacOS/radikron-gui"
+              app_binary="bin/Radikron.app/Contents/MacOS/radikron-gui"
               actual_arch=$(lipo -archs "$app_binary")
               if [ "$actual_arch" != "$expected_arch" ]; then
                 echo "Expected $expected_arch app binary, got $actual_arch"
                 exit 1
               fi
-              codesign --force --deep --sign - build/bin/Radikron.app
-              codesign --verify --deep --strict --verbose=2 build/bin/Radikron.app
+              codesign --force --deep --sign - bin/Radikron.app
+              codesign --verify --deep --strict --verbose=2 bin/Radikron.app
               echo "Creating update archive with Radikron.app as its only top-level entry..."
-              ditto -c -k --norsrc --noextattr --keepParent build/bin/Radikron.app "$ARTIFACTS_DIR/${ASSET_BASE}.app.zip"
+              ditto -c -k --norsrc --noextattr --keepParent bin/Radikron.app "$ARTIFACTS_DIR/${ASSET_BASE}.app.zip"
               top_level=$(zipinfo -1 "$ARTIFACTS_DIR/${ASSET_BASE}.app.zip" | cut -d/ -f1 | sort -u)
               if [ "$top_level" != "Radikron.app" ]; then
                 echo "Expected Radikron.app as the only top-level entry, got: $top_level"
@@ -127,21 +127,21 @@ jobs:
                 --app-drop-link 450 185 \
                 --hdiutil-quiet \
                 "$ARTIFACTS_DIR/${ASSET_BASE}-installer.dmg" \
-                build/bin/Radikron.app
+                bin/Radikron.app
             else
-              echo "ERROR: No macOS build output found in build/bin/"
-              ls -la build/bin/ || echo "build/bin/ does not exist"
+              echo "ERROR: No macOS build output found in bin/"
+              ls -la bin/ || echo "bin/ does not exist"
               exit 1
             fi
           # Windows: .exe file
           elif [ "${{ matrix.goos }}" = "windows" ]; then
             echo "Checking for Windows build output..."
-            if [ -f "build/bin/radikron-gui.exe" ]; then
+            if [ -f "bin/radikron-gui.exe" ]; then
               echo "Found radikron-gui.exe, copying..."
-              cp build/bin/radikron-gui.exe "$ARTIFACTS_DIR/${ASSET_BASE}.exe"
+              cp bin/radikron-gui.exe "$ARTIFACTS_DIR/${ASSET_BASE}.exe"
             else
-              echo "ERROR: radikron-gui.exe not found in build/bin/"
-              ls -la build/bin/ || echo "build/bin/ does not exist"
+              echo "ERROR: radikron-gui.exe not found in bin/"
+              ls -la bin/ || echo "bin/ does not exist"
               exit 1
             fi
             # Copy an NSIS installer, if generated, under the installer naming rule
