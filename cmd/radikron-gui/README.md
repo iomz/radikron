@@ -1,6 +1,6 @@
 # Radikron GUI
 
-This is the graphical user interface for Radikron, built with [Wails v2](https://wails.io).
+This is the graphical user interface for Radikron, built with [Wails v3](https://v3.wails.io) (beta).
 
 ## Overview
 
@@ -21,7 +21,8 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
 - Go 1.26+
 - Node.js 20+
 - pnpm 10+
-- Wails v2.11.x
+- Wails v3 CLI `v3.0.0-beta.28`: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28`
+- On Linux: GTK4 and WebKitGTK 6.0 development packages (`sudo apt install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev` on Ubuntu)
 
 ### Setup
 
@@ -32,7 +33,7 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
    pnpm install
    ```
 
-2. Return to the repository root:
+2. Return to the GUI directory:
 
    ```bash
    cd ..
@@ -41,7 +42,7 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
 3. Run in development mode:
 
    ```bash
-   wails dev
+   wails3 dev
    ```
 
    This will:
@@ -55,17 +56,26 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
    The application window will open automatically. You can test the GUI functionality by interacting with the interface. Note that:
 
    - **Frontend changes** (React/TypeScript/CSS) will reload automatically in the window
-   - **Go code changes** require restarting `wails dev` to take effect
+   - **Go code changes** rebuild and restart the application automatically
 
 ### Building
 
 Build the application:
 
 ```bash
-wails build
+wails3 build
 ```
 
-This creates platform-specific binaries in `build/bin/`.
+This creates the binary in `bin/`.
+On macOS, `wails3 task package` also assembles `bin/Radikron.app`.
+Pass `ARCH=amd64` or `ARCH=arm64` to `wails3 task build` or `wails3 task package` to build for another architecture; the `wails3 build` and `wails3 package` shortcuts do not forward it.
+
+The frontend bindings in `frontend/bindings/` are committed so frontend tests run without Go.
+Regenerate them after changing exported `App` methods or their types:
+
+```bash
+wails3 task common:generate:bindings
+```
 
 ### Testing
 
@@ -76,7 +86,7 @@ go test ./...
 pnpm --dir cmd/radikron-gui/frontend test
 pnpm --dir cmd/radikron-gui/frontend run typecheck
 pnpm --dir cmd/radikron-gui/frontend run build
-(cd cmd/radikron-gui && wails build)
+(cd cmd/radikron-gui && wails3 build)
 golangci-lint run ./...
 git diff --check
 ```
@@ -91,9 +101,11 @@ GUI backend tests use deterministic event and monitoring seams; they do not laun
 cmd/radikron-gui/
 ├── main.go          # Wails entry point
 ├── app.go           # App struct with exposed methods
-├── wails.json       # Wails configuration
+├── Taskfile.yml     # Wails v3 build tasks (desktop parts of the wails3 template)
+├── build/           # Build configuration, Info.plist, Windows manifest, app icon
 └── frontend/
     ├── index.html   # HTML entry point
+    ├── bindings/    # Generated TypeScript bindings for App and its models
     ├── src/
     │   ├── main.tsx # React entry point
     │   ├── App.tsx  # Main React component
@@ -146,13 +158,14 @@ This ensures:
 
 #### Wails Build Errors
 
-**Issue**: `wails build` or `wails dev` fails with errors about missing dependencies or build tools.
+**Issue**: `wails3 build` or `wails3 dev` fails with errors about missing dependencies or build tools.
 
 **Solutions**:
 
 - Ensure Go 1.26+ is installed: `go version`
-- Verify Wails is properly installed: `wails version`
-- Reinstall Wails if needed: `go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0`
+- Verify Wails is properly installed: `wails3 version`
+- Check system dependencies: `wails3 doctor`
+- Reinstall Wails if needed: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28`
 - Check that `GOPATH` and `GOROOT` are set correctly: `go env GOPATH GOROOT`
 - Clean and rebuild: `go clean -cache && go mod tidy`
 
@@ -164,7 +177,7 @@ This ensures:
 
 - Ensure you're in the correct directory: `cd cmd/radikron-gui`
 - Install/update frontend dependencies: `cd frontend && pnpm install`
-- Check for port conflicts (default Vite port 34115)
+- Check for port conflicts (`wails3 dev` uses Vite port 9245; override with `WAILS_VITE_PORT`)
 - Verify Node.js version: `node --version` (should be compatible with package.json)
 - Clear Vite cache: `rm -rf frontend/node_modules/.vite`
 
@@ -242,16 +255,16 @@ pnpm install
 cd ..
 
 # 3. Run in development mode (includes hot-reload)
-wails dev
+wails3 dev
 ```
 
 **Production build**:
 
 ```bash
 # From cmd/radikron-gui directory
-wails build
+wails3 build
 
-# Output will be in build/bin/
+# Output will be in bin/
 ```
 
 **Frontend-only build** (for testing):
@@ -265,10 +278,10 @@ pnpm run build
 
 #### Enable Verbose Logging
 
-**Wails verbose mode**:
+**Wails dev logging**: raise `dev_mode.log_level` in [`build/config.yml`](build/config.yml) (for example to `debug`), then run:
 
 ```bash
-wails dev -verbose
+wails3 dev
 ```
 
 **Go debug logging**: Check [`main.go`](main.go) and [`app.go`](app.go) for log statements. You can add more detailed logging using the logger instance.
@@ -277,7 +290,7 @@ wails dev -verbose
 
 #### Check Wails DevTools
 
-1. While running `wails dev`, right-click in the application window
+1. While running `wails3 dev`, right-click in the application window
 2. Select "Inspect" or "Inspect Element" to open DevTools
 3. Use the Console tab for JavaScript errors and logs
 4. Use the Network tab to inspect API calls
@@ -293,14 +306,15 @@ wails dev -verbose
 
 #### Additional Debugging
 
-- **Check Wails configuration**: Review [`wails.json`](wails.json) for build settings
+- **Check Wails configuration**: Review [`build/config.yml`](build/config.yml) and [`Taskfile.yml`](Taskfile.yml) for build settings
 - **Verify entry points**: Check [`main.go`](main.go) for application initialization
 - **Frontend entry**: Review [`frontend/src/main.tsx`](frontend/src/main.tsx) for React setup
 - **Type checking**: Run `cd frontend && pnpm run type-check` (if available) or `tsc --noEmit`
 
 ### Relevant Configuration Files
 
-- [`wails.json`](wails.json) - Wails build and runtime configuration
+- [`build/config.yml`](build/config.yml) - Wails app metadata (name, bundle identifier, version) and dev mode settings
+- [`Taskfile.yml`](Taskfile.yml) and [`build/`](build/) - Wails build tasks per platform
 - [`frontend/vite.config.ts`](frontend/vite.config.ts) - Vite bundler configuration
 - [`frontend/tsconfig.json`](frontend/tsconfig.json) - TypeScript compiler options
 - [`main.go`](main.go) - Application entry point and Wails initialization
