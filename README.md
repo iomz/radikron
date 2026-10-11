@@ -335,6 +335,16 @@ The application will:
 - **`-c <file>`**: Specify the configuration file (default: `config.yml`)
 - **`-d`**: Enable debug mode with detailed logging
 - **`-v`**: Print version information
+- **`-check-update`**: Check GitHub Releases for a newer version and exit
+- **`-self-update`**: Download the latest release, verify its signature, replace the running executable, and exit
+- **`-no-update-check`**: Skip the update check at startup
+
+**Updates**:
+
+At startup, radikron checks GitHub Releases once and logs a line when a newer version exists.
+It never installs anything on its own; run `radikron -self-update` to update, then restart radikron.
+The update is installed only if its archive's `.sig` verifies against the release key built into radikron (see [Verifying Downloads](#verifying-downloads)).
+Docker images disable `-self-update`; pull a new image instead.
 
 **Running as a Service**:
 

@@ -12,7 +12,7 @@ COPY internal/ /build/internal/
 COPY cmd/radikron/ /build/cmd/radikron/
 WORKDIR /build
 RUN go mod vendor
-RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -o radikron ./cmd/radikron/...
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -ldflags "-X main.selfUpdate=disabled" -o radikron ./cmd/radikron/...
 
 # export to a single layer image
 FROM alpine:latest

@@ -14,6 +14,7 @@ import (
 
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
+	"github.com/iomz/radikron/internal/update"
 )
 
 var version = "(devel)"
@@ -268,11 +269,24 @@ func main() {
 	conf := flag.String("c", "config.yml", "the config.yml to use.")
 	enableDebug := flag.Bool("d", false, "enable debug mode.")
 	printVersion := flag.Bool("v", false, "print version.")
+	checkForUpdate := flag.Bool("check-update", false, "check for a newer release and exit.")
+	applyUpdate := flag.Bool("self-update", false, "install the latest release and exit.")
+	noUpdateCheck := flag.Bool("no-update-check", false, "do not check for a newer release at startup.")
 	flag.Parse()
+
+	current := currentVersion()
 
 	// Print version
 	if *printVersion {
-		fmt.Printf("%v\n", version)
+		fmt.Printf("%v\n", current)
+		return
+	}
+
+	if *checkForUpdate || *applyUpdate {
+		if err := runUpdateCommand(*applyUpdate, current); err != nil {
+			fmt.Fprintf(os.Stderr, "radikron: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -282,6 +296,12 @@ func main() {
 	}
 
 	log.Println("starting radikron")
+
+	if !*noUpdateCheck {
+		if src, err := update.NewClient(current); err == nil {
+			go logAvailableUpdate(context.Background(), src, current, *enableDebug)
+		}
+	}
 
 	// Setup signal handling
 	quit := make(chan os.Signal, 1)
