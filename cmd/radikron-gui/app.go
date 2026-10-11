@@ -100,11 +100,13 @@ type App struct {
 	updatesEnabled         bool   // set by main when this build can update itself
 	availableUpdate        string // newest release version found by a background check
 	startupMu              sync.Mutex
-	checking               bool      // a check is fetching programs and matching rules
-	lastCheck              time.Time // when the last check finished
-	nextCheck              time.Time // when the next check is due
-	configErr              string    // last failure to reload the configuration
-	stationsErr            string    // last failure to fetch the station catalog
+	checking               bool                       // a check is fetching programs and matching rules
+	lastCheck              time.Time                  // when the last check finished
+	nextCheck              time.Time                  // when the next check is due
+	configErr              string                     // last failure to reload the configuration
+	stationsErr            string                     // last failure to fetch the station catalog
+	downloads              map[string]*downloadRecord // last download event per program, by downloadKey
+	downloadsMu            sync.Mutex                 // guards downloads; never held with mu
 	mu                     sync.RWMutex
 
 	// Test seams; nil uses the real implementation.
@@ -388,10 +390,7 @@ func calculateRetryDelay(retryCount int) time.Duration {
 func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix string) error {
 	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
 
-	emitEvent := func(ctx context.Context, eventName string, data any) {
-		a.events.Emit(ctx, eventName, data)
-	}
-	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.events, emitEvent)
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.events, a.emitDownloadEvent)
 	programID := prog.ID
 	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
 		a.HandleDownloadCompletedByID(programID, stationID, title, startTime)
@@ -412,6 +411,7 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 			"type":    "error",
 			"message": errMsg,
 		})
+		a.emitDownloadEvent(a.ctx, "download-failed", downloadFailedEvent(prog, err))
 
 		// Track failure in manual injection
 		a.mu.Lock()
@@ -844,6 +844,7 @@ func (a *App) DeleteManualInjection(programID string) error {
 	}
 
 	a.logger.Info(fmt.Sprintf("Deleted manual injection: %s", programID))
+	a.emit(downloadsChangedEvent, nil)
 	return nil
 }
 
@@ -1051,6 +1052,14 @@ func (a *App) downloadPastInjectedProgram(prog *radikron.Prog) error {
 // For future programs, it adds them to schedules and updates the next fetch time.
 // The program is saved as a manual injection for persistence.
 func (a *App) InjectProgram(prog *radikron.Prog, ruleName string) error {
+	if err := a.injectProgram(prog, ruleName); err != nil {
+		return err
+	}
+	a.emit(downloadsChangedEvent, nil)
+	return nil
+}
+
+func (a *App) injectProgram(prog *radikron.Prog, ruleName string) error {
 	if prog == nil {
 		return fmt.Errorf("program cannot be nil")
 	}
@@ -2129,11 +2138,7 @@ func (a *App) processProgram(
 			"type":    "error",
 			"message": fmt.Sprintf("download failed for [%s]%s: %s", p.StationID, p.Title, err),
 		})
-		a.events.Emit(a.ctx, "download-failed", map[string]any{
-			"station": p.StationID,
-			"title":   p.Title,
-			"error":   err.Error(),
-		})
+		a.emitDownloadEvent(a.ctx, "download-failed", downloadFailedEvent(p, err))
 		return true, false
 	}
 	// Download() returned nil - it either started the download or skipped it
@@ -2264,7 +2269,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 
 	// Setup logger to capture radikron log messages and emit events
 	emitEvent := func(ctx context.Context, eventName string, data any) {
-		a.events.Emit(ctx, eventName, data)
+		a.emitDownloadEvent(ctx, eventName, data)
 		// Also check for manual injection removal on download-completed events
 		// This is a fallback in case the callback doesn't work
 		if eventName == "download-completed" {
@@ -2366,6 +2371,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 			a.checking = false
 			a.lastCheck = time.Now()
 		})
+		a.emit(downloadsChangedEvent, nil)
 
 		// Sleep until next fetch time
 		a.logAndSleepUntilNextFetch(asset, ctx)

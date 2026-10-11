@@ -7,5 +7,8 @@ export {
 };
 
 export {
+    DownloadItem,
+    DownloadState,
+    Downloads,
     Status
 } from "./models.js";

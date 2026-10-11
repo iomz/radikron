@@ -7,6 +7,7 @@ vi.mock('../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
   GetConfig: vi.fn(),
   GetStationNames: vi.fn(),
   GetStatus: vi.fn(),
+  GetDownloads: vi.fn(),
   LoadConfig: vi.fn(),
   RefreshStations: vi.fn(),
   Retry: vi.fn(),
@@ -23,6 +24,7 @@ function resetStore() {
     activityLogs: [],
     loading: true,
     status: null,
+    downloads: null,
   });
 }
 
@@ -117,5 +119,16 @@ describe('useAppStore', () => {
     const logs = useAppStore.getState().activityLogs;
     expect(logs[logs.length - 1]?.message).toBe('Retry failed: failed to fetch station catalog');
     expect(useAppStore.getState().status).toEqual(stillFailing);
+  });
+
+  it('loads downloads and keeps the last list when loading fails', async () => {
+    const downloads = { scheduled: [], recent: [] } as unknown as Awaited<ReturnType<typeof Backend.GetDownloads>>;
+    backend.GetDownloads.mockResolvedValueOnce(downloads);
+    await useAppStore.getState().loadDownloads();
+    expect(useAppStore.getState().downloads).toBe(downloads);
+
+    backend.GetDownloads.mockRejectedValueOnce(new Error('asset not initialized'));
+    await useAppStore.getState().loadDownloads();
+    expect(useAppStore.getState().downloads).toBe(downloads);
   });
 });

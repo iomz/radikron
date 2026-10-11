@@ -131,6 +131,7 @@ cmd/radikron-gui/
 - `StopMonitoring()` - Stop the monitoring loop
 - `GetStatus()` - Get the automatic download status: monitoring, last and next check, and configuration or station loading errors
 - `Retry()` - Retry what failed: startup, the last configuration reload, or the station list
+- `GetDownloads()` - Get scheduled programs with their download state (waiting, available, downloading, failed, expired) and the downloads finished in this session
 - `UpdatesSupported()` - Report whether this build can update itself (macOS `.app` bundles and Windows)
 - `AvailableUpdate()` - Get the newest release version found by the background update check
 - `CheckForUpdates()` - Open the Wails update window
@@ -144,6 +145,7 @@ cmd/radikron-gui/
 - `download-failed` - Emitted when a download fails
 - `config-loaded` - Emitted when configuration is loaded
 - `status-changed` - Emitted with the new status whenever monitoring, check times, or loading errors change
+- `downloads-changed` - Emitted when a download state or the schedule changes; reload `GetDownloads()`
 - `update-available` - Emitted when the background update check finds a newer release
 
 ### Updates

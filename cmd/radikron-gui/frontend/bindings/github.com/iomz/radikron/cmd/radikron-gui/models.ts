@@ -6,6 +6,173 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * DownloadItem is a program Radikron will download, is downloading, or has
+ * tried to download in this session.
+ */
+export class DownloadItem {
+    "id": string;
+    "stationId": string;
+    "title": string;
+
+    /**
+     * Start and End use radiko's YYYYMMDDHHmmss format in Japan time, like
+     * Prog.Ft and Prog.To. End is "" when unknown.
+     */
+    "start": string;
+    "end": string;
+    "ruleName": string;
+
+    /**
+     * Manual is true for programs added from Program Search rather than
+     * matched by a rule.
+     */
+    "manual": boolean;
+    "state": DownloadState;
+
+    /**
+     * Stage names the current step while downloading, or the step that
+     * failed.
+     */
+    "stage": string;
+    "completed": number;
+    "total": number;
+    "error": string;
+
+    /**
+     * UpdatedAt is when the state last changed, as RFC 3339 in local time;
+     * "" for programs that have not started downloading.
+     */
+    "updatedAt": string;
+
+    /** Creates a new DownloadItem instance. */
+    constructor($$source: Partial<DownloadItem> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("stationId" in $$source)) {
+            this["stationId"] = "";
+        }
+        if (!("title" in $$source)) {
+            this["title"] = "";
+        }
+        if (!("start" in $$source)) {
+            this["start"] = "";
+        }
+        if (!("end" in $$source)) {
+            this["end"] = "";
+        }
+        if (!("ruleName" in $$source)) {
+            this["ruleName"] = "";
+        }
+        if (!("manual" in $$source)) {
+            this["manual"] = false;
+        }
+        if (!("state" in $$source)) {
+            this["state"] = DownloadState.$zero;
+        }
+        if (!("stage" in $$source)) {
+            this["stage"] = "";
+        }
+        if (!("completed" in $$source)) {
+            this["completed"] = 0;
+        }
+        if (!("total" in $$source)) {
+            this["total"] = 0;
+        }
+        if (!("error" in $$source)) {
+            this["error"] = "";
+        }
+        if (!("updatedAt" in $$source)) {
+            this["updatedAt"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DownloadItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DownloadItem {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DownloadItem($$parsedSource as Partial<DownloadItem>);
+    }
+}
+
+/**
+ * DownloadState is where a program is in the download lifecycle.
+ */
+export enum DownloadState {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * DownloadWaiting means the program has not finished airing, or its
+     * recording is not available yet.
+     */
+    DownloadWaiting = "waiting",
+
+    /**
+     * DownloadAvailable means the recording is available and the next check
+     * downloads it.
+     */
+    DownloadAvailable = "available",
+    DownloadDownloading = "downloading",
+    DownloadCompleted = "completed",
+    DownloadFailed = "failed",
+
+    /**
+     * DownloadExpired means radiko no longer offers the recording.
+     */
+    DownloadExpired = "expired",
+};
+
+/**
+ * Downloads groups the programs the GUI shows.
+ */
+export class Downloads {
+    /**
+     * Scheduled lists programs that are not on disk yet, ordered by start.
+     */
+    "scheduled": DownloadItem[];
+
+    /**
+     * Recent lists completed and failed downloads of this session, newest
+     * first. It is kept in memory only.
+     */
+    "recent": DownloadItem[];
+
+    /** Creates a new Downloads instance. */
+    constructor($$source: Partial<Downloads> = {}) {
+        if (!("scheduled" in $$source)) {
+            this["scheduled"] = [];
+        }
+        if (!("recent" in $$source)) {
+            this["recent"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Downloads instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Downloads {
+        const $$createField0_0 = $$createType1;
+        const $$createField1_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("scheduled" in $$parsedSource) {
+            $$parsedSource["scheduled"] = $$createField0_0($$parsedSource["scheduled"]);
+        }
+        if ("recent" in $$parsedSource) {
+            $$parsedSource["recent"] = $$createField1_0($$parsedSource["recent"]);
+        }
+        return new Downloads($$parsedSource as Partial<Downloads>);
+    }
+}
+
+/**
  * Status summarizes what the backend is doing, so the GUI can show the state
  * of automatic downloads and any failure that needs the user's attention.
  * Times are RFC 3339 strings in local time, or "" when unknown.
@@ -85,3 +252,7 @@ export class Status {
         return new Status($$parsedSource as Partial<Status>);
     }
 }
+
+// Private type creation functions
+const $$createType0 = DownloadItem.createFrom;
+const $$createType1 = $Create.Array($$createType0);

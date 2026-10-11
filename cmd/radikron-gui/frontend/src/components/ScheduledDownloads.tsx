@@ -16,6 +16,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { Browser, Events } from '@wailsio/runtime';
 import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import * as radikron from '../../bindings/github.com/iomz/radikron';
+import { downloadDetail, downloadKey, downloadStateDescription, downloadStateLabel } from '@/lib/downloads';
 
 // SanitizedHTML renders HTML content safely with XSS protection
 interface SanitizedHTMLProps {
@@ -50,6 +51,10 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
 export const ScheduledDownloads: React.FC = () => {
   const addActivityLog = useAppStore((state) => state.addActivityLog);
   const stationLabel = useAppStore((state) => state.stationLabel);
+  const downloads = useAppStore((state) => state.downloads);
+  const downloadByKey = new Map(
+    (downloads?.scheduled ?? []).map((item) => [downloadKey(item.stationId, item.start), item]),
+  );
   const [schedules, setSchedules] = useState<radikron.Prog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -230,6 +235,7 @@ export const ScheduledDownloads: React.FC = () => {
                   <div className="space-y-3 pr-4">
                     {schedules.map((program) => {
                       const isManual = program.IsManualInjection || false;
+                      const download = downloadByKey.get(downloadKey(program.StationID, program.Ft));
                       return (
                         <Card
                           key={program.ID}
@@ -262,10 +268,20 @@ export const ScheduledDownloads: React.FC = () => {
                                     Manual
                                   </Badge>
                                 )}
+                                {download && (
+                                  <Badge variant="outline" title={downloadStateDescription(download.state)}>
+                                    {downloadStateLabel(download.state)}
+                                  </Badge>
+                                )}
                               </div>
                               <div className="mt-2 text-sm text-muted-foreground">
                                 <p>Start: {formatDateTime(program.Ft)}</p>
                                 <p>End: {formatDateTime(program.To)}</p>
+                                {download && downloadDetail(download) && (
+                                  <p className={download.state === 'failed' ? 'text-destructive' : ''}>
+                                    {downloadDetail(download)}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             {isManual && (

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as config from '../../bindings/github.com/iomz/radikron/internal/config';
 import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
-import type { Status } from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
+import type { Downloads, Status } from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
 
 interface ActivityLogEntry {
   id: number;
@@ -20,6 +20,8 @@ interface AppState {
   loading: boolean;
   // Backend status: automatic checks and failures that need attention.
   status: Status | null;
+  // Scheduled programs with their download state, and this session's results.
+  downloads: Downloads | null;
 
   // Actions
   setConfigInfo: (configInfo: config.Config | null) => void;
@@ -37,6 +39,7 @@ interface AppState {
   loadConfig: (filename: string) => Promise<void>;
   refreshStations: () => Promise<void>;
   loadStatus: () => Promise<void>;
+  loadDownloads: () => Promise<void>;
   // Retries what failed (startup, config reload, station catalog) and reloads
   // the data that depends on it.
   retry: () => Promise<void>;
@@ -51,6 +54,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activityLogs: [],
   loading: true,
   status: null,
+  downloads: null,
 
   // Synchronous actions
   setConfigInfo: (configInfo) => set({ configInfo }),
@@ -109,6 +113,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().loadConfigInfo(),
         get().loadStations(),
         get().loadStatus(),
+        get().loadDownloads(),
       ]);
     } finally {
       set({ loading: false });
@@ -154,6 +159,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  loadDownloads: async () => {
+    try {
+      set({ downloads: await App.GetDownloads() });
+    } catch (error) {
+      // Startup failures are reported through the status instead.
+      console.error('Failed to load downloads:', error);
+    }
+  },
+
   retry: async () => {
     try {
       await App.Retry();
@@ -162,6 +176,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().addActivityLog('error', `Retry failed: ${errorMessage}`);
     }
     // Reload whatever recovered; failures stay visible in the status.
-    await Promise.all([get().loadConfigInfo(), get().loadStations(), get().loadStatus()]);
+    await Promise.all([get().loadConfigInfo(), get().loadStations(), get().loadStatus(), get().loadDownloads()]);
   },
 }));
