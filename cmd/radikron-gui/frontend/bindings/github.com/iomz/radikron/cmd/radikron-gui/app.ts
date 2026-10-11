@@ -48,6 +48,13 @@ export function CheckForUpdates(): $CancellablePromise<void> {
 }
 
 /**
+ * CheckNow starts a check right away instead of waiting for the next one.
+ */
+export function CheckNow(): $CancellablePromise<void> {
+    return $Call.ByID(1278432937);
+}
+
+/**
  * DeleteManualInjection removes a manually injected program from schedules and persistence.
  * It removes the program from schedules, pending downloads, and the manual injections map,
  * then saves the updated state to disk.

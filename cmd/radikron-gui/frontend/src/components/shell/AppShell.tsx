@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { nextDownloads } from '@/lib/downloads';
-import { formatCheckTime } from '@/lib/status';
+import { formatCheckTime, statusShortLabel } from '@/lib/status';
 import { screens, type ScreenId } from '@/lib/navigation';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UpdateButton } from '@/components/UpdateButton';
@@ -28,9 +28,7 @@ const SidebarStatus: React.FC = () => {
   if (!status) {
     return null;
   }
-  let label = 'Downloads off';
-  if (status.starting) label = 'Starting…';
-  else if (status.monitoring) label = 'Downloads on';
+  const label = statusShortLabel(status);
   const next = formatCheckTime(status.nextCheck);
   const detail = status.checking ? 'Checking now…' : next ? `Next check ${next}` : '';
   const failing = Boolean(status.configError || status.stationsError);

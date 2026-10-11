@@ -3,7 +3,7 @@ import { ErrorBoundary } from "react-error-boundary";
 import { Events } from "@wailsio/runtime";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dashboard } from "@/components/Dashboard";
+import { Overview } from "@/components/screens/Overview";
 import { RulesEditor } from "@/components/RulesEditor";
 import { ScheduledDownloads } from "@/components/ScheduledDownloads";
 import { ProgramSearchBrowser } from "@/components/ProgramSearchBrowser";
@@ -205,7 +205,7 @@ const AppComponent: React.FC = () => {
         </div>
       ) : (
         <AppShell screen={screen} onNavigate={setScreen}>
-          {screen === "overview" && <Dashboard />}
+          {screen === "overview" && <Overview onNavigate={setScreen} />}
           {screen === "downloads" && <ScheduledDownloads />}
           {screen === "timetable" && <Timetable />}
           {screen === "search" && <ProgramSearchBrowser />}

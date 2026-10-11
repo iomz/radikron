@@ -4,6 +4,9 @@ import {
   DownloadStates,
   downloadDetail,
   downloadKey,
+  downloadNote,
+  downloadSource,
+  formatAirTime,
   downloadStateLabel,
   formatProgramTime,
   nextDownloads,
@@ -49,5 +52,24 @@ describe('download helpers', () => {
     } as Downloads;
     expect(nextDownloads(downloads, 2).map((i) => i.title)).toEqual(['A', 'B']);
     expect(nextDownloads(null, 5)).toEqual([]);
+  });
+});
+
+describe('download rows', () => {
+  const now = new Date('2026-10-12T05:21:00Z'); // Mon 14:21 in Japan
+
+  it('formats air times relative to today in Japan time', () => {
+    expect(formatAirTime('20261012130000', now)).toBe('13:00');
+    expect(formatAirTime('20261013010000', now)).toBe('Tue 01:00');
+    expect(formatAirTime('20261004220000', now)).toBe('10/04 22:00');
+  });
+
+  it('names the source and explains the state', () => {
+    expect(downloadSource({ manual: true, ruleName: '' })).toBe('Manual');
+    expect(downloadSource({ manual: false, ruleName: 'Jazz' })).toBe('Rule · Jazz');
+    expect(downloadNote(item({ state: DownloadStates.waiting, start: '20261012200000', end: '20261012210000' }))).toBe('Airs 20:00–21:00');
+    expect(downloadNote(item({ state: DownloadStates.available }))).toBe('The next check downloads it');
+    expect(downloadNote(item({ state: DownloadStates.failed, stage: 'encoding', error: 'ffmpeg not found' }))).toBe('encoding: ffmpeg not found');
+    expect(downloadNote(item({ state: DownloadStates.expired }))).toBe('No longer on radiko');
   });
 });

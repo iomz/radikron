@@ -19,7 +19,7 @@ vi.mock('@wailsio/runtime', () => ({
 }));
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
-vi.mock('@/components/Dashboard', () => ({ Dashboard: () => <div>Dashboard content</div> }));
+vi.mock('@/components/screens/Overview', () => ({ Overview: () => <div>Dashboard content</div> }));
 vi.mock('@/components/RulesEditor', () => ({ RulesEditor: () => <div>Rules content</div> }));
 vi.mock('@/components/ScheduledDownloads', () => ({ ScheduledDownloads: () => <div>Schedules content</div> }));
 vi.mock('@/components/ProgramSearchBrowser', () => ({ ProgramSearchBrowser: () => <div>Programs content</div> }));
@@ -69,8 +69,6 @@ describe('App shell events', () => {
     await screen.findByText('Dashboard content');
     expect(screen.getByText('Dashboard content')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /start monitoring|stop monitoring/i })).toBeNull();
-    expect(screen.queryByText('Running')).toBeNull();
-    expect(screen.queryByText('Stopped')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
     expect(screen.getByText('Rules content')).toBeTruthy();
