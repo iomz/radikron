@@ -3,18 +3,16 @@ import { ErrorBoundary } from "react-error-boundary";
 import { Events } from "@wailsio/runtime";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dashboard } from "@/components/Dashboard";
 import { RulesEditor } from "@/components/RulesEditor";
 import { ScheduledDownloads } from "@/components/ScheduledDownloads";
 import { ProgramSearchBrowser } from "@/components/ProgramSearchBrowser";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { UpdateButton } from "@/components/UpdateButton";
+import { Settings } from "@/components/Settings";
+import { Timetable } from "@/components/Timetable";
+import { AppShell } from "@/components/shell/AppShell";
+import type { ScreenId } from "@/lib/navigation";
 import { useAppStore } from "@/store/useAppStore";
-import { useThemeStore } from "@/store/useThemeStore";
 import type { Status } from "../bindings/github.com/iomz/radikron/cmd/radikron-gui/models";
-import iconBlack from "./assets/black.png";
-import iconWhite from "./assets/white.png";
 
 // Type definitions for event data
 interface DownloadEventData {
@@ -75,34 +73,7 @@ const AppComponent: React.FC = () => {
   const loadStations = useAppStore((state) => state.loadStations);
   const setStatus = useAppStore((state) => state.setStatus);
   const loadDownloads = useAppStore((state) => state.loadDownloads);
-  const getEffectiveTheme = useThemeStore((state) => state.getEffectiveTheme);
-  const theme = useThemeStore((state) => state.theme);
-  const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">(() =>
-    getEffectiveTheme(),
-  );
-
-  // Update effective theme when theme changes
-  useEffect(() => {
-    setEffectiveTheme(getEffectiveTheme());
-
-    // Listen for system theme changes if theme is 'system'
-    if (theme === "system" && typeof window !== "undefined") {
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      const handleChange = () => {
-        setEffectiveTheme(getEffectiveTheme());
-      };
-
-      if (mediaQuery.addEventListener) {
-        mediaQuery.addEventListener("change", handleChange);
-        return () => mediaQuery.removeEventListener("change", handleChange);
-      } else {
-        mediaQuery.addListener(handleChange);
-        return () => mediaQuery.removeListener(handleChange);
-      }
-    }
-  }, [theme, getEffectiveTheme]);
-
-  const appIcon = effectiveTheme === "dark" ? iconBlack : iconWhite;
+  const [screen, setScreen] = useState<ScreenId>("overview");
 
   // Load initial data
   useEffect(() => {
@@ -233,49 +204,14 @@ const AppComponent: React.FC = () => {
           <p className="text-muted-foreground">Loading...</p>
         </div>
       ) : (
-        <Tabs defaultValue="dashboard" className="min-h-screen bg-background text-foreground flex flex-col">
-          <header className="border-b bg-card">
-            <div className="container mx-auto px-4 py-4">
-              <div className="flex items-center justify-between mb-4">
-
-                <div className="flex items-center gap-3">
-                  <img src={appIcon} alt="Radikron" className="w-8 h-8" />
-                  <h1 className="text-2xl font-bold">Radikron</h1>
-                </div>
-
-                <TabsList>
-                  <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                  <TabsTrigger value="rules">Rules Editor</TabsTrigger>
-                  <TabsTrigger value="scheduled">Scheduled Downloads</TabsTrigger>
-                  <TabsTrigger value="programs">Program Search</TabsTrigger>
-                </TabsList>
-
-                <div className="flex items-center gap-2">
-                  <UpdateButton />
-                  <ThemeToggle />
-                </div>
-
-              </div>
-            </div>
-          </header>
-
-          <main className="flex-1 px-4 py-4">
-            <div className="container mx-auto">
-              <TabsContent value="dashboard">
-                <Dashboard />
-              </TabsContent>
-              <TabsContent value="rules">
-                <RulesEditor />
-              </TabsContent>
-              <TabsContent value="scheduled">
-                <ScheduledDownloads />
-              </TabsContent>
-              <TabsContent value="programs">
-                <ProgramSearchBrowser />
-              </TabsContent>
-            </div>
-          </main>
-        </Tabs>
+        <AppShell screen={screen} onNavigate={setScreen}>
+          {screen === "overview" && <Dashboard />}
+          {screen === "downloads" && <ScheduledDownloads />}
+          {screen === "timetable" && <Timetable />}
+          {screen === "search" && <ProgramSearchBrowser />}
+          {screen === "rules" && <RulesEditor />}
+          {screen === "settings" && <Settings />}
+        </AppShell>
       )}
     </ErrorBoundary>
   );

@@ -12,10 +12,11 @@ import (
 const (
 	defaultWindowWidth  = 1200
 	defaultWindowHeight = 800
-	backgroundR         = 27
-	backgroundG         = 38
-	backgroundB         = 54
-	backgroundA         = uint8(255 / 2) // 50% opacity (127)
+	// The dark "Tuner" background, shown until the page paints.
+	backgroundR = 15
+	backgroundG = 17
+	backgroundB = 21
+	backgroundA = 255
 )
 
 //go:embed all:frontend/dist

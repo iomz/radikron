@@ -3,51 +3,71 @@
 /* Enable dark mode variant for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Light theme (default) - define CSS custom properties in :root */
+/*
+ * "Tuner" design tokens (#77). Dark is the reference look; light keeps the
+ * same structure with darker accent text for contrast on white. The signal
+ * color is the amber accent; state colors mark download states and differ in
+ * lightness as well as hue.
+ */
 :root {
-  --color-background: oklch(100% 0 0);
-  --color-foreground: oklch(9.8% 0 0);
-  --color-card: oklch(100% 0 0);
-  --color-card-foreground: oklch(9.8% 0 0);
-  --color-popover: oklch(100% 0 0);
-  --color-popover-foreground: oklch(9.8% 0 0);
-  --color-primary: oklch(9% 0 0);
-  --color-primary-foreground: oklch(98% 0 0);
-  --color-secondary: oklch(96.1% 0 0);
-  --color-secondary-foreground: oklch(9% 0 0);
-  --color-muted: oklch(96.1% 0 0);
-  --color-muted-foreground: oklch(45.1% 0 0);
-  --color-accent: oklch(96.1% 0 0);
-  --color-accent-foreground: oklch(9% 0 0);
-  --color-destructive: oklch(62.8% 0.257 29.234);
-  --color-destructive-foreground: oklch(98% 0 0);
-  --color-border: oklch(89.8% 0 0);
-  --color-input: oklch(89.8% 0 0);
-  --color-ring: oklch(9.8% 0 0);
-  --radius: 0.5rem;
+  --color-background: #F4F5F7;
+  --color-foreground: #16181D;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #16181D;
+  --color-popover: #FFFFFF;
+  --color-popover-foreground: #16181D;
+  --color-primary: #F5A524;
+  --color-primary-foreground: #1A1300;
+  --color-secondary: #ECEEF1;
+  --color-secondary-foreground: #16181D;
+  --color-muted: #ECEEF1;
+  --color-muted-foreground: #5B6270;
+  --color-accent: #E6E9EE;
+  --color-accent-foreground: #16181D;
+  --color-destructive: #C4302B;
+  --color-destructive-foreground: #FFFFFF;
+  --color-border: #E1E4E9;
+  --color-input: #D5DAE2;
+  --color-ring: #C47A00;
+  --color-sidebar: #ECEEF1;
+  --color-signal: #9A5B00;
+  --color-state-downloading: #9A5B00;
+  --color-state-available: #1F55E0;
+  --color-state-waiting: #5B6270;
+  --color-state-failed: #B42318;
+  --color-state-completed: #1F55E0;
+  --color-state-expired: #8A9099;
+  --radius: 0.625rem;
 }
 
-/* Dark theme - override variables when .dark class is present */
 .dark {
-  --color-background: oklch(3.9% 0 0);
-  --color-foreground: oklch(98% 0 0);
-  --color-card: oklch(3.9% 0 0);
-  --color-card-foreground: oklch(98% 0 0);
-  --color-popover: oklch(3.9% 0 0);
-  --color-popover-foreground: oklch(98% 0 0);
-  --color-primary: oklch(98% 0 0);
-  --color-primary-foreground: oklch(9% 0 0);
-  --color-secondary: oklch(14.9% 0 0);
-  --color-secondary-foreground: oklch(98% 0 0);
-  --color-muted: oklch(14.9% 0 0);
-  --color-muted-foreground: oklch(63.9% 0 0);
-  --color-accent: oklch(14.9% 0 0);
-  --color-accent-foreground: oklch(98% 0 0);
-  --color-destructive: oklch(62.8% 0.257 29.234);
-  --color-destructive-foreground: oklch(98% 0 0);
-  --color-border: oklch(14.9% 0 0);
-  --color-input: oklch(14.9% 0 0);
-  --color-ring: oklch(83.1% 0 0);
+  --color-background: #0F1115;
+  --color-foreground: #ECEAE4;
+  --color-card: #171A20;
+  --color-card-foreground: #ECEAE4;
+  --color-popover: #1B1F26;
+  --color-popover-foreground: #ECEAE4;
+  --color-primary: #F5A524;
+  --color-primary-foreground: #1A1300;
+  --color-secondary: #1B1F26;
+  --color-secondary-foreground: #ECEAE4;
+  --color-muted: #23272F;
+  --color-muted-foreground: #9AA0A6;
+  --color-accent: #232832;
+  --color-accent-foreground: #ECEAE4;
+  --color-destructive: #FF6B6B;
+  --color-destructive-foreground: #1A0505;
+  --color-border: #23272F;
+  --color-input: #2B3039;
+  --color-ring: #F5A524;
+  --color-sidebar: #14171C;
+  --color-signal: #F5A524;
+  --color-state-downloading: #F5A524;
+  --color-state-available: #9AD1FF;
+  --color-state-waiting: #B5B9BF;
+  --color-state-failed: #FF9A94;
+  --color-state-completed: #9AD1FF;
+  --color-state-expired: #7D838B;
 }
 
 /* Reference CSS custom properties in @theme inline */
@@ -71,14 +91,24 @@
   --color-border: var(--color-border);
   --color-input: var(--color-input);
   --color-ring: var(--color-ring);
+  --color-sidebar: var(--color-sidebar);
+  --color-signal: var(--color-signal);
+  --color-state-downloading: var(--color-state-downloading);
+  --color-state-available: var(--color-state-available);
+  --color-state-waiting: var(--color-state-waiting);
+  --color-state-failed: var(--color-state-failed);
+  --color-state-completed: var(--color-state-completed);
+  --color-state-expired: var(--color-state-expired);
   --radius: var(--radius);
+  --font-sans: "IBM Plex Sans", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-    Cantarell, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.6;
+  background: var(--color-background);
+  color: var(--color-foreground);
 }
 
 .animate-pulse-grow {
