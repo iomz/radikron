@@ -22,9 +22,9 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
-import * as App from '../../wailsjs/go/main/App';
-import { radikron } from '../../wailsjs/go/models';
-import { BrowserOpenURL } from '../../wailsjs/runtime/runtime';
+import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
+import * as radikron from '../../bindings/github.com/iomz/radikron';
+import { Browser } from '@wailsio/runtime';
 
 // SanitizedHTML renders HTML content safely with XSS protection
 interface SanitizedHTMLProps {
@@ -43,7 +43,7 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
     const link = target.closest('a');
     if (link && link.href) {
       e.preventDefault();
-      BrowserOpenURL(link.href);
+      Browser.OpenURL(link.href);
     }
   };
 
@@ -202,7 +202,7 @@ export const ProgramSearchBrowser: React.FC = () => {
     try {
       // Get config to access DownloadDir
       const cfg = await App.GetConfig();
-      const downloadDir = cfg.DownloadDir || 'radiko';
+      const downloadDir = cfg?.DownloadDir || 'radiko';
       
       // Find the selected rule's folder
       let folder = '';
@@ -223,7 +223,7 @@ export const ProgramSearchBrowser: React.FC = () => {
       let downloadDir = 'radiko';
       try {
         const cfg = await App.GetConfig();
-        downloadDir = cfg.DownloadDir || 'radiko';
+        downloadDir = cfg?.DownloadDir || 'radiko';
       } catch (configErr) {
         console.error('Failed to get config in fallback:', configErr);
         // Use safe default 'radiko' already set above
@@ -240,7 +240,7 @@ export const ProgramSearchBrowser: React.FC = () => {
   const loadRulesAndShowDialog = useCallback(async () => {
     try {
       const cfg = await App.GetConfig();
-      const rules = cfg.Rules || [];
+      const rules = cfg?.Rules || [];
       const rulesList = rules.map((rule: any) => ({
         name: rule.Name || '',
         folder: rule.Folder || '',

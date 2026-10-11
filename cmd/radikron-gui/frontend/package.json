@@ -8,6 +8,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
+    "build:dev": "vite build --minify false --mode development",
     "build:watch": "vite build --watch",
     "preview": "vite preview"
   },
@@ -19,6 +20,7 @@
     "@radix-ui/react-select": "^2.1.4",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
+    "@wailsio/runtime": "3.0.0-beta.28",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.3.0",
@@ -39,10 +41,10 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
+    "jsdom": "^27.0.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.3.0",
     "vite": "^5.4.21",
-    "vitest": "^3.2.4",
-    "jsdom": "^27.0.0"
+    "vitest": "^3.2.4"
   }
 }

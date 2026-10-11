@@ -13,10 +13,9 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
-import { EventsOn } from '../../wailsjs/runtime/runtime';
-import * as App from '../../wailsjs/go/main/App';
-import { radikron } from '../../wailsjs/go/models';
-import { BrowserOpenURL } from '../../wailsjs/runtime/runtime';
+import { Browser, Events } from '@wailsio/runtime';
+import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
+import * as radikron from '../../bindings/github.com/iomz/radikron';
 
 // SanitizedHTML renders HTML content safely with XSS protection
 interface SanitizedHTMLProps {
@@ -35,7 +34,7 @@ const SanitizedHTML: React.FC<SanitizedHTMLProps> = ({ html, className }) => {
     const link = target.closest('a');
     if (link && link.href) {
       e.preventDefault();
-      BrowserOpenURL(link.href);
+      Browser.OpenURL(link.href);
     }
   };
 
@@ -126,17 +125,17 @@ export const ScheduledDownloads: React.FC = () => {
     }, 5000);
     
     // Listen for download events to refresh schedules
-    const unsubscribeDownloadStarted = EventsOn('download-started', () => {
+    const unsubscribeDownloadStarted = Events.On('download-started', () => {
       loadSchedules().catch(() => {
         // Errors are already handled in loadSchedules
       });
     });
-    const unsubscribeDownloadCompleted = EventsOn('download-completed', () => {
+    const unsubscribeDownloadCompleted = Events.On('download-completed', () => {
       loadSchedules().catch(() => {
         // Errors are already handled in loadSchedules
       });
     });
-    const unsubscribeFileSaved = EventsOn('file-saved', () => {
+    const unsubscribeFileSaved = Events.On('file-saved', () => {
       loadSchedules().catch(() => {
         // Errors are already handled in loadSchedules
       });

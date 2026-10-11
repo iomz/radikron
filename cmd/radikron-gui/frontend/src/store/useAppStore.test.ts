@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import * as Backend from '../../wailsjs/go/main/App';
+import * as Backend from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import { useAppStore } from './useAppStore';
 
-vi.mock('../../wailsjs/go/main/App', () => ({
+vi.mock('../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
   GetAvailableStations: vi.fn(),
   GetConfig: vi.fn(),
   GetStationNames: vi.fn(),

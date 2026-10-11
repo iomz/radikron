@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { config } from '../../wailsjs/go/models';
-import * as App from '../../wailsjs/go/main/App';
+import * as config from '../../bindings/github.com/iomz/radikron/internal/config';
+import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 
 interface ActivityLogEntry {
   id: number;
@@ -83,7 +83,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const stationNames = await App.GetStationNames();
       set({
         stations: Array.isArray(stationList) ? stationList : [],
-        stationNames: stationNames || {},
+        stationNames: (stationNames || {}) as Record<string, string>,
       });
     } catch (error) {
       console.error('Failed to load stations:', error);
@@ -124,7 +124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const stationList = await App.RefreshStations();
       const stationNames = await App.GetStationNames();
       const stations = Array.isArray(stationList) ? stationList : [];
-      set({ stations, stationNames: stationNames || {} });
+      set({ stations, stationNames: (stationNames || {}) as Record<string, string> });
       get().addActivityLog('success', `Loaded ${stations.length} stations`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

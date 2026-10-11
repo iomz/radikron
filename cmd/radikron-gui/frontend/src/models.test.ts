@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { radikron } from '../wailsjs/go/models';
+import * as radikron from '../bindings/github.com/iomz/radikron';
 
 describe('radikron.Rule', () => {
   it('keeps the exclude block when a rule is rebuilt during editing', () => {
@@ -21,8 +21,9 @@ describe('radikron.Rule', () => {
     expect(edited.Folder).toBe('MIDDAY');
   });
 
-  it('leaves Exclude undefined when a rule has none', () => {
+  it('leaves Exclude empty when a rule has none', () => {
     const rule = radikron.Rule.createFrom({ Name: 'plain', Title: 'X' });
-    expect(rule.Exclude).toBeUndefined();
+    // Wails v3 models represent an absent pointer as null; Go decodes it to nil.
+    expect(rule.Exclude).toBeNull();
   });
 });

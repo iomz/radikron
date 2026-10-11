@@ -9,7 +9,7 @@ import (
 
 func TestWailsEventEmitterEmitsStructuredEvents(t *testing.T) {
 	var events []recordedEvent
-	emitter := NewWailsEventEmitter(context.Background())
+	emitter := NewWailsEventEmitter(context.Background(), nil)
 	emitter.emitEvent = func(_ context.Context, name string, data any) {
 		events = append(events, recordedEvent{name: name, data: data})
 	}
