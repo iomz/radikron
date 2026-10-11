@@ -66,7 +66,7 @@ export const Activity: React.FC = () => {
   }, [activityLogs]);
 
   return (
-    <Card className="md:col-span-2 self-start flex flex-col h-[250px]">
+    <Card className="flex flex-col h-[250px]">
       <CardHeader className="shrink-0">
         <CardTitle>Activity</CardTitle>
         <CardDescription>Real-time download activity log</CardDescription>

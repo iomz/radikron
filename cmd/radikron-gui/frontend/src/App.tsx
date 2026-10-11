@@ -12,6 +12,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { UpdateButton } from "@/components/UpdateButton";
 import { useAppStore } from "@/store/useAppStore";
 import { useThemeStore } from "@/store/useThemeStore";
+import type { Status } from "../bindings/github.com/iomz/radikron/cmd/radikron-gui/models";
 import iconBlack from "./assets/black.png";
 import iconWhite from "./assets/white.png";
 
@@ -72,6 +73,7 @@ const AppComponent: React.FC = () => {
   const addActivityLog = useAppStore((state) => state.addActivityLog);
   const loadConfigInfo = useAppStore((state) => state.loadConfigInfo);
   const loadStations = useAppStore((state) => state.loadStations);
+  const setStatus = useAppStore((state) => state.setStatus);
   const getEffectiveTheme = useThemeStore((state) => state.getEffectiveTheme);
   const theme = useThemeStore((state) => state.theme);
   const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">(() =>
@@ -168,6 +170,13 @@ const AppComponent: React.FC = () => {
       void loadStations();
     });
 
+    const unsubscribeStatusChanged = Events.On(
+      "status-changed",
+      ({ data }: { data: Status }) => {
+        setStatus(data);
+      },
+    );
+
     const unsubscribeConfigLoaded = Events.On(
       "config-loaded",
       ({ data }: { data: ConfigLoadedData }) => {
@@ -205,10 +214,11 @@ const AppComponent: React.FC = () => {
       unsubscribeDownloadFailed();
       unsubscribeDownloadProgress();
       unsubscribeStationsLoaded();
+      unsubscribeStatusChanged();
       unsubscribeConfigLoaded();
       unsubscribeLogMessage();
     };
-  }, [addActivityLog, loadConfigInfo, loadStations]);
+  }, [addActivityLog, loadConfigInfo, loadStations, setStatus]);
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>

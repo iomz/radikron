@@ -1,6 +1,5 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -16,25 +15,24 @@ export const Stations: React.FC = () => {
     <Card>
       <CardHeader>
         <CardTitle>Stations</CardTitle>
-        <CardDescription>Available radio stations</CardDescription>
+        <CardDescription>
+          Stations Radikron searches for programs: the stations in your area plus any extra stations in the configuration.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 flex flex-col h-full">
-        <div className="flex flex-wrap gap-2">
-          {stations.length === 0 ? (
-            <Badge variant="outline" aria-label="No stations available">
-              No stations available
-            </Badge>
-          ) : (
-            sortedStations.map((station) => (
-              <Badge key={station} variant="outline">
-                {stationLabel(station)}
-              </Badge>
-            ))
-          )}
+        <p className="text-sm">
+          {stations.length === 0
+            ? 'No stations available'
+            : sortedStations.map((station) => stationLabel(station)).join(', ')}
+        </p>
+        <div className="mt-auto space-y-2">
+          <Button variant="outline" onClick={refreshStations} className="w-full">
+            Refresh station list
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Fetches the current station list from radiko. Radikron also does this when it starts.
+          </p>
         </div>
-        <Button variant="outline" onClick={refreshStations} className="w-full mt-auto">
-          Refresh Stations
-        </Button>
       </CardContent>
     </Card>
   );

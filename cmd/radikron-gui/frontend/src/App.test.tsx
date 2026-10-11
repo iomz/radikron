@@ -10,6 +10,7 @@ vi.mock('../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
   GetAvailableStations: vi.fn(),
   GetConfig: vi.fn(),
   GetStationNames: vi.fn(),
+  GetStatus: vi.fn(),
 }));
 
 vi.mock('@wailsio/runtime', () => ({
@@ -42,12 +43,14 @@ describe('App shell events', () => {
     backend.GetConfig.mockResolvedValue({ AreaID: 'JP13' } as Awaited<ReturnType<typeof Backend.GetConfig>>);
     backend.GetAvailableStations.mockResolvedValue(['TBS']);
     backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System' });
+    backend.GetStatus.mockResolvedValue({ monitoring: true } as Awaited<ReturnType<typeof Backend.GetStatus>>);
     useAppStore.setState({
       configInfo: null,
       stations: [],
       stationNames: {},
       activityLogs: [],
       loading: true,
+      status: null,
     });
     window.matchMedia = vi.fn().mockReturnValue({
       matches: false,
@@ -78,9 +81,12 @@ describe('App shell events', () => {
     const logs = useAppStore.getState().activityLogs;
     expect(logs[logs.length - 1]?.message).toContain('Download fetching playlist (5/10): Show (TBS)');
 
+    act(() => eventHandlers.get('status-changed')?.({ monitoring: true, configError: 'bad config' }));
+    expect(useAppStore.getState().status?.configError).toBe('bad config');
+
     const unsubscribers = eventsOn.mock.results.map((result) => result.value);
     unmount();
-    expect(unsubscribers).toHaveLength(7);
+    expect(unsubscribers).toHaveLength(8);
     unsubscribers.forEach((unsubscribe) => expect(unsubscribe).toHaveBeenCalledOnce());
   });
 
