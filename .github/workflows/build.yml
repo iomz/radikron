@@ -64,10 +64,14 @@ jobs:
         if: runner.os != 'Linux'
         shell: bash
         run: |
-          # --porcelain also lists untracked files, which git diff ignores.
-          changes=$(git status --porcelain -- cmd/radikron-gui/frontend/bindings)
-          if [ -n "$changes" ]; then
+          # git diff compares line-ending-normalized content, so CRLF
+          # checkouts on Windows do not count as changes; it ignores
+          # untracked files, which git ls-files --others reports.
+          bindings=cmd/radikron-gui/frontend/bindings
+          untracked=$(git ls-files --others --exclude-standard -- "$bindings")
+          if ! git diff --quiet -- "$bindings" || [ -n "$untracked" ]; then
             echo "Generated bindings differ from the committed ones:"
-            echo "$changes"
+            git diff --stat -- "$bindings"
+            echo "$untracked"
             exit 1
           fi
