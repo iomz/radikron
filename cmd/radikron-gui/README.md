@@ -129,6 +129,9 @@ cmd/radikron-gui/
 - `GetMonitoringStatus()` - Check if monitoring is active
 - `StartMonitoring()` - Start the monitoring loop
 - `StopMonitoring()` - Stop the monitoring loop
+- `UpdatesSupported()` - Report whether this build can update itself (macOS `.app` bundles and Windows)
+- `AvailableUpdate()` - Get the newest release version found by the background update check
+- `CheckForUpdates()` - Open the Wails update window
 
 ### Events
 
@@ -138,6 +141,13 @@ cmd/radikron-gui/
 - `download-completed` - Emitted when a download completes
 - `download-failed` - Emitted when a download fails
 - `config-loaded` - Emitted when configuration is loaded
+- `update-available` - Emitted when the background update check finds a newer release
+
+### Updates
+
+`selfupdate.go` configures the Wails v3 updater (`app.Updater`) against GitHub Releases.
+The Wails GitHub provider only reads checksum files, so `signedProvider` wraps it and attaches each asset's `.sig` as an `ecdsa-p256` signature, which the updater verifies against `internal/releasekey/public_key.pem` before installing.
+The running version is `info.version` from `build/config.yml`, embedded at build time.
 
 ## Integration with Core Package
 
