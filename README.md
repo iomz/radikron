@@ -153,6 +153,8 @@ Pre-built binaries are available for macOS and Windows. Download the latest rele
 The `radikron-gui_darwin_*.app.zip` assets contain the same app and are intended for automatic updates.
 The macOS app requires macOS 12 or later.
 
+macOS downloads are ad-hoc signed but not notarized. Gatekeeper may require manual approval: only if you downloaded Radikron from the official Releases page, Control-click `Radikron.app`, choose **Open**, then confirm **Open**. The app is not signed with a paid Apple Developer ID.
+
 #### Updating the GUI
 
 On macOS and Windows, the GUI checks for a new release when it starts and once a day while it runs, and shows a notification when one is available.
@@ -161,9 +163,7 @@ The window downloads the update and keeps it only if its `.sig` verifies against
 Choose **Restart & Apply** to restart into the new version, or **Close** to keep running the current one.
 The background check never downloads anything.
 On macOS, the app updates itself only when it runs as `Radikron.app` from a writable location such as `/Applications`, not from the mounted DMG.
-Linux builds from source and does not update itself.
-
-macOS downloads are ad-hoc signed but not notarized. Gatekeeper may require manual approval: only if you downloaded Radikron from the official Releases page, Control-click `Radikron.app`, choose **Open**, then confirm **Open**. The app is not signed with a paid Apple Developer ID.
+Builds from source on Linux do not update themselves.
 
 #### Verifying Downloads
 
