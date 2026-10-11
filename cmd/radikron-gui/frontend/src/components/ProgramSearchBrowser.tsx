@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -96,29 +96,32 @@ export const ProgramSearchBrowser: React.FC = () => {
     fetchSnapshots();
   }, []);
 
+  // Query of the last submitted search; null until the user submits one.
+  const [submittedQuery, setSubmittedQuery] = useState<string | null>(null);
+  // Identifies the latest search so slower, older responses are ignored.
+  const searchRequestRef = useRef(0);
+
   const performSearch = useCallback(async () => {
-    // Don't search while initializing
     if (isInitializing) {
       return;
     }
 
-    // Don't search if keyword is empty
-    if (!searchCriteria.keyword.trim()) {
+    const trimmedKeyword = searchCriteria.keyword.trim();
+    const requestID = ++searchRequestRef.current;
+    setError(null);
+    if (!trimmedKeyword) {
+      setSubmittedQuery(null);
       setPrograms([]);
-      setError(null);
       return;
     }
 
+    setSubmittedQuery(trimmedKeyword);
     setIsLoading(true);
-    setError(null);
 
     try {
       // Convert "all" back to empty string for backend
       const stationValue = searchCriteria.station === 'all' ? '' : searchCriteria.station;
-      
-      // Trim keyword to avoid whitespace issues in matching
-      const trimmedKeyword = searchCriteria.keyword.trim();
-      
+
       // @ts-ignore - SearchWeeklyPrograms will be available after Wails rebuild
       const results: any[] = await App.SearchWeeklyPrograms(
         '', // title (not used)
@@ -126,6 +129,9 @@ export const ProgramSearchBrowser: React.FC = () => {
         trimmedKeyword,
         stationValue
       );
+      if (requestID !== searchRequestRef.current) {
+        return;
+      }
 
       // Handle null or undefined results
       if (!results || !Array.isArray(results)) {
@@ -148,38 +154,36 @@ export const ProgramSearchBrowser: React.FC = () => {
 
       setPrograms(sortedPrograms);
     } catch (err) {
+      if (requestID !== searchRequestRef.current) {
+        return;
+      }
       console.error('Failed to search programs:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
+      setPrograms([]);
       setError(`Failed to search programs: ${errorMessage}`);
     } finally {
-      setIsLoading(false);
+      if (requestID === searchRequestRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [searchCriteria.keyword, searchCriteria.station, isInitializing]);
 
-  // Auto-search when criteria changes (debounced)
-  useEffect(() => {
-    if (isInitializing) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      performSearch();
-    }, 300); // 300ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [performSearch, isInitializing]);
-
-  const handleSearch = () => {
+  // Search only on explicit submit (Enter or the Search button), not while typing.
+  const handleSearch = (e?: React.FormEvent) => {
+    e?.preventDefault();
     performSearch();
   };
 
   const handleClear = () => {
+    searchRequestRef.current++;
     setSearchCriteria({
       keyword: '',
       station: '',
     });
+    setSubmittedQuery(null);
     setPrograms([]);
     setError(null);
+    setIsLoading(false);
   };
 
   const formatDateTime = (dateTimeStr: string) => {
@@ -336,7 +340,7 @@ export const ProgramSearchBrowser: React.FC = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex-1 min-h-0 flex flex-col gap-4">
-          <div className="flex-shrink-0 flex gap-2 items-end">
+          <form className="flex-shrink-0 flex gap-2 items-end" onSubmit={handleSearch}>
             <div className="flex-1 space-y-2">
               <Label htmlFor="keyword">Keyword</Label>
               <Input
@@ -369,13 +373,13 @@ export const ProgramSearchBrowser: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleSearch} disabled={isLoading || isInitializing}>
+            <Button type="submit" disabled={isLoading || isInitializing}>
               {isLoading ? 'Searching...' : 'Search'}
             </Button>
-            <Button onClick={handleClear} variant="outline" disabled={isLoading || isInitializing}>
+            <Button type="button" onClick={handleClear} variant="outline" disabled={isInitializing}>
               Clear
             </Button>
-          </div>
+          </form>
 
           {error && (
             <div className="flex-shrink-0 p-4 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
@@ -456,13 +460,13 @@ export const ProgramSearchBrowser: React.FC = () => {
             </div>
           )}
 
-          {!error && !isInitializing && programs.length === 0 && !isLoading && searchCriteria.keyword.trim() && (
+          {!error && !isInitializing && programs.length === 0 && !isLoading && submittedQuery !== null && (
             <div className="flex-shrink-0 text-center py-8 text-muted-foreground">
               <p>No programs found. Try adjusting your search keyword or station.</p>
             </div>
           )}
 
-          {!error && !isInitializing && programs.length === 0 && !isLoading && !searchCriteria.keyword.trim() && (
+          {!error && !isInitializing && programs.length === 0 && !isLoading && submittedQuery === null && (
             <div className="flex-shrink-0 text-center py-8 text-muted-foreground">
               <p>Enter a keyword above to search for programs.</p>
             </div>
