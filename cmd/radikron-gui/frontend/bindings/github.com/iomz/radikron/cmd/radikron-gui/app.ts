@@ -22,6 +22,15 @@ import * as config$0 from "../../internal/config/models.js";
 import * as $models from "./models.js";
 
 /**
+ * AddRule adds rule to the configuration and saves the config file. It wakes
+ * automatic checks, so programs the rule matches, including episodes from the
+ * past week, are downloaded right away.
+ */
+export function AddRule(newRule: radikron$0.Rule | null): $CancellablePromise<void> {
+    return $Call.ByID(2632906130, newRule);
+}
+
+/**
  * AvailableUpdate returns the newest release version found by a background
  * check, or "" when none is known. The frontend reads it on load because the
  * first check can finish before the page subscribes to "update-available".
@@ -227,6 +236,17 @@ export function Retry(): $CancellablePromise<void> {
 }
 
 /**
+ * RuleFromProgram suggests a rule that matches every episode of prog: the
+ * same title on the same station. Its name is the title, made unique among
+ * the configured rules.
+ */
+export function RuleFromProgram(prog: radikron$0.Prog | null): $CancellablePromise<radikron$0.Rule> {
+    return $Call.ByID(905458793, prog).then(($result: any) => {
+        return $$createType10($result);
+    });
+}
+
+/**
  * SaveConfig saves the current configuration to a file
  * If filename is empty, uses the current config file path
  */
@@ -299,3 +319,4 @@ const $$createType6 = $Create.Nullable($$createType5);
 const $$createType7 = $Create.Array($$createType6);
 const $$createType8 = $Create.Map($Create.Any, $Create.Any);
 const $$createType9 = $models.Status.createFrom;
+const $$createType10 = radikron$0.Rule.createFrom;

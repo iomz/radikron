@@ -132,6 +132,8 @@ cmd/radikron-gui/
 - `GetStatus()` - Get the automatic download status: monitoring, last and next check, and configuration or station loading errors
 - `Retry()` - Retry what failed: startup, the last configuration reload, or the station list
 - `GetDownloads()` - Get scheduled programs with their download state (waiting, available, downloading, failed, expired) and the downloads finished in this session
+- `RuleFromProgram(prog)` - Suggest a rule that matches every episode of a program (same title and station) with a unique name
+- `AddRule(rule)` - Add a rule, save the config file, and start a check so matching episodes, including ones from the past week, are downloaded
 - `UpdatesSupported()` - Report whether this build can update itself (macOS `.app` bundles and Windows)
 - `AvailableUpdate()` - Get the newest release version found by the background update check
 - `CheckForUpdates()` - Open the Wails update window

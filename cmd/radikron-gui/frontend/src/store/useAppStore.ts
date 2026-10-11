@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as config from '../../bindings/github.com/iomz/radikron/internal/config';
 import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import type { Downloads, Status } from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
+import type { Rule } from '../../bindings/github.com/iomz/radikron';
 
 interface ActivityLogEntry {
   id: number;
@@ -40,6 +41,8 @@ interface AppState {
   refreshStations: () => Promise<void>;
   loadStatus: () => Promise<void>;
   loadDownloads: () => Promise<void>;
+  // Saves a new rule to the config file; throws when the backend rejects it.
+  addRule: (rule: Rule) => Promise<void>;
   // Retries what failed (startup, config reload, station catalog) and reloads
   // the data that depends on it.
   retry: () => Promise<void>;
@@ -166,6 +169,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Startup failures are reported through the status instead.
       console.error('Failed to load downloads:', error);
     }
+  },
+
+  addRule: async (rule) => {
+    await App.AddRule(rule);
+    get().addActivityLog('success', `Added rule "${rule.Name}"`);
+    await get().loadConfigInfo();
   },
 
   retry: async () => {
