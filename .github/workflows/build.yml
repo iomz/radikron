@@ -45,3 +45,21 @@ jobs:
         run: go build -v ./...
       - name: Test
         run: go test ./...
+      - name: Install Wails CLI
+        if: runner.os != 'Linux'
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
+      - name: Build GUI with Wails
+        if: runner.os != 'Linux'
+        working-directory: cmd/radikron-gui
+        shell: bash
+        run: |
+          # Run the same tasks as release.yml so a broken GUI build fails
+          # here instead of during a release.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            wails3 task package
+          else
+            wails3 task build
+          fi
+      - name: Check generated bindings are committed
+        if: runner.os != 'Linux'
+        run: git diff --exit-code -- cmd/radikron-gui/frontend/bindings
