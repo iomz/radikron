@@ -62,4 +62,12 @@ jobs:
           fi
       - name: Check generated bindings are committed
         if: runner.os != 'Linux'
-        run: git diff --exit-code -- cmd/radikron-gui/frontend/bindings
+        shell: bash
+        run: |
+          # --porcelain also lists untracked files, which git diff ignores.
+          changes=$(git status --porcelain -- cmd/radikron-gui/frontend/bindings)
+          if [ -n "$changes" ]; then
+            echo "Generated bindings differ from the committed ones:"
+            echo "$changes"
+            exit 1
+          fi
