@@ -14,6 +14,10 @@ jobs:
       GO111MODULE: "on"
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        # Wails v3 compiles against GTK4 and WebKitGTK 6.0 on Linux.
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -41,3 +45,33 @@ jobs:
         run: go build -v ./...
       - name: Test
         run: go test ./...
+      - name: Install Wails CLI
+        if: runner.os != 'Linux'
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
+      - name: Build GUI with Wails
+        if: runner.os != 'Linux'
+        working-directory: cmd/radikron-gui
+        shell: bash
+        run: |
+          # Run the same tasks as release.yml so a broken GUI build fails
+          # here instead of during a release.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            wails3 task package
+          else
+            wails3 task build
+          fi
+      - name: Check generated bindings are committed
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          # git diff compares line-ending-normalized content, so CRLF
+          # checkouts on Windows do not count as changes; it ignores
+          # untracked files, which git ls-files --others reports.
+          bindings=cmd/radikron-gui/frontend/bindings
+          untracked=$(git ls-files --others --exclude-standard -- "$bindings")
+          if ! git diff --quiet -- "$bindings" || [ -n "$untracked" ]; then
+            echo "Generated bindings differ from the committed ones:"
+            git diff --stat -- "$bindings"
+            echo "$untracked"
+            exit 1
+          fi

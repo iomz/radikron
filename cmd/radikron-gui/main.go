@@ -4,9 +4,7 @@ import (
 	"embed"
 	"log"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const (
@@ -26,23 +24,30 @@ func main() {
 	// Create an instance of the app structure
 	app := NewApp()
 
-	// Create application with options
-	err := wails.Run(&options.App{
-		Title:  "Radikron",
-		Width:  defaultWindowWidth,
-		Height: defaultWindowHeight,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
+	wailsApp := application.New(application.Options{
+		Name:        "Radikron",
+		Description: "GUI for radikron - automated radio program downloader for radiko",
+		Services: []application.Service{
+			application.NewService(app),
 		},
-		BackgroundColour: &options.RGBA{R: backgroundR, G: backgroundG, B: backgroundB, A: backgroundA},
-		OnStartup:        app.OnStartup,
-		OnShutdown:       app.OnShutdown,
-		Bind: []any{
-			app,
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
+	app.attach(wailsApp)
 
-	if err != nil {
+	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            "Radikron",
+		Width:            defaultWindowWidth,
+		Height:           defaultWindowHeight,
+		BackgroundColour: application.NewRGBA(backgroundR, backgroundG, backgroundB, backgroundA),
+		URL:              "/",
+	})
+
+	if err := wailsApp.Run(); err != nil {
 		log.Fatalf("failed to start Wails application: %v", err)
 	}
 }

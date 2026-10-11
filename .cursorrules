@@ -52,6 +52,6 @@ Closes #123
 
 - When making changes to Go code, **ALWAYS** rebuild the binary to pick up changes
 - For the CLI binary: `go build -o radikron ./cmd/radikron`
-- For the GUI binary: `cd cmd/radikron-gui && wails build`
-- When using `wails dev` for development, it should auto-rebuild, but pre-built binaries need manual rebuild
+- For the GUI binary: `cd cmd/radikron-gui && wails3 build` (or `wails3 task package` for `bin/Radikron.app` on macOS)
+- When using `wails3 dev` for development, it should auto-rebuild, but pre-built binaries need manual rebuild
 - The imports `github.com/iomz/radikron` reference local source files (correct for Go modules), but the binary must be rebuilt after code changes

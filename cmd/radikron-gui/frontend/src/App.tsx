@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ErrorBoundary } from "react-error-boundary";
-import { EventsOn } from "../wailsjs/runtime/runtime";
+import { Events } from "@wailsio/runtime";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -108,9 +108,9 @@ const AppComponent: React.FC = () => {
   // Set up event listeners
   useEffect(() => {
     // Listen for download events
-    const unsubscribeDownloadStarted = EventsOn(
+    const unsubscribeDownloadStarted = Events.On(
       "download-started",
-      (data: DownloadEventData) => {
+      ({ data }: { data: DownloadEventData }) => {
         addActivityLog(
           "info",
           `Started downloading: ${data.title} (${data.station})`,
@@ -118,9 +118,9 @@ const AppComponent: React.FC = () => {
       },
     );
 
-    const unsubscribeDownloadCompleted = EventsOn(
+    const unsubscribeDownloadCompleted = Events.On(
       "download-completed",
-      (data: DownloadEventData) => {
+      ({ data }: { data: DownloadEventData }) => {
         let dateStr = "";
         if (data.start && data.start.length === 14) {
           // Format: YYYYMMDDHHmmss -> YYYY/MM/DD
@@ -140,9 +140,9 @@ const AppComponent: React.FC = () => {
       },
     );
 
-    const unsubscribeDownloadFailed = EventsOn(
+    const unsubscribeDownloadFailed = Events.On(
       "download-failed",
-      (data: DownloadEventData) => {
+      ({ data }: { data: DownloadEventData }) => {
         addActivityLog(
           "error",
           `Failed ${data.stage ? `during ${data.stage} ` : ""}: ${data.title} (${data.station}) - ${data.error || "Unknown error"}`,
@@ -150,9 +150,9 @@ const AppComponent: React.FC = () => {
       },
     );
 
-    const unsubscribeDownloadProgress = EventsOn(
+    const unsubscribeDownloadProgress = Events.On(
       "download-progress",
-      (data: DownloadEventData) => {
+      ({ data }: { data: DownloadEventData }) => {
         const progress = data.total
           ? ` (${data.completed}/${data.total})`
           : "";
@@ -163,13 +163,13 @@ const AppComponent: React.FC = () => {
       },
     );
 
-    const unsubscribeStationsLoaded = EventsOn("stations-loaded", () => {
+    const unsubscribeStationsLoaded = Events.On("stations-loaded", () => {
       void loadStations();
     });
 
-    const unsubscribeConfigLoaded = EventsOn(
+    const unsubscribeConfigLoaded = Events.On(
       "config-loaded",
-      (data: ConfigLoadedData) => {
+      ({ data }: { data: ConfigLoadedData }) => {
         if (data.success) {
           addActivityLog("success", "Configuration loaded successfully");
           loadConfigInfo();
@@ -178,9 +178,9 @@ const AppComponent: React.FC = () => {
     );
 
     // Listen for log messages from radikron
-    const unsubscribeLogMessage = EventsOn(
+    const unsubscribeLogMessage = Events.On(
       "log-message",
-      (data: LogMessageData) => {
+      ({ data }: { data: LogMessageData }) => {
         // Filter out duplicate messages that are already handled by structured events
         const message = data.message.toLowerCase();
         // Skip messages that duplicate structured events

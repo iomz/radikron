@@ -56,7 +56,7 @@ radikron is a powerful, automated radio program downloader for [radiko](https://
 ### 🖥️ Dual Interface Support {#dual-interface-support}
 
 - **CLI Version**: Lightweight command-line interface for servers and automation
-- **GUI Version**: Modern graphical interface built with Wails v2 for desktop users
+- **GUI Version**: Modern graphical interface built with Wails v3 (beta) for desktop users
 - **Shared Core**: Both versions use the same engine, ensuring consistent behavior
 
 ### 🎯 Smart Rule-Based Matching {#smart-rule-based-matching}
@@ -126,7 +126,8 @@ If you're building the GUI version from source (Linux users), you'll also need:
 
 - **Go 1.26+**
 - **Node.js 20+ and pnpm 10+**
-- **Wails v2.11.x**: Install with `go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0`
+- **Wails v3 CLI**: Install with `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28`
+- **GTK4 and WebKitGTK 6.0** development packages on Linux: `sudo apt install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev` on Ubuntu
 
 **Note**: macOS and Windows users can download pre-built binaries and don't need these build tools.
 
@@ -150,6 +151,7 @@ Pre-built binaries are available for macOS and Windows. Download the latest rele
 - **Windows**: Download `radikron-gui_windows_amd64.exe` (x64) or `radikron-gui_windows_arm64.exe` (ARM64)
 
 The `radikron-gui_darwin_*.app.zip` assets contain the same app and are intended for automatic updates.
+The macOS app requires macOS 12 or later.
 
 macOS downloads are ad-hoc signed but not notarized. Gatekeeper may require manual approval: only if you downloaded Radikron from the official Releases page, Control-click `Radikron.app`, choose **Open**, then confirm **Open**. The app is not signed with a paid Apple Developer ID.
 
@@ -181,10 +183,10 @@ pnpm install
 cd ..
 
 # Run in development mode
-wails dev
+wails3 dev
 
 # Or build for production
-wails build
+wails3 build
 ```
 
 ## Configuration
@@ -360,7 +362,7 @@ For production use, consider running it as a systemd service or using a process 
 
 The GUI version provides a visual interface for managing radikron:
 
-1. **Launch the application**: Run the built binary or use `wails dev` for development
+1. **Launch the application**: Run the built binary or use `wails3 dev` for development
 2. **Load configuration**: Use the configuration panel to load your `config.yml` file
 3. **View stations**: Browse available radio stations in your region
 4. **Search programs**: Use the program search browser to find programs across all stations

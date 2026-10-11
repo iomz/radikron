@@ -20,8 +20,9 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useAppStore } from "@/store/useAppStore";
-import * as App from "../../wailsjs/go/main/App";
-import { config, radikron } from "../../wailsjs/go/models";
+import * as App from "../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app";
+import * as config from "../../bindings/github.com/iomz/radikron/internal/config";
+import * as radikron from "../../bindings/github.com/iomz/radikron";
 
 export const RulesEditor: React.FC = () => {
   const configInfo = useAppStore((state) => state.configInfo);
@@ -129,7 +130,7 @@ export const RulesEditor: React.FC = () => {
 
     const index = ruleToDelete;
     const rule = rules.Rules[index];
-    const ruleName = rule.Name || `Rule ${index + 1}`;
+    const ruleName = rule?.Name || `Rule ${index + 1}`;
 
     // Save the updated rules
     setIsSaving(true);
@@ -222,6 +223,7 @@ export const RulesEditor: React.FC = () => {
             <div className="space-y-6 pr-4">
               {rules.Rules && rules.Rules.length > 0 ? (
                 rules.Rules.map((rule, index) => {
+                  if (!rule) return null;
                   const isExpanded = expandedRules.has(index);
                   return (
                     <Card key={index} className="p-4">

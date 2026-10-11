@@ -1,6 +1,15 @@
 # Wails build output
-build/
 bin/
+build/bin/
+*.syso
+.task/
+
+# Generated from build/appicon.png by `wails3 task common:generate:icons`
+build/darwin/icons.icns
+build/windows/icon.ico
+
+# Downloaded by the NSIS packaging task
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 
 # Frontend build output
 frontend/dist/
@@ -18,3 +27,9 @@ Thumbs.db
 
 # downloads
 /radiko
+
+# Wails build configuration (not a radikron config file)
+!build/config.yml
+
+# Recreated by `wails3 task common:update:build-assets`; iOS is not built
+build/ios/

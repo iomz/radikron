@@ -1,19 +1,19 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import * as Backend from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+import * as Backend from '../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
+import { Events } from '@wailsio/runtime';
 import App from './App';
 import { useAppStore } from './store/useAppStore';
 
-vi.mock('../wailsjs/go/main/App', () => ({
+vi.mock('../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
   GetAvailableStations: vi.fn(),
   GetConfig: vi.fn(),
   GetStationNames: vi.fn(),
 }));
 
-vi.mock('../wailsjs/runtime/runtime', () => ({
-  EventsOn: vi.fn(),
+vi.mock('@wailsio/runtime', () => ({
+  Events: { On: vi.fn() },
 }));
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
@@ -24,7 +24,7 @@ vi.mock('@/components/ProgramSearchBrowser', () => ({ ProgramSearchBrowser: () =
 vi.mock('@/components/ThemeToggle', () => ({ ThemeToggle: () => <button>Theme</button> }));
 
 const backend = vi.mocked(Backend);
-const eventsOn = vi.mocked(EventsOn);
+const eventsOn = vi.mocked(Events.On);
 let eventHandlers: Map<string, (data?: unknown) => void>;
 
 describe('App shell events', () => {
@@ -33,7 +33,9 @@ describe('App shell events', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     eventHandlers = new Map();
     eventsOn.mockImplementation((name, callback) => {
-      eventHandlers.set(name, callback as (data?: unknown) => void);
+      // Wails v3 delivers a WailsEvent; tests pass the payload as its data.
+      const handler = callback as (event: { data?: unknown }) => void;
+      eventHandlers.set(name, (data?: unknown) => handler({ data }));
       return vi.fn();
     });
     backend.GetConfig.mockResolvedValue({ AreaID: 'JP13' } as Awaited<ReturnType<typeof Backend.GetConfig>>);

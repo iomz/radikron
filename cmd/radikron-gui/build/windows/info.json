@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.12.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "0.12.0",
+			"CompanyName": "Iori Mizutani",
+			"FileDescription": "GUI for radikron - automated radio program downloader for radiko",
+			"LegalCopyright": "Copyright © 2025",
+			"ProductName": "Radikron",
+			"Comments": "GUI for radikron - automated radio program downloader for radiko"
+		}
+	}
+}

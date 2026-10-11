@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,7 +17,7 @@ import (
 
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const (
@@ -60,15 +61,23 @@ type frontendEventSink interface {
 	Emit(context.Context, string, any)
 }
 
-type wailsEventSink struct{}
+// wailsEventSink delivers events through the Wails application; its zero value
+// drops events until the application is attached.
+type wailsEventSink struct {
+	app *application.App
+}
 
-func (wailsEventSink) Emit(ctx context.Context, eventName string, data any) {
-	runtime.EventsEmit(ctx, eventName, data)
+func (s wailsEventSink) Emit(_ context.Context, eventName string, data any) {
+	if s.app != nil {
+		s.app.Event.Emit(eventName, data)
+	}
 }
 
 // App struct represents the Wails application
 type App struct {
 	ctx                    context.Context
+	wails                  *application.App
+	logger                 *slog.Logger
 	asset                  *radikron.Asset
 	client                 *http.Client
 	config                 *config.Config
@@ -101,9 +110,17 @@ func NewApp() *App {
 		manualInjections:       make(map[string]*manualInjection),
 		pendingManualDownloads: make(map[string]string),
 		events:                 wailsEventSink{},
+		logger:                 slog.Default(),
 		startupReady:           startupReady,
 		configChanged:          make(chan struct{}, 1),
 	}
+}
+
+// attach connects the App to the Wails application before it runs.
+func (a *App) attach(wailsApp *application.App) {
+	a.wails = wailsApp
+	a.events = wailsEventSink{app: wailsApp}
+	a.logger = wailsApp.Logger
 }
 
 func (a *App) emit(eventName string, data any) {
@@ -169,25 +186,27 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 	return cfg, nil
 }
 
-// OnStartup is called when the app starts
-func (a *App) OnStartup(ctx context.Context) {
+// ServiceStartup is called by Wails when the app starts. Initialization
+// failures are reported to the frontend instead of aborting the app, so the
+// user can still fix the configuration from the GUI.
+func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error { //nolint:unparam // Wails service interface
 	a.ctx = ctx
 	a.mu.Lock()
 	a.startupReady = make(chan struct{})
 	a.startupErr = nil
 	a.mu.Unlock()
 
-	err := a.initialize(ctx)
+	err := a.initialize()
 	a.mu.Lock()
 	a.startupErr = err
 	close(a.startupReady)
 	a.mu.Unlock()
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("GUI startup initialization failed: %v", err))
-		return
+		a.logger.Error(fmt.Sprintf("GUI startup initialization failed: %v", err))
+		return nil
 	}
 	if err := a.StartMonitoring(); err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to start automatic downloads: %v", err))
+		a.logger.Error(fmt.Sprintf("Failed to start automatic downloads: %v", err))
 		a.emit("log-message", map[string]any{
 			"type":    "error",
 			"message": fmt.Sprintf("Failed to start automatic downloads: %v", err),
@@ -195,6 +214,7 @@ func (a *App) OnStartup(ctx context.Context) {
 	}
 	go a.refreshStationCatalogInBackground()
 	go a.loadManualInjectionsInBackground()
+	return nil
 }
 
 func (a *App) signalConfigChanged() {
@@ -219,7 +239,7 @@ func (a *App) waitForStartup() error {
 func (a *App) refreshStationCatalogInBackground() {
 	if _, err := a.RefreshStations(); err != nil {
 		if a.ctx != nil {
-			runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to refresh station catalog: %v", err))
+			a.logger.Warn(fmt.Sprintf("Failed to refresh station catalog: %v", err))
 			a.emit("log-message", map[string]any{
 				"type":    "error",
 				"message": fmt.Sprintf("Failed to refresh stations: %v. Use Refresh Stations to retry.", err),
@@ -233,7 +253,7 @@ func (a *App) refreshStationCatalogInBackground() {
 func (a *App) loadManualInjectionsInBackground() {
 	if err := a.loadManualInjections(); err != nil {
 		if a.ctx != nil {
-			runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to load manual injections: %v", err))
+			a.logger.Warn(fmt.Sprintf("Failed to load manual injections: %v", err))
 			a.emit("log-message", map[string]any{
 				"type":    "error",
 				"message": fmt.Sprintf("Failed to load manual injections: %v", err),
@@ -242,11 +262,11 @@ func (a *App) loadManualInjectionsInBackground() {
 	}
 }
 
-func (a *App) initialize(ctx context.Context) error {
+func (a *App) initialize() error {
 	// Get app config directory
 	appConfigDir, err := getAppConfigDir()
 	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to get app config directory: %v", err))
+		a.logger.Error(fmt.Sprintf("Failed to get app config directory: %v", err))
 		// Fallback to current directory
 		a.configFile = "config.yml"
 		a.manualInjectionsFile = "manual-injections.json"
@@ -278,12 +298,12 @@ func (a *App) initialize(ctx context.Context) error {
 	var cfg *config.Config
 	if configNotFound {
 		// Config file doesn't exist, create default config
-		runtime.LogInfo(ctx, fmt.Sprintf("Config file not found at %s, creating default config", a.configFile))
+		a.logger.Info(fmt.Sprintf("Config file not found at %s, creating default config", a.configFile))
 		cfg, err = createDefaultConfig(a.configFile)
 		if err != nil {
 			return fmt.Errorf("failed to create default config: %w", err)
 		}
-		runtime.LogInfo(ctx, fmt.Sprintf("Created default config at %s", a.configFile))
+		a.logger.Info(fmt.Sprintf("Created default config at %s", a.configFile))
 	} else if configExists {
 		// Config file exists, try to load it
 		cfg, err = config.LoadConfigWithoutAreaLookup(a.configFile)
@@ -300,7 +320,7 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 
 	a.config = cfg
-	runtime.LogInfo(ctx, fmt.Sprintf("Config loaded successfully from %s", a.configFile))
+	a.logger.Info(fmt.Sprintf("Config loaded successfully from %s", a.configFile))
 
 	return nil
 }
@@ -313,7 +333,7 @@ func (a *App) fetchProgramDetailsForStations(stationIDs []string) map[string]*ra
 	for _, stationID := range stationIDs {
 		weeklyPrograms, err := fetcher.FetchWeeklyPrograms(stationID)
 		if err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf(
+			a.logger.Error(fmt.Sprintf(
 				"Failed to fetch weekly programs for station %s to update manual injection details: %v",
 				stationID, err))
 			continue
@@ -368,9 +388,9 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
 
 	emitEvent := func(ctx context.Context, eventName string, data any) {
-		runtime.EventsEmit(ctx, eventName, data)
+		a.events.Emit(ctx, eventName, data)
 	}
-	eventEmitter, cleanupLogger := SetupLogger(a.ctx, emitEvent)
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.events, emitEvent)
 	programID := prog.ID
 	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
 		a.HandleDownloadCompletedByID(programID, stationID, title, startTime)
@@ -386,8 +406,8 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 	err := radikron.Download(ctx, wg, prog)
 	if err != nil {
 		errMsg := fmt.Sprintf("%s [%s]%s: %v", errorMsgPrefix, prog.StationID, prog.Title, err)
-		runtime.LogError(a.ctx, errMsg)
-		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+		a.logger.Error(errMsg)
+		a.events.Emit(a.ctx, "log-message", map[string]any{
 			"type":    "error",
 			"message": errMsg,
 		})
@@ -405,7 +425,7 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 		// Save failure state (outside lock to avoid deadlock)
 		go func() {
 			if saveErr := a.saveManualInjections(); saveErr != nil {
-				runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection failure state: %v", saveErr))
+				a.logger.Error(fmt.Sprintf("Failed to save manual injection failure state: %v", saveErr))
 			}
 		}()
 
@@ -528,11 +548,11 @@ func (a *App) retryFailedDownloads() {
 		}
 
 		if inj.LastFailureTime == nil {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
+			a.logger.Info(fmt.Sprintf(
 				"Downloading past program [%s]%s",
 				prog.StationID, prog.Title))
 		} else {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
+			a.logger.Info(fmt.Sprintf(
 				"Retrying download for [%s]%s (attempt %d/%d)",
 				prog.StationID, prog.Title, inj.RetryCount+1, maxDownloadRetries))
 		}
@@ -540,7 +560,7 @@ func (a *App) retryFailedDownloads() {
 		// Download the program
 		err := a.setupDownloadForPastProgram(prog)
 		if err != nil {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
+			a.logger.Info(fmt.Sprintf(
 				"Download failed for [%s]%s: %v (will retry again later)",
 				prog.StationID, prog.Title, err))
 		}
@@ -579,7 +599,7 @@ func (a *App) cleanupStaleFailedDownloads() {
 			delete(a.manualInjections, id)
 			delete(a.pendingManualDownloads, id)
 			removed = true
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
+			a.logger.Info(fmt.Sprintf(
 				"Cleaned up stale failed manual injection [%s]%s (ID: %s) - %s",
 				inj.StationID, inj.Title, id, reason))
 		}
@@ -589,7 +609,7 @@ func (a *App) cleanupStaleFailedDownloads() {
 		// Save outside the lock to avoid deadlock
 		go func() {
 			if err := a.saveManualInjections(); err != nil {
-				runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after cleanup: %v", err))
+				a.logger.Error(fmt.Sprintf("Failed to save manual injections after cleanup: %v", err))
 			}
 		}()
 	}
@@ -610,7 +630,7 @@ func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, 
 
 	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
 	if err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to parse start time for loaded program %s: %v", prog.ID, err))
+		a.logger.Error(fmt.Sprintf("Failed to parse start time for loaded program %s: %v", prog.ID, err))
 		if !a.asset.Schedules.HasDuplicate(prog) {
 			a.asset.Schedules = append(a.asset.Schedules, prog)
 		}
@@ -634,7 +654,7 @@ func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, 
 		)
 		if err == nil && output.IsExist() {
 			delete(a.manualInjections, inj.ProgramID)
-			runtime.LogInfo(a.ctx, fmt.Sprintf("Skipping loaded program [%s]%s - file already exists", prog.StationID, prog.Title))
+			a.logger.Info(fmt.Sprintf("Skipping loaded program [%s]%s - file already exists", prog.StationID, prog.Title))
 			return
 		}
 
@@ -704,7 +724,7 @@ func (a *App) loadManualInjections() error {
 	supportedInjections := make([]*manualInjection, 0, len(injections))
 	for _, inj := range injections {
 		if !radikron.SupportsArchive(inj.StationID) {
-			runtime.LogWarning(a.ctx, fmt.Sprintf(
+			a.logger.Warn(fmt.Sprintf(
 				"Ignoring saved manual injection for unsupported archive station %s",
 				inj.StationID))
 			continue
@@ -745,7 +765,7 @@ func (a *App) loadManualInjections() error {
 		a.processLoadedInjection(inj, prog, programDetailsMap)
 	}
 
-	runtime.LogInfo(a.ctx, fmt.Sprintf("Loaded %d manually injected programs", len(injections)))
+	a.logger.Info(fmt.Sprintf("Loaded %d manually injected programs", len(injections)))
 	return nil
 }
 
@@ -822,7 +842,7 @@ func (a *App) DeleteManualInjection(programID string) error {
 		return fmt.Errorf("failed to save manual injections: %w", err)
 	}
 
-	runtime.LogInfo(a.ctx, fmt.Sprintf("Deleted manual injection: %s", programID))
+	a.logger.Info(fmt.Sprintf("Deleted manual injection: %s", programID))
 	return nil
 }
 
@@ -840,11 +860,12 @@ func (a *App) removeScheduledProgramLocked(programID string) {
 	a.asset.Schedules = schedules
 }
 
-// OnShutdown is called when the app closes
-func (a *App) OnShutdown(_ context.Context) {
+// ServiceShutdown is called by Wails when the app closes
+func (a *App) ServiceShutdown() error { //nolint:unparam // Wails service interface
 	if err := a.StopMonitoring(); err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to stop monitoring on shutdown: %v", err))
+		a.logger.Error(fmt.Sprintf("Failed to stop monitoring on shutdown: %v", err))
 	}
+	return nil
 }
 
 // GetConfig returns the current configuration
@@ -1092,7 +1113,7 @@ func (a *App) injectPastProgramLocked(prog *radikron.Prog) error {
 	}
 	a.mu.Unlock()
 	if err := a.saveManualInjections(); err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
+		a.logger.Error(fmt.Sprintf("Failed to save manual injection: %v", err))
 	}
 
 	downloadErr := a.downloadPastInjectedProgram(&progCopy)
@@ -1102,7 +1123,7 @@ func (a *App) injectPastProgramLocked(prog *radikron.Prog) error {
 	}
 	a.mu.Unlock()
 	if downloadErr != nil {
-		runtime.LogInfo(a.ctx, fmt.Sprintf(
+		a.logger.Info(fmt.Sprintf(
 			"Past program [%s]%s download failed, will be retried automatically",
 			progCopy.StationID, progCopy.Title))
 	}
@@ -1126,9 +1147,9 @@ func (a *App) injectFutureProgramLocked(prog *radikron.Prog) error {
 	}
 	a.mu.Unlock()
 	if err := a.saveManualInjections(); err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injection: %v", err))
+		a.logger.Error(fmt.Sprintf("Failed to save manual injection: %v", err))
 	}
-	runtime.EventsEmit(a.ctx, "program-injected", map[string]any{
+	a.events.Emit(a.ctx, "program-injected", map[string]any{
 		"program": prog.Title,
 		"station": prog.StationID,
 	})
@@ -1175,9 +1196,9 @@ func (a *App) removeManualInjectionAndSave(programID, stationID, title string) {
 
 	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
 	if err := a.saveManualInjections(); err != nil {
-		runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after download: %v", err))
+		a.logger.Error(fmt.Sprintf("Failed to save manual injections after download: %v", err))
 	} else if a.ctx != nil {
-		runtime.LogInfo(a.ctx, fmt.Sprintf("Removed manually injected program [%s]%s after download completion", stationID, title))
+		a.logger.Info(fmt.Sprintf("Removed manually injected program [%s]%s after download completion", stationID, title))
 	}
 }
 
@@ -1269,13 +1290,13 @@ func (a *App) checkAndCleanupManualInjections() {
 	// Log and save outside the lock
 	if removed {
 		for _, entry := range removedEntries {
-			runtime.LogInfo(a.ctx, fmt.Sprintf(
+			a.logger.Info(fmt.Sprintf(
 				"Removed manually injected program [%s]%s - no longer available in weekly programs",
 				entry.stationID, entry.title))
 		}
 
 		if err := a.saveManualInjections(); err != nil {
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to save manual injections after cleanup: %v", err))
+			a.logger.Error(fmt.Sprintf("Failed to save manual injections after cleanup: %v", err))
 		}
 	}
 }
@@ -1418,10 +1439,13 @@ func (a *App) ExportConfigFile() error {
 	}
 
 	// Open save file dialog (no lock needed for dialog operations)
-	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		DefaultFilename: defaultFilename,
-		Title:           "Save Configuration File",
-		Filters: []runtime.FileFilter{
+	if a.wails == nil {
+		return fmt.Errorf("save dialog unavailable before the app starts")
+	}
+	savePath, err := a.wails.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
+		Filename: defaultFilename,
+		Title:    "Save Configuration File",
+		Filters: []application.FileFilter{
 			{
 				DisplayName: "YAML Files (*.yml, *.yaml)",
 				Pattern:     "*.yml;*.yaml",
@@ -1431,7 +1455,7 @@ func (a *App) ExportConfigFile() error {
 				Pattern:     "*.*",
 			},
 		},
-	})
+	}).PromptForSingleSelection()
 	if err != nil {
 		return fmt.Errorf("save dialog canceled or failed: %w", err)
 	}
@@ -1450,9 +1474,14 @@ func (a *App) ExportConfigFile() error {
 
 // SelectDirectory opens a directory picker dialog and returns the selected directory path
 func (a *App) SelectDirectory() (string, error) {
-	selectedPath, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Select Download Directory",
-	})
+	if a.wails == nil {
+		return "", fmt.Errorf("directory dialog unavailable before the app starts")
+	}
+	selectedPath, err := a.wails.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
+		Title:                "Select Download Directory",
+		CanChooseDirectories: true,
+		CanChooseFiles:       false,
+	}).PromptForSingleSelection()
 	if err != nil {
 		return "", fmt.Errorf("directory dialog canceled or failed: %w", err)
 	}
@@ -1596,7 +1625,7 @@ func (a *App) FetchProgramSnapshots() error {
 		programs, err := radikron.FetchWeeklyPrograms(stationID)
 		if err != nil {
 			// Log error but continue with other stations
-			runtime.LogError(a.ctx, fmt.Sprintf("Failed to fetch programs for station %s: %v", stationID, err))
+			a.logger.Error(fmt.Sprintf("Failed to fetch programs for station %s: %v", stationID, err))
 			continue
 		}
 		snapshots[stationID] = programs
@@ -1655,7 +1684,7 @@ func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationI
 		programs, exists := a.programSnapshots[stationID]
 		if !exists {
 			// If snapshot doesn't exist for this station, skip it
-			runtime.LogError(a.ctx, fmt.Sprintf("No program snapshot available for station %s", stationID))
+			a.logger.Error(fmt.Sprintf("No program snapshot available for station %s", stationID))
 			continue
 		}
 
@@ -2062,11 +2091,11 @@ func (a *App) processProgram(
 		a.mu.Lock()
 		delete(processedInThisIteration, p.ID)
 		a.mu.Unlock()
-		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+		a.events.Emit(a.ctx, "log-message", map[string]any{
 			"type":    "error",
 			"message": fmt.Sprintf("download failed for [%s]%s: %s", p.StationID, p.Title, err),
 		})
-		runtime.EventsEmit(a.ctx, "download-failed", map[string]any{
+		a.events.Emit(a.ctx, "download-failed", map[string]any{
 			"station": p.StationID,
 			"title":   p.Title,
 			"error":   err.Error(),
@@ -2095,7 +2124,7 @@ func (a *App) checkAndLogRulesCount(asset *radikron.Asset) {
 	a.mu.RUnlock()
 	if rulesCount == 0 {
 		log.Printf("warning: no rules configured, programs won't be downloaded")
-		runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+		a.events.Emit(a.ctx, "log-message", map[string]any{
 			"type":    "error",
 			"message": "No rules configured - please configure rules to download programs",
 		})
@@ -2193,14 +2222,14 @@ func (a *App) sleepUntilNextFetch(ctx context.Context) {
 // The loop respects the next fetch time and can be canceled via context.
 func (a *App) runMonitoringLoop(ctx context.Context) {
 	log.Printf("automatic program checks started")
-	runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+	a.events.Emit(a.ctx, "log-message", map[string]any{
 		"type":    "info",
 		"message": "Automatic program checks started",
 	})
 
 	// Setup logger to capture radikron log messages and emit events
 	emitEvent := func(ctx context.Context, eventName string, data any) {
-		runtime.EventsEmit(ctx, eventName, data)
+		a.events.Emit(ctx, eventName, data)
 		// Also check for manual injection removal on download-completed events
 		// This is a fallback in case the callback doesn't work
 		if eventName == "download-completed" {
@@ -2213,7 +2242,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 			}
 		}
 	}
-	eventEmitter, cleanupLogger := SetupLogger(a.ctx, emitEvent)
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.events, emitEvent)
 	defer cleanupLogger()
 
 	// Set callback to handle download completion for manual injections
@@ -2229,7 +2258,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			log.Printf("automatic program checks stopped (app is closing)")
-			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			a.events.Emit(a.ctx, "log-message", map[string]any{
 				"type":    "info",
 				"message": "Automatic program checks stopped",
 			})
@@ -2243,7 +2272,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		// Reload config
 		if err := a.reloadConfigIfNeeded(); err != nil {
 			log.Printf("warning: failed to reload config: %v", err)
-			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			a.events.Emit(a.ctx, "log-message", map[string]any{
 				"type":    "error",
 				"message": fmt.Sprintf("Failed to reload config: %v", err),
 			})
@@ -2256,7 +2285,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 
 		if asset == nil {
 			log.Printf("warning: asset is nil, skipping iteration")
-			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			a.events.Emit(a.ctx, "log-message", map[string]any{
 				"type":    "error",
 				"message": "Asset is not initialized, skipping iteration",
 			})
@@ -2274,7 +2303,7 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		// Skip processing if no rules or all rules have no criteria
 		if !hasMonitoringCriteria(asset) {
 			log.Printf("skipping program collection: no rules with criteria configured")
-			runtime.EventsEmit(a.ctx, "log-message", map[string]any{
+			a.events.Emit(a.ctx, "log-message", map[string]any{
 				"type":    "warning",
 				"message": "No rules with criteria configured - skipping program collection",
 			})

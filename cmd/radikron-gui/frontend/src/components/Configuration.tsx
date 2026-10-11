@@ -20,8 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
-import * as App from '../../wailsjs/go/main/App';
-import { config } from '../../wailsjs/go/models';
+import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
+import * as config from '../../bindings/github.com/iomz/radikron/internal/config';
 import { getAreaName, regionsData } from '@/lib/regions';
 import { toast } from 'sonner';
 import { X, Plus } from 'lucide-react';

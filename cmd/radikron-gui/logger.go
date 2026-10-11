@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/iomz/radikron"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
@@ -35,13 +34,11 @@ type WailsEventEmitter struct {
 // Ensure WailsEventEmitter implements radikron.EventEmitter at compile time
 var _ radikron.EventEmitter = (*WailsEventEmitter)(nil)
 
-// NewWailsEventEmitter creates a new WailsEventEmitter
-func NewWailsEventEmitter(ctx context.Context) *WailsEventEmitter {
+// NewWailsEventEmitter creates a new WailsEventEmitter that delivers events with emitEvent
+func NewWailsEventEmitter(ctx context.Context, emitEvent func(context.Context, string, any)) *WailsEventEmitter {
 	return &WailsEventEmitter{
-		ctx: ctx,
-		emitEvent: func(ctx context.Context, eventName string, data any) {
-			runtime.EventsEmit(ctx, eventName, data)
-		},
+		ctx:       ctx,
+		emitEvent: emitEvent,
 	}
 }
 
@@ -243,10 +240,11 @@ func (e *EventLogger) emitLogEvent(message string) {
 // Returns the event emitter and a cleanup function
 func SetupLogger(
 	ctx context.Context,
+	sink frontendEventSink,
 	emitEvent func(ctx context.Context, eventName string, data any),
 ) (emitter *WailsEventEmitter, cleanup func()) {
 	// Create structured event emitter
-	emitter = NewWailsEventEmitter(ctx)
+	emitter = NewWailsEventEmitter(ctx, sink.Emit)
 
 	// Also create legacy event logger for backward compatibility (catches any log.Printf calls)
 	eventLogger := NewEventLogger(ctx, emitEvent)
