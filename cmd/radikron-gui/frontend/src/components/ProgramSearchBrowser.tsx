@@ -24,6 +24,28 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import * as radikron from '../../bindings/github.com/iomz/radikron';
+import { programAction, type ProgramAction } from '@/lib/programs';
+
+const actionLabels: Record<ProgramAction, { button: string; title: string; description: string; confirm: string }> = {
+  download: {
+    button: 'Download now',
+    title: 'Download now',
+    description: 'The recording is available on radiko. Choose a rule to set the folder, or use the default folder.',
+    confirm: 'Download',
+  },
+  schedule: {
+    button: 'Schedule download',
+    title: 'Schedule download',
+    description: 'Radikron downloads the recording after the program ends. Choose a rule to set the folder, or use the default folder.',
+    confirm: 'Schedule',
+  },
+  expired: {
+    button: 'No longer available',
+    title: 'No longer available',
+    description: 'radiko keeps recordings for a week, and this one is gone.',
+    confirm: '',
+  },
+};
 import { Browser } from '@wailsio/runtime';
 
 // SanitizedHTML renders HTML content safely with XSS protection
@@ -60,6 +82,7 @@ export const ProgramSearchBrowser: React.FC = () => {
   const stationsRaw = useAppStore((state) => state.stations) ?? [];
   const stationLabel = useAppStore((state) => state.stationLabel);
   const addActivityLog = useAppStore((state) => state.addActivityLog);
+  const addRule = useAppStore((state) => state.addRule);
   // Sort stations alphabetically
   const stations = [...stationsRaw].sort((a, b) => a.localeCompare(b));
   const [searchCriteria, setSearchCriteria] = useState({
@@ -76,6 +99,12 @@ export const ProgramSearchBrowser: React.FC = () => {
   const [availableRules, setAvailableRules] = useState<Array<{ name: string; folder: string }>>([]);
   const [designatedFolder, setDesignatedFolder] = useState<string>('');
   const [isInjecting, setIsInjecting] = useState(false);
+  const [ruleDraft, setRuleDraft] = useState<radikron.Rule | null>(null);
+  const [ruleError, setRuleError] = useState<string | null>(null);
+  const [isCreatingRule, setIsCreatingRule] = useState(false);
+  const selectedAction: ProgramAction = selectedProgram
+    ? programAction(selectedProgram.Ft, selectedProgram.To)
+    : 'schedule';
 
   // Fetch program snapshots when component mounts
   useEffect(() => {
@@ -299,6 +328,33 @@ export const ProgramSearchBrowser: React.FC = () => {
     }
   }, [selectedProgram, availableRules, updateDesignatedFolder]);
 
+  const openRuleDialog = async () => {
+    if (!selectedProgram) return;
+    setRuleError(null);
+    try {
+      setRuleDraft(await App.RuleFromProgram(selectedProgram));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`Failed to prepare a rule: ${errorMessage}`);
+    }
+  };
+
+  const handleCreateRule = async () => {
+    if (!ruleDraft) return;
+    setIsCreatingRule(true);
+    setRuleError(null);
+    try {
+      await addRule(ruleDraft);
+      toast.success(`Added rule "${ruleDraft.Name.trim()}"`);
+      setRuleDraft(null);
+      setSelectedProgram(null);
+    } catch (err) {
+      setRuleError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsCreatingRule(false);
+    }
+  };
+
   const handleInjectProgram = useCallback(async () => {
     if (!selectedProgram) return;
 
@@ -312,7 +368,10 @@ export const ProgramSearchBrowser: React.FC = () => {
       // Capture values before clearing state
       const stationId = selectedProgram.StationID;
       const title = selectedProgram.Title;
-      const successMessage = `Program [${stationId}]${title} added to schedule`;
+      const successMessage =
+        selectedAction === 'download'
+          ? `Downloading [${stationId}]${title}`
+          : `Scheduled [${stationId}]${title}`;
       
       setShowInjectionDialog(false);
       setSelectedProgram(null);
@@ -328,7 +387,7 @@ export const ProgramSearchBrowser: React.FC = () => {
     } finally {
       setIsInjecting(false);
     }
-  }, [selectedProgram, selectedRule]);
+  }, [selectedProgram, selectedRule, selectedAction, addActivityLog]);
 
   return (
     <div className="flex items-center justify-center px-4 py-8">
@@ -553,14 +612,18 @@ export const ProgramSearchBrowser: React.FC = () => {
                   <p className="text-sm font-mono text-xs text-foreground">{selectedProgram.ID}</p>
                 </div>
 
-                <div className="flex justify-end pt-4 border-t">
+                <div className="flex justify-end gap-2 pt-4 border-t">
+                  <Button variant="outline" onClick={() => void openRuleDialog()} disabled={isCreatingRule}>
+                    Create rule…
+                  </Button>
                   <Button
                     onClick={() => {
                       loadRulesAndShowDialog();
                     }}
-                    disabled={isInjecting}
+                    disabled={isInjecting || selectedAction === 'expired'}
+                    title={selectedAction === 'expired' ? actionLabels.expired.description : undefined}
                   >
-                    Add to Scheduled Downloads
+                    {actionLabels[selectedAction].button}
                   </Button>
                 </div>
               </div>
@@ -573,10 +636,8 @@ export const ProgramSearchBrowser: React.FC = () => {
       <Dialog open={showInjectionDialog} onOpenChange={setShowInjectionDialog}>
         <DialogContent className="max-w-2xl [&>button]:text-foreground [&>button:hover]:text-foreground [&>button]:opacity-100 [&>button>svg]:text-foreground">
           <DialogHeader>
-            <DialogTitle>Add to Scheduled Downloads</DialogTitle>
-            <DialogDescription>
-              Select a rule to determine the download folder, or use the default folder.
-            </DialogDescription>
+            <DialogTitle>{actionLabels[selectedAction].title}</DialogTitle>
+            <DialogDescription>{actionLabels[selectedAction].description}</DialogDescription>
           </DialogHeader>
           {selectedProgram && (
             <div className="space-y-4">
@@ -625,10 +686,53 @@ export const ProgramSearchBrowser: React.FC = () => {
                   Cancel
                 </Button>
                 <Button onClick={handleInjectProgram} disabled={isInjecting}>
-                  {isInjecting ? 'Adding...' : 'Add to Schedule'}
+                  {isInjecting ? 'Working…' : actionLabels[selectedAction].confirm}
                 </Button>
               </div>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Rule Dialog */}
+      <Dialog open={ruleDraft !== null} onOpenChange={(open) => !open && setRuleDraft(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create rule</DialogTitle>
+            <DialogDescription>
+              Radikron downloads every episode this rule matches, including episodes from the past week.
+            </DialogDescription>
+          </DialogHeader>
+          {ruleDraft && (
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleCreateRule();
+              }}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="rule-name">Rule name</Label>
+                <Input
+                  id="rule-name"
+                  value={ruleDraft.Name}
+                  onChange={(e) => setRuleDraft(radikron.Rule.createFrom({ ...ruleDraft, Name: e.target.value }))}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Matches programs titled “{ruleDraft.Title}”
+                {ruleDraft.StationID ? ` on ${stationLabel(ruleDraft.StationID)}` : ''}. Edit it later in Rules Editor.
+              </p>
+              {ruleError && <p className="text-sm text-destructive">{ruleError}</p>}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button type="button" variant="outline" onClick={() => setRuleDraft(null)} disabled={isCreatingRule}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isCreatingRule || !ruleDraft.Name.trim()}>
+                  {isCreatingRule ? 'Creating…' : 'Create rule'}
+                </Button>
+              </div>
+            </form>
           )}
         </DialogContent>
       </Dialog>
