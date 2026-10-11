@@ -335,6 +335,16 @@ The application will:
 - **`-c <file>`**: Specify the configuration file (default: `config.yml`)
 - **`-d`**: Enable debug mode with detailed logging
 - **`-v`**: Print version information
+- **`-check-update`**: Check GitHub Releases for a newer version and exit
+- **`-self-update`**: Download the latest release, verify its signature, replace the running executable, and exit
+- **`-no-update-check`**: Skip the update check at startup
+
+**Updates**:
+
+At startup, radikron checks GitHub Releases once and logs a line when a newer version exists.
+It never installs anything on its own; run `radikron -self-update` to update, then restart radikron.
+The update is installed only if its archive's `.sig` verifies against the release key built into radikron (see [Verifying Downloads](#verifying-downloads)).
+Docker images disable `-self-update`; pull a new image instead.
 
 **Running as a Service**:
 
@@ -380,12 +390,26 @@ By default, it mounts `./config.yml` and `./radiko` to the container.
 docker compose up
 ```
 
+To update, pull the new image and recreate the container (`-self-update` is disabled in the image):
+
+```console
+docker compose pull
+docker compose up -d
+```
+
 ## Build the image yourself
 
 In case the [image](https://github.com/iomz/radikron/pkgs/container/radikron) is not available for your platform:
 
 ```console
 docker compose build
+```
+
+To update a self-built image, pull the latest source and rebuild:
+
+```console
+git pull
+docker compose up -d --build
 ```
 
 ## Credit
