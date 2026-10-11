@@ -2,7 +2,9 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"log"
+	"runtime"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -39,6 +41,15 @@ func main() {
 	})
 	app.attach(wailsApp)
 
+	updatesEnabled, err := setupUpdater(wailsApp)
+	if err != nil {
+		wailsApp.Logger.Error(fmt.Sprintf("Updates are disabled: %v", err))
+	}
+	app.updatesEnabled = updatesEnabled
+	if updatesEnabled && runtime.GOOS == "darwin" {
+		wailsApp.Menu.SetApplicationMenu(applicationMenu(app))
+	}
+
 	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "Radikron",
 		Width:            defaultWindowWidth,
@@ -50,4 +61,29 @@ func main() {
 	if err := wailsApp.Run(); err != nil {
 		log.Fatalf("failed to start Wails application: %v", err)
 	}
+}
+
+// applicationMenu returns the default macOS menu with "Check for Updates…"
+// below "About Radikron", where macOS apps conventionally place it.
+func applicationMenu(app *App) *application.Menu {
+	menu := application.NewMenu()
+	appMenu := menu.AddSubmenu("Radikron")
+	appMenu.AddRole(application.About)
+	appMenu.Add("Check for Updates…").OnClick(func(*application.Context) {
+		app.CheckForUpdates()
+	})
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.ServicesMenu)
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.Hide)
+	appMenu.AddRole(application.HideOthers)
+	appMenu.AddRole(application.UnHide)
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.Quit)
+	menu.AddRole(application.FileMenu)
+	menu.AddRole(application.EditMenu)
+	menu.AddRole(application.ViewMenu)
+	menu.AddRole(application.WindowMenu)
+	menu.AddRole(application.HelpMenu)
+	return menu
 }
