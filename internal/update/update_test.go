@@ -186,18 +186,23 @@ func TestLatestAndApplyTarGz(t *testing.T) {
 	}
 
 	exe := writeExe(t, "radikron")
+	before, err := os.Stat(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := c.Apply(context.Background(), rel, exe); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, exe); got != "new binary" {
 		t.Errorf("executable = %q, want new binary", got)
 	}
-	info, err := os.Stat(exe)
+	after, err := os.Stat(exe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o755 {
-		t.Errorf("mode = %v, want 0755", info.Mode().Perm())
+	// Compare with the original mode; Windows has no Unix permission bits.
+	if after.Mode().Perm() != before.Mode().Perm() {
+		t.Errorf("mode = %v, want %v", after.Mode().Perm(), before.Mode().Perm())
 	}
 }
 
