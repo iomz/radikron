@@ -18,6 +18,23 @@ import * as radikron$0 from "../../models.js";
 import * as config$0 from "../../internal/config/models.js";
 
 /**
+ * AvailableUpdate returns the newest release version found by a background
+ * check, or "" when none is known. The frontend reads it on load because the
+ * first check can finish before the page subscribes to "update-available".
+ */
+export function AvailableUpdate(): $CancellablePromise<string> {
+    return $Call.ByID(553495745);
+}
+
+/**
+ * CheckForUpdates opens the update window, which checks for a newer release
+ * and offers to download, install, and restart into it.
+ */
+export function CheckForUpdates(): $CancellablePromise<void> {
+    return $Call.ByID(2675659504);
+}
+
+/**
  * DeleteManualInjection removes a manually injected program from schedules and persistence.
  * It removes the program from schedules, pending downloads, and the manual injections map,
  * then saves the updated state to disk.
@@ -223,6 +240,14 @@ export function StopMonitoring(): $CancellablePromise<void> {
  */
 export function UpdateConfig(newConfig: config$0.Config | null): $CancellablePromise<void> {
     return $Call.ByID(481689322, newConfig);
+}
+
+/**
+ * UpdatesSupported reports whether "Check for Updates" is available in this
+ * build.
+ */
+export function UpdatesSupported(): $CancellablePromise<boolean> {
+    return $Call.ByID(593331937);
 }
 
 // Private type creation functions

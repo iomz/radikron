@@ -9,6 +9,7 @@ import { RulesEditor } from "@/components/RulesEditor";
 import { ScheduledDownloads } from "@/components/ScheduledDownloads";
 import { ProgramSearchBrowser } from "@/components/ProgramSearchBrowser";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { UpdateButton } from "@/components/UpdateButton";
 import { useAppStore } from "@/store/useAppStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import iconBlack from "./assets/black.png";
@@ -233,7 +234,8 @@ const AppComponent: React.FC = () => {
                   <TabsTrigger value="programs">Program Search</TabsTrigger>
                 </TabsList>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <UpdateButton />
                   <ThemeToggle />
                 </div>
 

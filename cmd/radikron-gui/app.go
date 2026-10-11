@@ -97,6 +97,8 @@ type App struct {
 	startupReady           chan struct{}
 	startupErr             error
 	configChanged          chan struct{}
+	updatesEnabled         bool   // set by main when this build can update itself
+	availableUpdate        string // newest release version found by a background check
 	mu                     sync.RWMutex
 }
 
@@ -191,6 +193,8 @@ func createDefaultConfig(configPath string) (*config.Config, error) {
 // user can still fix the configuration from the GUI.
 func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error { //nolint:unparam // Wails service interface
 	a.ctx = ctx
+	// Updates do not depend on the configuration, so check even when it fails to load.
+	a.startBackgroundUpdateChecks(ctx)
 	a.mu.Lock()
 	a.startupReady = make(chan struct{})
 	a.startupErr = nil

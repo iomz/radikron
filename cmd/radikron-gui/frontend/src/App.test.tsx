@@ -22,6 +22,7 @@ vi.mock('@/components/RulesEditor', () => ({ RulesEditor: () => <div>Rules conte
 vi.mock('@/components/ScheduledDownloads', () => ({ ScheduledDownloads: () => <div>Schedules content</div> }));
 vi.mock('@/components/ProgramSearchBrowser', () => ({ ProgramSearchBrowser: () => <div>Programs content</div> }));
 vi.mock('@/components/ThemeToggle', () => ({ ThemeToggle: () => <button>Theme</button> }));
+vi.mock('@/components/UpdateButton', () => ({ UpdateButton: () => null }));
 
 const backend = vi.mocked(Backend);
 const eventsOn = vi.mocked(Events.On);
