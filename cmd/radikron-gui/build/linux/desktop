@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Radikron
+Comment=GUI for radikron - automated radio program downloader for radiko
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/radikron-gui %u
+Terminal=false
+Type=Application
+Icon=radikron-gui
+Categories=Utility;
+StartupWMClass=radikron-gui
+
+ 
