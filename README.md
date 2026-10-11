@@ -390,12 +390,26 @@ By default, it mounts `./config.yml` and `./radiko` to the container.
 docker compose up
 ```
 
+To update, pull the new image and recreate the container (`-self-update` is disabled in the image):
+
+```console
+docker compose pull
+docker compose up -d
+```
+
 ## Build the image yourself
 
 In case the [image](https://github.com/iomz/radikron/pkgs/container/radikron) is not available for your platform:
 
 ```console
 docker compose build
+```
+
+To update a self-built image, pull the latest source and rebuild:
+
+```console
+git pull
+docker compose up -d --build
 ```
 
 ## Credit
