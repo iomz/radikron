@@ -35,6 +35,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check GUI version matches the release tag
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # The GUI updater compares info.version with the latest release tag.
+          # A build that reports an older version would offer the same update
+          # again after installing it.
+          version=$(sed -n 's/^  version: "\(.*\)".*/\1/p' cmd/radikron-gui/build/config.yml)
+          if [ "v$version" != "$TAG" ]; then
+            echo "cmd/radikron-gui/build/config.yml info.version is '$version', but the release tag is '$TAG'"
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
