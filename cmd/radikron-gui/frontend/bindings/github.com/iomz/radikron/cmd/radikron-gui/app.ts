@@ -22,7 +22,7 @@ import * as config$0 from "../../internal/config/models.js";
 import * as $models from "./models.js";
 
 /**
- * AddRule adds rule to the configuration and saves the config file. It wakes
+ * AddRule adds newRule to the configuration and saves the config file. It wakes
  * automatic checks, so programs the rule matches, including episodes from the
  * past week, are downloaded right away.
  */
