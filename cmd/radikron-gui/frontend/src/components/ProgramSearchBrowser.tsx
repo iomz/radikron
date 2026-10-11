@@ -373,7 +373,7 @@ export const ProgramSearchBrowser: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button type="submit" disabled={isLoading || isInitializing}>
+            <Button type="submit" disabled={isInitializing}>
               {isLoading ? 'Searching...' : 'Search'}
             </Button>
             <Button type="button" onClick={handleClear} variant="outline" disabled={isInitializing}>

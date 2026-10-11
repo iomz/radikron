@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Backend from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import { ProgramSearchBrowser } from './ProgramSearchBrowser';
 
@@ -24,6 +24,8 @@ describe('ProgramSearchBrowser', () => {
     backend.SearchWeeklyPrograms.mockResolvedValue([]);
   });
 
+  afterEach(() => cleanup());
+
   it('searches only when the form is submitted', async () => {
     render(<ProgramSearchBrowser />);
     const keyword = screen.getByLabelText('Keyword');
@@ -41,5 +43,40 @@ describe('ProgramSearchBrowser', () => {
       expect(backend.SearchWeeklyPrograms).toHaveBeenCalledWith('', '', 'シティポップ', '')
     );
     await screen.findByText(/No programs found/);
+  });
+
+  it('accepts a new search while one is pending and keeps the newest results', async () => {
+    type SearchResult = Awaited<ReturnType<typeof Backend.SearchWeeklyPrograms>>;
+    let resolveFirst: (value: SearchResult) => void = () => undefined;
+    backend.SearchWeeklyPrograms.mockImplementationOnce(
+      () =>
+        new Promise<SearchResult>((resolve) => {
+          resolveFirst = resolve;
+        }) as ReturnType<typeof Backend.SearchWeeklyPrograms>
+    );
+    backend.SearchWeeklyPrograms.mockResolvedValueOnce([
+      { ID: 'new', Title: 'New result', StationID: 'TBS', Ft: '20260101000000', To: '20260101010000' },
+    ] as SearchResult);
+
+    render(<ProgramSearchBrowser />);
+    const keyword = screen.getByLabelText('Keyword');
+    const form = keyword.closest('form')!;
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(false)
+    );
+
+    fireEvent.change(keyword, { target: { value: 'old' } });
+    fireEvent.submit(form);
+    await screen.findByRole('button', { name: 'Searching...' });
+    expect((screen.getByRole('button', { name: 'Searching...' }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.change(keyword, { target: { value: 'new' } });
+    fireEvent.submit(form);
+    await screen.findByText('New result');
+
+    resolveFirst([{ ID: 'old', Title: 'Old result', StationID: 'TBS' }] as SearchResult);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('Old result')).toBeNull();
+    expect(backend.SearchWeeklyPrograms).toHaveBeenLastCalledWith('', '', 'new', '');
   });
 });
