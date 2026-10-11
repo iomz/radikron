@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "Radikron"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "0.12.1"
+    !define INFO_PRODUCTVERSION "0.13.0"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "Copyright © 2025"
