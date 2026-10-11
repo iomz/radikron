@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { CircleArrowUp } from 'lucide-react';
 import { Events } from '@wailsio/runtime';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 
 interface UpdateAvailableData {
@@ -23,14 +22,17 @@ const announceUpdate = (version: string) => {
   });
 };
 
-// UpdateButton opens the update window. It renders nothing in builds that
-// cannot update themselves (Linux and development builds).
+// UpdateButton opens the update window, naming the new version once a
+// background check found one. It renders nothing in builds that cannot update
+// themselves (Linux and development builds).
 export const UpdateButton: React.FC = () => {
   const [supported, setSupported] = useState(false);
+  const [available, setAvailable] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     const unsubscribe = Events.On('update-available', ({ data }: { data: UpdateAvailableData }) => {
+      setAvailable(data.version);
       announceUpdate(data.version);
     });
 
@@ -43,6 +45,7 @@ export const UpdateButton: React.FC = () => {
         // The first background check may finish before this component mounts.
         const version = await App.AvailableUpdate();
         if (version && !cancelled) {
+          setAvailable(version);
           announceUpdate(version);
         }
       } catch (err) {
@@ -61,15 +64,17 @@ export const UpdateButton: React.FC = () => {
     return null;
   }
   return (
-    <Button
-      variant="outline"
-      size="icon"
+    <button
       type="button"
       onClick={checkForUpdates}
-      aria-label="Check for updates"
-      title="Check for updates"
+      className={cn(
+        'min-h-11 rounded-[10px] px-3 cursor-pointer transition-colors',
+        available
+          ? 'border border-signal text-signal hover:bg-signal/10'
+          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+      )}
     >
-      <CircleArrowUp className="h-[1.2rem] w-[1.2rem]" />
-    </Button>
+      {available ? `Update to ${available}` : 'Check for updates'}
+    </button>
   );
 };

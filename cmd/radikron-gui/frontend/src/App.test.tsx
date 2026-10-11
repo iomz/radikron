@@ -24,6 +24,8 @@ vi.mock('@/components/RulesEditor', () => ({ RulesEditor: () => <div>Rules conte
 vi.mock('@/components/ScheduledDownloads', () => ({ ScheduledDownloads: () => <div>Schedules content</div> }));
 vi.mock('@/components/ProgramSearchBrowser', () => ({ ProgramSearchBrowser: () => <div>Programs content</div> }));
 vi.mock('@/components/ThemeToggle', () => ({ ThemeToggle: () => <button>Theme</button> }));
+vi.mock('@/components/Settings', () => ({ Settings: () => <div>Settings content</div> }));
+vi.mock('@/components/Timetable', () => ({ Timetable: () => <div>Timetable content</div> }));
 vi.mock('@/components/UpdateButton', () => ({ UpdateButton: () => null }));
 
 const backend = vi.mocked(Backend);
@@ -70,9 +72,14 @@ describe('App shell events', () => {
     expect(screen.queryByText('Running')).toBeNull();
     expect(screen.queryByText('Stopped')).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Rules Editor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
     expect(screen.getByText('Rules content')).toBeTruthy();
     expect(screen.queryByText('Dashboard content')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Rules' }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(screen.getByRole('button', { name: 'Timetable' }));
+    expect(screen.getByText('Timetable content')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(screen.getByText('Settings content')).toBeTruthy();
 
     act(() => eventHandlers.get('download-progress')?.({
       station: 'TBS',

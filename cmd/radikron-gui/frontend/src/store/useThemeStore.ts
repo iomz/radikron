@@ -15,7 +15,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      theme: 'light', // Default to light theme
+      theme: 'system', // Follow the OS until the user picks a theme
       cleanupSystemThemeListener: undefined,
       setTheme: (theme) => {
         const currentCleanup = get().cleanupSystemThemeListener;

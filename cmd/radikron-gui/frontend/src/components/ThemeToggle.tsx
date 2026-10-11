@@ -1,101 +1,37 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { Moon, Sun, Monitor } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useThemeStore } from '@/store/useThemeStore';
+import { cn } from '@/lib/utils';
 
+const options = [
+  { value: 'light', label: 'Light', Icon: Sun },
+  { value: 'dark', label: 'Dark', Icon: Moon },
+  { value: 'system', label: 'System', Icon: Monitor },
+] as const;
+
+// ThemeToggle switches between the light, dark, and system themes.
 export const ThemeToggle: React.FC = () => {
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside);
-      if (buttonRef.current && menuRef.current) {
-        const rect = buttonRef.current.getBoundingClientRect();
-        menuRef.current.style.top = `${rect.bottom + 4}px`;
-        menuRef.current.style.right = `${window.innerWidth - rect.right}px`;
-      }
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [open]);
-
-  const handleThemeSelect = (newTheme: 'light' | 'dark' | 'system') => {
-    setTheme(newTheme);
-    setOpen(false);
-  };
 
   return (
-    <div ref={containerRef} className="relative">
-      <Button
-        ref={buttonRef}
-        variant="outline"
-        size="icon"
-        type="button"
-        className="relative"
-        onClick={() => setOpen(!open)}
-        aria-label="Toggle theme"
-        aria-expanded={open}
-        aria-haspopup="true"
-      >
-        <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-        <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-        <span className="sr-only">Toggle theme</span>
-      </Button>
-      {open && (
-        <div
-          ref={menuRef}
-          className="z-[100] min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-          style={{ position: 'fixed' }}
-          role="menu"
+    <div role="group" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-[10px] bg-muted p-1">
+      {options.map(({ value, label, Icon }) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={theme === value}
+          title={label}
+          onClick={() => setTheme(value)}
+          className={cn(
+            'flex items-center justify-center min-h-9 rounded-md cursor-pointer transition-colors',
+            theme === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+          )}
         >
-          <button
-            type="button"
-            className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground w-full text-left"
-            onClick={() => handleThemeSelect('light')}
-            role="menuitem"
-          >
-            <Sun className="mr-2 h-4 w-4" />
-            <span>Light</span>
-            {theme === 'light' && <span className="ml-auto">✓</span>}
-          </button>
-          <button
-            type="button"
-            className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground w-full text-left"
-            onClick={() => handleThemeSelect('dark')}
-            role="menuitem"
-          >
-            <Moon className="mr-2 h-4 w-4" />
-            <span>Dark</span>
-            {theme === 'dark' && <span className="ml-auto">✓</span>}
-          </button>
-          <button
-            type="button"
-            className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground w-full text-left"
-            onClick={() => handleThemeSelect('system')}
-            role="menuitem"
-          >
-            <Monitor className="mr-2 h-4 w-4" />
-            <span>System</span>
-            {theme === 'system' && <span className="ml-auto">✓</span>}
-          </button>
-        </div>
-      )}
+          <Icon className="size-4" aria-hidden="true" />
+          <span className="sr-only">{label}</span>
+        </button>
+      ))}
     </div>
   );
 };
