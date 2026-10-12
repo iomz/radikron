@@ -108,7 +108,8 @@ type App struct {
 	configErr              string                     // last failure to reload the configuration
 	stationsErr            string                     // last failure to fetch the station catalog
 	downloads              map[string]*downloadRecord // last download event per program, by downloadKey
-	downloadsMu            sync.Mutex                 // guards downloads; never held with mu
+	active                 map[string]*activeDownload // downloads in progress, by downloadKey
+	downloadsMu            sync.Mutex                 // guards downloads and active; never held with mu
 	mu                     sync.RWMutex
 
 	// Test seams; nil uses the real implementation.
@@ -405,7 +406,7 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 	}()
 
 	wg := &sync.WaitGroup{}
-	err := radikron.Download(ctx, wg, prog)
+	err := a.startDownload(ctx, wg, prog, radikron.Download)
 	if err != nil {
 		errMsg := fmt.Sprintf("%s [%s]%s: %v", errorMsgPrefix, prog.StationID, prog.Title, err)
 		a.logger.Error(errMsg)
@@ -1955,29 +1956,6 @@ func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikr
 	return programList
 }
 
-// checkManualInjectionFileExists checks if the file for a manually injected program already exists.
-// It constructs the expected file path and checks if the file exists on disk.
-func (a *App) checkManualInjectionFileExists(p *radikron.Prog, asset *radikron.Asset) bool {
-	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, p.Ft, radikron.Location)
-	if err != nil {
-		return false
-	}
-
-	fileBaseName := fmt.Sprintf(
-		"%s_%s_%s",
-		startTime.In(radikron.Location).Format(radikron.OutputDatetimeLayout),
-		p.StationID,
-		p.Title,
-	)
-	output, err := radikron.NewOutputConfig(
-		fileBaseName,
-		asset.OutputFormat,
-		asset.DownloadDir,
-		p.RuleFolder,
-	)
-	return err == nil && output.IsExist()
-}
-
 // findMatchingRuleForProcessProgram finds a matching rule for a program during processing.
 // For manual injections, it searches by rule name if provided.
 // For regular programs, it uses silent rule matching.
@@ -2013,22 +1991,6 @@ func (a *App) setupManualInjectionForProcess(p *radikron.Prog) bool {
 	return false
 }
 
-// checkDuplicateForProcessProgram checks if program is duplicate and handles manual injection cases.
-// Note: Uses a.asset.Schedules (live state) for duplicate checking to catch duplicates within the same
-// iteration, but uses asset parameter (snapshot) for file existence checks to ensure consistency.
-// For manual injections, it also checks if the file already exists.
-func (a *App) checkDuplicateForProcessProgram(p *radikron.Prog, asset *radikron.Asset, isManualInjection bool) bool {
-	// Check against live state to catch duplicates from previous iterations and within current iteration
-	if !a.asset.Schedules.HasDuplicate(p) {
-		return false
-	}
-	if !isManualInjection {
-		return true
-	}
-	// For manual injections, check if file exists using the asset snapshot parameter
-	return a.checkManualInjectionFileExists(p, asset)
-}
-
 // applyRuleToProgram applies rule information to program if not already set by manual injection.
 // It sets the rule name and folder on the program from the matched rule.
 func (a *App) applyRuleToProgram(p *radikron.Prog, matchedRule *radikron.Rule, isManualInjection bool) {
@@ -2038,80 +2000,46 @@ func (a *App) applyRuleToProgram(p *radikron.Prog, matchedRule *radikron.Rule, i
 	}
 }
 
-// checkAlreadyLogged checks if program was already logged in this iteration.
-// It tracks logged programs to avoid duplicate log messages.
-func (a *App) checkAlreadyLogged(processedInThisIteration map[string]bool, programID string) bool {
-	alreadyLogged := processedInThisIteration[programID+"_logged"]
-	if !alreadyLogged {
-		processedInThisIteration[programID+"_logged"] = true
-	}
-	return alreadyLogged
-}
-
-// processProgram handles a single program: checks duplicates, matches rules, and downloads if needed.
-// Returns (matched, duplicate) to indicate if the program matched a rule or was a duplicate.
+// processProgram handles a single program: matches it against the rules and
+// downloads it if it is wanted and not on disk yet. Programs that are not
+// available yet stay scheduled and are tried again on later checks.
+// Returns (matched, duplicate): duplicate means the program needed no work.
 func (a *App) processProgram(
 	pws *programWithStation,
 	asset *radikron.Asset,
 	downloadCtx context.Context,
 	processedInThisIteration map[string]bool,
-	downloader *radikronDownloader,
+	download downloadFunc,
 ) (matched, duplicate bool) {
 	p := pws.prog
 	stationID := pws.stationID
 
-	// Lock to prevent race conditions when checking duplicates
 	a.mu.Lock()
 	if processedInThisIteration[p.ID] {
 		a.mu.Unlock()
 		return false, true
 	}
-
-	// Check if this is a manually injected program
-	isManualInjection := a.setupManualInjectionForProcess(p)
-
-	// Check for duplicates
-	if a.checkDuplicateForProcessProgram(p, asset, isManualInjection) {
-		a.mu.Unlock()
-		return false, true
-	}
-
 	processedInThisIteration[p.ID] = true
+	isManualInjection := a.setupManualInjectionForProcess(p)
 	a.mu.Unlock()
 
-	// Check if rule matches using the asset snapshot
 	matchedRule := a.findMatchingRuleForProcessProgram(p, stationID, asset, isManualInjection)
 	if matchedRule == nil && !isManualInjection {
-		a.mu.Lock()
-		delete(processedInThisIteration, p.ID)
-		a.mu.Unlock()
 		return false, false
 	}
-
-	// Apply rule information if needed
 	a.applyRuleToProgram(p, matchedRule, isManualInjection)
-
-	// Check if already logged
-	a.mu.Lock()
-	if a.checkAlreadyLogged(processedInThisIteration, p.ID) {
-		a.mu.Unlock()
-		return true, false
-	}
-	a.mu.Unlock()
-
 	// Ensure StationID is set correctly (it should be set from XML, but ensure it matches)
 	if p.StationID == "" {
 		p.StationID = stationID
 	}
 
-	// Call Download() - it will log "rule matched" and "start downloading" if it actually starts
-	// Note: Download() may return nil if program is in future, duplicate, or file exists
-	err := downloader.Download(downloadCtx, a.monitorWg, p)
-	if err != nil {
-		// Download failed - remove from processed tracking
-		a.mu.Lock()
-		delete(processedInThisIteration, p.ID)
-		a.mu.Unlock()
+	if a.leaveAlone(p, asset) {
+		return true, true
+	}
+
+	// Download() logs "rule matched" and "start downloading" only if it starts;
+	// it returns nil without starting for programs not available yet.
+	if err := a.startDownload(downloadCtx, a.monitorWg, p, download); err != nil {
 		a.events.Emit(a.ctx, "log-message", map[string]any{
 			"type":    "error",
 			"message": fmt.Sprintf("download failed for [%s]%s: %s", p.StationID, p.Title, err),
@@ -2119,17 +2047,9 @@ func (a *App) processProgram(
 		a.emitDownloadEvent(a.ctx, "download-failed", downloadFailedEvent(p, err))
 		return true, false
 	}
-	// Download() returned nil - it either started the download or skipped it
-	// Add to schedules to prevent processing it again in future iterations
-	// Note: Download() checks for duplicates internally, so if it skipped due to duplicate,
-	// we still add it here to ensure it's tracked (though it won't be downloaded)
 	a.mu.Lock()
-	if !a.asset.Schedules.HasDuplicate(p) {
-		a.asset.Schedules = append(a.asset.Schedules, p)
-	}
+	a.rememberScheduledLocked(p)
 	a.mu.Unlock()
-	// The download-started event will be emitted by Download() if it actually starts
-
 	return true, false
 }
 
@@ -2158,6 +2078,11 @@ func (a *App) processAllPrograms(
 	downloadCtx context.Context,
 	downloader *radikronDownloader,
 ) {
+	// This check works out when the next program becomes available.
+	a.mu.Lock()
+	asset.NextFetchTime = nil
+	a.mu.Unlock()
+
 	// Collect all programs from all stations
 	programList := a.collectProgramsFromStations(asset, fetcher)
 	log.Printf("collected %d programs from stations", len(programList))
@@ -2170,7 +2095,7 @@ func (a *App) processAllPrograms(
 	duplicateCount := 0
 	processedCount := 0
 	for _, pws := range programList {
-		matched, duplicate := a.processProgram(pws, asset, downloadCtx, processedInThisIteration, downloader)
+		matched, duplicate := a.processProgram(pws, asset, downloadCtx, processedInThisIteration, downloader.Download)
 		if matched {
 			matchedCount++
 		}

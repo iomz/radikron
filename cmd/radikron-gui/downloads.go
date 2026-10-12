@@ -131,6 +131,7 @@ func (a *App) recordDownloadEvent(name string, data any, now time.Time) bool {
 		a.downloads = make(map[string]*downloadRecord)
 	}
 	key := downloadKey(stationID, start)
+	a.trackDownloadEventLocked(key, state)
 	rec := a.downloads[key]
 	if rec == nil {
 		rec = &downloadRecord{item: DownloadItem{StationID: stationID, Start: start}}
