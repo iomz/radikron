@@ -3,7 +3,7 @@ import * as radikron from '../bindings/github.com/iomz/radikron';
 
 describe('radikron.Rule', () => {
   it('keeps the exclude block when a rule is rebuilt during editing', () => {
-    // RulesEditor rebuilds rules with Rule.createFrom on every field edit.
+    // The Rules screen rebuilds rules with Rule.createFrom on every field edit.
     // Fields the model does not declare are dropped, so a hand-written
     // exclude block would be silently lost when the user edits any field.
     const loaded = radikron.Rule.createFrom({

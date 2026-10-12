@@ -46,6 +46,7 @@ describe('download helpers', () => {
   it('lists downloadable programs first and skips expired ones', () => {
     const downloads = {
       recent: [],
+      skipped: [],
       scheduled: [
         item({ title: 'Gone', state: DownloadStates.expired }),
         item({ title: 'A', state: DownloadStates.available }),

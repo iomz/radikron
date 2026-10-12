@@ -4,8 +4,8 @@ import { Events } from "@wailsio/runtime";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Overview } from "@/components/screens/Overview";
-import { RulesEditor } from "@/components/RulesEditor";
 import { Downloads } from "@/components/screens/Downloads";
+import { Rules } from "@/components/screens/Rules";
 import { Search } from "@/components/screens/Search";
 import { Settings } from "@/components/Settings";
 import { Timetable } from "@/components/Timetable";
@@ -209,7 +209,7 @@ const AppComponent: React.FC = () => {
           {screen === "downloads" && <Downloads />}
           {screen === "timetable" && <Timetable />}
           {screen === "search" && <Search />}
-          {screen === "rules" && <RulesEditor />}
+          {screen === "rules" && <Rules onNavigate={setScreen} />}
           {screen === "settings" && <Settings />}
         </AppShell>
       )}

@@ -1,7 +1,4 @@
-import type {
-  DownloadItem,
-  Downloads,
-} from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
+import type { DownloadItem, Downloads } from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
 
 // Download states as the backend reports them (DownloadState in Go). They are
 // repeated here so this module does not load the Wails runtime, which the
@@ -70,9 +67,7 @@ export function downloadDetail(item: DownloadItem): string {
 // nextDownloads returns the scheduled programs that can still be
 // downloaded, soonest first.
 export function nextDownloads(downloads: Downloads | null, limit: number): DownloadItem[] {
-  return (downloads?.scheduled ?? [])
-    .filter((item) => item.state !== DownloadStates.expired)
-    .slice(0, limit);
+  return (downloads?.scheduled ?? []).filter((item) => item.state !== DownloadStates.expired).slice(0, limit);
 }
 
 const JST = 'Asia/Tokyo';
@@ -97,6 +92,12 @@ export function formatAirTime(start: string, now: Date = new Date()): string {
     return `${date.toLocaleDateString('en-US', { timeZone: JST, weekday: 'short' })} ${time}`;
   }
   return `${start.slice(4, 6)}/${start.slice(6, 8)} ${time}`;
+}
+
+// formatAirRange adds the end time to formatAirTime: "Mon 13:00–14:00".
+export function formatAirRange(start: string, end: string, now: Date = new Date()): string {
+  const to = /^\d{14}$/.test(end) ? `–${end.slice(8, 10)}:${end.slice(10, 12)}` : '';
+  return `${formatAirTime(start, now)}${to}`;
 }
 
 // downloadSource names where a download came from.

@@ -20,7 +20,7 @@ vi.mock('@wailsio/runtime', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
 vi.mock('@/components/screens/Overview', () => ({ Overview: () => <div>Dashboard content</div> }));
-vi.mock('@/components/RulesEditor', () => ({ RulesEditor: () => <div>Rules content</div> }));
+vi.mock('@/components/screens/Rules', () => ({ Rules: () => <div>Rules content</div> }));
 vi.mock('@/components/screens/Downloads', () => ({ Downloads: () => <div>Schedules content</div> }));
 vi.mock('@/components/screens/Search', () => ({ Search: () => <div>Programs content</div> }));
 vi.mock('@/components/ThemeToggle', () => ({ ThemeToggle: () => <button>Theme</button> }));
@@ -47,7 +47,7 @@ describe('App shell events', () => {
     backend.GetAvailableStations.mockResolvedValue(['TBS']);
     backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System' });
     backend.GetStatus.mockResolvedValue({ monitoring: true } as Awaited<ReturnType<typeof Backend.GetStatus>>);
-    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [] } as Awaited<ReturnType<typeof Backend.GetDownloads>>);
+    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [], skipped: [] } as Awaited<ReturnType<typeof Backend.GetDownloads>>);
     useAppStore.setState({
       configInfo: null,
       stations: [],

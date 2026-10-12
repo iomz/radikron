@@ -1,30 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import { useProgramSearch } from '@/hooks/useProgramSearch';
-import { downloadKey, formatAirTime } from '@/lib/downloads';
+import { downloadKey, formatAirRange } from '@/lib/downloads';
 import { dayParts, filterResults, programAction, suggestRuleName, type DayPart, type ProgramAction } from '@/lib/programs';
 import { broadcastDay, formatDay, todayBroadcastDay } from '@/lib/timetable';
 import { SanitizedHTML } from '@/components/SanitizedHTML';
+import { SelectField, fieldClass, primaryButton, secondaryButton } from '@/components/form';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import * as App from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import * as radikron from '../../../bindings/github.com/iomz/radikron/models';
-
-const fieldClass =
-  'h-11 w-full appearance-none rounded-[10px] border border-input bg-card px-3.5 text-foreground outline-none focus-visible:border-ring';
-
-// SelectField is a native select drawn like the text fields; WebKit ignores
-// the height of a select that keeps its native appearance.
-const SelectField: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({ className, children, ...props }) => (
-  <div className={cn('relative', className)}>
-    <select {...props} className={cn(fieldClass, 'cursor-pointer pr-9')}>
-      {children}
-    </select>
-    <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-  </div>
-);
 
 // searchDays lists the broadcast days radiko's schedule covers: the past week
 // and the week ahead.
@@ -36,21 +23,12 @@ function searchDays(now: Date): string[] {
     return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
   });
 }
-const primaryButton =
-  'min-h-11 cursor-pointer rounded-[10px] border-none bg-primary px-[18px] font-semibold text-primary-foreground disabled:cursor-default disabled:opacity-50';
-const secondaryButton =
-  'min-h-11 cursor-pointer rounded-[10px] border border-input bg-transparent px-[18px] text-foreground disabled:cursor-default disabled:opacity-50';
 
 const actionLabels: Record<ProgramAction, { button: string; dialog: string; confirm: string; done: string }> = {
   download: { button: 'Download now', dialog: 'Download now', confirm: 'Download', done: 'Downloading' },
   schedule: { button: 'Schedule download', dialog: 'Schedule download', confirm: 'Schedule', done: 'Scheduled' },
   expired: { button: '', dialog: '', confirm: '', done: '' },
 };
-
-function airRange(prog: radikron.Prog): string {
-  const end = /^\d{14}$/.test(prog.To) ? `–${prog.To.slice(8, 10)}:${prog.To.slice(10, 12)}` : '';
-  return `${formatAirTime(prog.Ft)}${end}`;
-}
 
 // Search finds programs in radiko's weekly schedule and downloads, schedules,
 // or turns one into a rule.
@@ -168,7 +146,7 @@ export const Search: React.FC = () => {
               id="keyword"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="e.g. MIDDAY LOUNGE"
+              placeholder="MIDDAY LOUNGE"
               className={cn(fieldClass, 'pr-10')}
             />
             {keyword && (
@@ -260,10 +238,7 @@ export const Search: React.FC = () => {
           const action = programAction(prog.Ft, prog.To);
           const scheduled = scheduledKeys.has(key);
           return (
-            <article
-              key={prog.ID || key}
-              className={cn('rounded-[14px] border bg-card', open ? 'border-signal' : 'border-border')}
-            >
+            <article key={prog.ID || key} className={cn('rounded-[14px] border bg-card', open ? 'border-signal' : 'border-border')}>
               <button
                 type="button"
                 aria-expanded={open}
@@ -273,7 +248,7 @@ export const Search: React.FC = () => {
                 <span className="flex min-w-0 flex-col gap-1">
                   <span className={cn('font-medium', open && 'text-lg font-semibold')}>{prog.Title}</span>
                   <span className="text-[13px] text-muted-foreground">
-                    {stationLabel(prog.StationID)} · <span className="font-mono">{airRange(prog)}</span>
+                    {stationLabel(prog.StationID)} · <span className="font-mono">{formatAirRange(prog.Ft, prog.To)}</span>
                   </span>
                 </span>
                 <span className="text-[13px] text-muted-foreground">
@@ -283,9 +258,7 @@ export const Search: React.FC = () => {
               {open && (
                 <div className="flex flex-col gap-3 px-5 pb-[18px]">
                   {prog.Pfm && <span className="text-muted-foreground">Host: {prog.Pfm}</span>}
-                  {prog.Desc && (
-                    <SanitizedHTML html={prog.Desc} className="leading-relaxed text-foreground/85 [&_a]:text-signal [&_a]:underline" />
-                  )}
+                  {prog.Desc && <SanitizedHTML html={prog.Desc} className="leading-relaxed text-foreground/85 [&_a]:text-signal [&_a]:underline" />}
                   <div className="flex flex-wrap gap-2.5 pt-1">
                     {action !== 'expired' && !scheduled && (
                       <button type="button" className={primaryButton} onClick={() => openSave(prog)}>
@@ -308,7 +281,7 @@ export const Search: React.FC = () => {
           <DialogHeader>
             <DialogTitle>{actionLabels[savingAction].dialog}</DialogTitle>
             <DialogDescription>
-              {saving && `${saving.Title} · ${stationLabel(saving.StationID)} · ${airRange(saving)}`}
+              {saving && `${saving.Title} · ${stationLabel(saving.StationID)} · ${formatAirRange(saving.Ft, saving.To)}`}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
