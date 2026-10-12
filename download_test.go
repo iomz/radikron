@@ -2523,3 +2523,24 @@ func TestCheckProgramUnavailableRejectsInvalidRange(t *testing.T) {
 		})
 	}
 }
+
+func TestRuleFolderPath(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "jazz")
+	tests := []struct{ folder, want string }{
+		{"", "downloads"},
+		{"MIDDAY LOUNGE", filepath.Join("downloads", "MIDDAY LOUNGE")},
+		{abs, abs},
+	}
+	for _, tt := range tests {
+		if got := RuleFolderPath("downloads", tt.folder); got != tt.want {
+			t.Errorf("RuleFolderPath(%q) = %q, want %q", tt.folder, got, tt.want)
+		}
+	}
+	output, err := NewOutputConfig("file", AudioFormatAAC, "downloads", abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.DirFullPath != abs {
+		t.Errorf("NewOutputConfig() with an absolute folder saves to %q, want %q", output.DirFullPath, abs)
+	}
+}

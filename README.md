@@ -230,9 +230,9 @@ Each rule can use one or more of the following matching criteria (all support pa
 - **`pfm`**: Match programs by personality/performer name
 - **`station-id`**: Filter by specific station (also adds the station to watch list if not in your region)
 - **`dow`**: Filter by day of week (e.g., `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`)
-- **`window`**: Time window filter (e.g., `48h` for last 48 hours, `7d` for last 7 days)
+- **`window`**: Time window filter in hours or minutes (e.g., `48h` for the last 48 hours, `168h` for the last 7 days)
 - **`exclude`**: (Optional) Reject programs that would otherwise match (see below)
-- **`folder`**: (Optional) Organize downloads for this rule into a subfolder
+- **`folder`**: (Optional) Organize downloads for this rule into a subfolder of the download directory, or into another directory when given an absolute path
 
 Rules are evaluated with AND logic - a program must match all specified criteria in a rule.
 
