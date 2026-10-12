@@ -2326,8 +2326,9 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		// Check if rules are configured
 		a.checkAndLogRulesCount(asset)
 
-		// Skip processing if no rules or all rules have no criteria
-		if !hasMonitoringCriteria(asset) {
+		// Skip processing when no rule has criteria and nothing was added from
+		// Program Search; programs added there are downloaded without rules.
+		if !hasMonitoringCriteria(asset) && !a.hasManualInjections() {
 			log.Printf("skipping program collection: no rules with criteria configured")
 			a.events.Emit(a.ctx, "log-message", map[string]any{
 				"type":    "warning",
@@ -2362,6 +2363,14 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		// Sleep until next fetch time
 		a.logAndSleepUntilNextFetch(asset, ctx)
 	}
+}
+
+// hasManualInjections reports whether any program added from Program Search
+// is waiting to be downloaded.
+func (a *App) hasManualInjections() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return len(a.manualInjections) > 0
 }
 
 func hasMonitoringCriteria(asset *radikron.Asset) bool {

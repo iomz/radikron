@@ -175,3 +175,14 @@ func TestCheckNowWakesAutomaticChecks(t *testing.T) {
 		t.Fatal("CheckNow() did not wake automatic checks")
 	}
 }
+
+func TestHasManualInjections(t *testing.T) {
+	app := NewApp()
+	if app.hasManualInjections() {
+		t.Fatal("new app reports manual injections")
+	}
+	app.manualInjections["p"] = &manualInjection{ProgramID: "p"}
+	if !app.hasManualInjections() {
+		t.Fatal("manual injection not reported")
+	}
+}
