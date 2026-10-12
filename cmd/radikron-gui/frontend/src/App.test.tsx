@@ -24,7 +24,7 @@ vi.mock('@/components/screens/Rules', () => ({ Rules: () => <div>Rules content</
 vi.mock('@/components/screens/Downloads', () => ({ Downloads: () => <div>Schedules content</div> }));
 vi.mock('@/components/screens/Search', () => ({ Search: () => <div>Programs content</div> }));
 vi.mock('@/components/ThemeToggle', () => ({ ThemeToggle: () => <button>Theme</button> }));
-vi.mock('@/components/Settings', () => ({ Settings: () => <div>Settings content</div> }));
+vi.mock('@/components/screens/Settings', () => ({ Settings: () => <div>Settings content</div> }));
 vi.mock('@/components/Timetable', () => ({ Timetable: () => <div>Timetable content</div> }));
 vi.mock('@/components/UpdateButton', () => ({ UpdateButton: () => null }));
 

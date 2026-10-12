@@ -7,7 +7,7 @@ import { Overview } from "@/components/screens/Overview";
 import { Downloads } from "@/components/screens/Downloads";
 import { Rules } from "@/components/screens/Rules";
 import { Search } from "@/components/screens/Search";
-import { Settings } from "@/components/Settings";
+import { Settings } from "@/components/screens/Settings";
 import { Timetable } from "@/components/Timetable";
 import { AppShell } from "@/components/shell/AppShell";
 import type { ScreenId } from "@/lib/navigation";
