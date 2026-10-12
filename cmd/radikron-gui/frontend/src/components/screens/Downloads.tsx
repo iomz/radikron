@@ -14,21 +14,14 @@ import {
   type DownloadFilter,
 } from '@/lib/downloads';
 import { StateChip } from '@/components/StateChip';
-import { SanitizedHTML } from '@/components/SanitizedHTML';
+import { ProgramDetailsDialog } from '@/components/ProgramDetailsDialog';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import * as App from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
-import type { Prog } from '../../../bindings/github.com/iomz/radikron/models';
 import type { DownloadItem } from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
 
 const headerCell = 'px-4 py-3 font-medium';
 const buttonClass = 'min-h-11 cursor-pointer rounded-[10px] px-[18px]';
-
-function formatRange(ft: string, to: string): string {
-  const t = (v: string) => (/^\d{14}$/.test(v) ? `${v.slice(8, 10)}:${v.slice(10, 12)}` : '');
-  if (!/^\d{14}$/.test(ft)) return '';
-  return `${ft.slice(0, 4)}/${ft.slice(4, 6)}/${ft.slice(6, 8)} ${t(ft)}–${t(to)}`;
-}
 
 // Downloads lists every scheduled program with its state; a row opens the
 // program's details, and programs added from Search can be removed.
@@ -38,23 +31,13 @@ export const Downloads: React.FC = () => {
   const loadDownloads = useAppStore((state) => state.loadDownloads);
   const addActivityLog = useAppStore((state) => state.addActivityLog);
   const [filter, setFilter] = useState<DownloadFilter>('all');
-  const [details, setDetails] = useState<Prog | null>(null);
+  const [selected, setSelected] = useState<DownloadItem | null>(null);
   const [toRemove, setToRemove] = useState<DownloadItem | null>(null);
   const [removing, setRemoving] = useState(false);
 
   const items = downloadsList(downloads);
   const counts = countByFilter(items);
   const shown = filterDownloads(items, filter);
-
-  const openDetails = async (item: DownloadItem) => {
-    try {
-      const schedules = (await App.GetSchedules()) ?? [];
-      const prog = schedules.find((p) => p && downloadKey(p.StationID, p.Ft) === downloadKey(item.stationId, item.start));
-      if (prog) setDetails(prog);
-    } catch (err) {
-      toast.error(`Couldn't load the program: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
 
   const confirmRemove = async () => {
     if (!toRemove) return;
@@ -124,7 +107,7 @@ export const Downloads: React.FC = () => {
                   <td className="px-4 py-3.5">
                     <button
                       type="button"
-                      onClick={() => void openDetails(item)}
+                      onClick={() => setSelected(item)}
                       className="cursor-pointer border-none bg-transparent p-0 text-left font-medium text-foreground hover:text-signal"
                     >
                       {item.title}
@@ -163,35 +146,7 @@ export const Downloads: React.FC = () => {
         </div>
       )}
 
-      <Dialog open={details !== null} onOpenChange={(open) => !open && setDetails(null)}>
-        <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
-          {details && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{details.Title}</DialogTitle>
-                <DialogDescription>
-                  {stationLabel(details.StationID)}
-                  {details.Pfm && ` · ${details.Pfm}`}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex flex-col gap-4 text-sm">
-                <span className="font-mono text-muted-foreground">{formatRange(details.Ft, details.To)}</span>
-                {details.Desc && <SanitizedHTML html={details.Desc} className="leading-relaxed [&_a]:text-signal [&_a]:underline" />}
-                {details.Info && <SanitizedHTML html={details.Info} className="leading-relaxed [&_a]:text-signal [&_a]:underline" />}
-                {details.Tags && details.Tags.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {details.Tags.map((tag) => (
-                      <span key={tag} className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ProgramDetailsDialog item={selected} onClose={() => setSelected(null)} />
 
       <Dialog open={toRemove !== null} onOpenChange={(open) => !open && setToRemove(null)}>
         <DialogContent className="max-w-md">
