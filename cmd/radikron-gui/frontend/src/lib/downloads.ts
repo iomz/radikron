@@ -22,17 +22,17 @@ export function downloadKey(stationID: string, start: string): string {
 }
 
 const stateLabels: Record<string, string> = {
-  [DownloadStates.waiting]: 'Waiting',
-  [DownloadStates.available]: 'Available',
+  [DownloadStates.waiting]: 'Upcoming',
+  [DownloadStates.available]: 'Ready',
   [DownloadStates.downloading]: 'Downloading',
-  [DownloadStates.completed]: 'Completed',
+  [DownloadStates.completed]: 'Downloaded',
   [DownloadStates.failed]: 'Failed',
   [DownloadStates.expired]: 'Expired',
 };
 
 const stateDescriptions: Record<string, string> = {
-  [DownloadStates.waiting]: 'Not available yet: the program has not finished airing.',
-  [DownloadStates.available]: 'Available on radiko; the next check downloads it.',
+  [DownloadStates.waiting]: 'The program has not aired yet.',
+  [DownloadStates.available]: 'The recording is on radiko; the next check downloads it.',
   [DownloadStates.downloading]: 'Downloading now.',
   [DownloadStates.completed]: 'Downloaded.',
   [DownloadStates.failed]: 'The last download attempt failed.',
@@ -112,7 +112,7 @@ export function downloadNote(item: DownloadItem): string {
     case DownloadStates.downloading:
       return downloadDetail(item) || 'Downloading';
     case DownloadStates.available:
-      return 'The next check downloads it';
+      return 'Downloads at the next check';
     case DownloadStates.waiting:
       return item.end ? `Airs ${time(item.start)}–${time(item.end)}` : 'Not aired yet';
     case DownloadStates.failed:
@@ -129,8 +129,8 @@ export function downloadNote(item: DownloadItem): string {
 // downloadFilters are the Downloads screen filters, in display order.
 export const downloadFilters = [
   { id: 'all', label: 'All' },
-  { id: DownloadStates.waiting, label: 'Waiting' },
-  { id: DownloadStates.available, label: 'Available' },
+  { id: DownloadStates.waiting, label: 'Upcoming' },
+  { id: DownloadStates.available, label: 'Ready' },
   { id: DownloadStates.downloading, label: 'Downloading' },
   { id: DownloadStates.failed, label: 'Failed' },
   { id: DownloadStates.expired, label: 'Expired' },

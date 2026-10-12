@@ -70,7 +70,7 @@ describe('download rows', () => {
     expect(downloadSource({ manual: true, ruleName: '' })).toBe('Manual');
     expect(downloadSource({ manual: false, ruleName: 'Jazz' })).toBe('Rule · Jazz');
     expect(downloadNote(item({ state: DownloadStates.waiting, start: '20261012200000', end: '20261012210000' }))).toBe('Airs 20:00–21:00');
-    expect(downloadNote(item({ state: DownloadStates.available }))).toBe('The next check downloads it');
+    expect(downloadNote(item({ state: DownloadStates.available }))).toBe('Downloads at the next check');
     expect(downloadNote(item({ state: DownloadStates.failed, stage: 'encoding', error: 'ffmpeg not found' }))).toBe('encoding: ffmpeg not found');
     expect(downloadNote(item({ state: DownloadStates.expired }))).toBe('No longer on radiko');
   });
