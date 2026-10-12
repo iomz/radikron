@@ -3,7 +3,9 @@ import type { DownloadItem, Downloads } from '../../bindings/github.com/iomz/rad
 import {
   DownloadStates,
   downloadDetail,
+  countByFilter,
   downloadKey,
+  filterDownloads,
   downloadNote,
   downloadSource,
   formatAirTime,
@@ -71,5 +73,23 @@ describe('download rows', () => {
     expect(downloadNote(item({ state: DownloadStates.available }))).toBe('The next check downloads it');
     expect(downloadNote(item({ state: DownloadStates.failed, stage: 'encoding', error: 'ffmpeg not found' }))).toBe('encoding: ffmpeg not found');
     expect(downloadNote(item({ state: DownloadStates.expired }))).toBe('No longer on radiko');
+  });
+});
+
+describe('download filters', () => {
+  const items = [
+    item({ state: DownloadStates.waiting }),
+    item({ state: DownloadStates.waiting }),
+    item({ state: DownloadStates.failed }),
+  ];
+
+  it('counts and filters by state', () => {
+    const counts = countByFilter(items);
+    expect(counts.all).toBe(3);
+    expect(counts.waiting).toBe(2);
+    expect(counts.failed).toBe(1);
+    expect(counts.expired).toBe(0);
+    expect(filterDownloads(items, 'failed')).toHaveLength(1);
+    expect(filterDownloads(items, 'all')).toHaveLength(3);
   });
 });

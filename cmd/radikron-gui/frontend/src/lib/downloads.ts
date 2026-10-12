@@ -125,3 +125,31 @@ export function downloadNote(item: DownloadItem): string {
       return '';
   }
 }
+
+// downloadFilters are the Downloads screen filters, in display order.
+export const downloadFilters = [
+  { id: 'all', label: 'All' },
+  { id: DownloadStates.waiting, label: 'Waiting' },
+  { id: DownloadStates.available, label: 'Available' },
+  { id: DownloadStates.downloading, label: 'Downloading' },
+  { id: DownloadStates.failed, label: 'Failed' },
+  { id: DownloadStates.expired, label: 'Expired' },
+] as const;
+
+export type DownloadFilter = (typeof downloadFilters)[number]['id'];
+
+// countByFilter counts the items each filter shows.
+export function countByFilter(items: DownloadItem[]): Record<DownloadFilter, number> {
+  const counts = Object.fromEntries(downloadFilters.map((f) => [f.id, 0])) as Record<DownloadFilter, number>;
+  counts.all = items.length;
+  for (const item of items) {
+    if (item.state in counts) {
+      counts[item.state as DownloadFilter] += 1;
+    }
+  }
+  return counts;
+}
+
+export function filterDownloads(items: DownloadItem[], filter: DownloadFilter): DownloadItem[] {
+  return filter === 'all' ? items : items.filter((item) => item.state === filter);
+}
