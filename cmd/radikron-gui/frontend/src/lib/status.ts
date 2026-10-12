@@ -26,9 +26,21 @@ interface StatusFields {
   configError: string;
 }
 
+// Activity is what the download list says Radikron is doing.
+export interface Activity {
+  // Titles of the programs downloading now.
+  downloading: string[];
+  // Programs scheduled that can still be downloaded.
+  pending: number;
+}
+
 // statusHeadline phrases the status the way a person would say it: the main
-// line answers "what happens next", the detail adds when it last checked.
-export function statusHeadline(status: StatusFields, now: Date = new Date()): { title: string; detail: string } {
+// line answers "what is happening", the detail adds when it last checked.
+export function statusHeadline(
+  status: StatusFields,
+  now: Date = new Date(),
+  activity: Activity = { downloading: [], pending: 0 },
+): { title: string; detail: string } {
   const last = formatCheckTime(status.lastCheck, now);
   const lastText = last ? `Last checked at ${last}. ` : '';
   const openText = 'Radikron checks only while it is open.';
@@ -41,10 +53,16 @@ export function statusHeadline(status: StatusFields, now: Date = new Date()): { 
       detail: status.configError ? 'The configuration did not load. Fix it, then retry.' : 'Radikron is not checking for programs.',
     };
   }
+  if (activity.downloading.length === 1) {
+    return { title: `Downloading ${activity.downloading[0]}`, detail: lastText + openText };
+  }
+  if (activity.downloading.length > 1) {
+    return { title: `Downloading ${activity.downloading.length} programs`, detail: lastText + openText };
+  }
   if (status.checking) {
     return { title: 'Checking for new programs…', detail: lastText + openText };
   }
-  if (!status.hasRules) {
+  if (!status.hasRules && activity.pending === 0) {
     return { title: 'Nothing to download yet', detail: 'Add a rule with a title, performer, or keyword to start.' };
   }
   const next = formatCheckTime(status.nextCheck, now);

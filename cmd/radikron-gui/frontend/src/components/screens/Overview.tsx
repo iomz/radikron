@@ -110,7 +110,11 @@ export const Overview: React.FC<{ onNavigate: (screen: ScreenId) => void }> = ({
   const now = useNow();
   const [retrying, setRetrying] = useState(false);
 
-  const headline = status ? statusHeadline(status, now) : { title: 'Starting up…', detail: '' };
+  const activity = {
+    downloading: (downloads?.scheduled ?? []).filter((d) => d.state === DownloadStates.downloading).map((d) => d.title),
+    pending: nextDownloads(downloads, Number.POSITIVE_INFINITY).length,
+  };
+  const headline = status ? statusHeadline(status, now, activity) : { title: 'Starting up…', detail: '' };
   const errors = [
     status?.configError && `Couldn't load the configuration: ${status.configError}`,
     status?.stationsError && `Couldn't load the station list: ${status.stationsError}. Downloads keep using the last list.`,

@@ -43,6 +43,16 @@ describe('statusHeadline', () => {
     expect(statusHeadline({ ...base, hasRules: false }, now).title).toBe('Nothing to download yet');
   });
 
+  it('puts downloads in progress first', () => {
+    expect(statusHeadline({ ...base, hasRules: false }, now, { downloading: ['Show'], pending: 1 }).title).toBe('Downloading Show');
+    expect(statusHeadline({ ...base, checking: true }, now, { downloading: ['A', 'B'], pending: 2 }).title).toBe(
+      'Downloading 2 programs',
+    );
+    expect(statusHeadline({ ...base, hasRules: false }, now, { downloading: [], pending: 1 }).title).toBe(
+      `Next check at ${hhmm(base.nextCheck)}`,
+    );
+  });
+
   it('labels the sidebar state', () => {
     expect(statusShortLabel({ starting: false, monitoring: true })).toBe('Running');
     expect(statusShortLabel({ starting: false, monitoring: false })).toBe('Paused');
