@@ -390,7 +390,7 @@ func calculateRetryDelay(retryCount int) time.Duration {
 func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix string) error {
 	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
 
-	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.events, a.emitDownloadEvent)
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.emitDownloadEvent)
 	programID := prog.ID
 	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
 		a.HandleDownloadCompletedByID(programID, stationID, title, startTime)
@@ -2267,22 +2267,8 @@ func (a *App) runMonitoringLoop(ctx context.Context) {
 		"message": "Automatic program checks started",
 	})
 
-	// Setup logger to capture radikron log messages and emit events
-	emitEvent := func(ctx context.Context, eventName string, data any) {
-		a.emitDownloadEvent(ctx, eventName, data)
-		// Also check for manual injection removal on download-completed events
-		// This is a fallback in case the callback doesn't work
-		if eventName == "download-completed" {
-			if dataMap, ok := data.(map[string]any); ok {
-				stationID, _ := dataMap["station"].(string)
-				title, _ := dataMap["title"].(string)
-				startTime, _ := dataMap["start"].(string)
-				// Try to match by pending downloads first, then by station/title/time
-				a.HandleDownloadCompleted(stationID, title, startTime)
-			}
-		}
-	}
-	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.events, emitEvent)
+	// Capture radikron log messages and record download states as events arrive.
+	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.emitDownloadEvent)
 	defer cleanupLogger()
 
 	// Set callback to handle download completion for manual injections

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -177,5 +178,26 @@ func TestDownloadFailedEventUsesProgramStart(t *testing.T) {
 	data := downloadFailedEvent(&radikron.Prog{StationID: "TBS", Title: "Show", Ft: "20261011200000"}, errors.New("boom"))
 	if data["start"] != "20261011200000" || data["error"] != "boom" {
 		t.Errorf("event data = %v", data)
+	}
+}
+
+// TestCoreDownloadEventsAreRecorded drives the emitter the core uses, so a
+// download the core reports reaches GetDownloads.
+func TestCoreDownloadEventsAreRecorded(t *testing.T) {
+	events := &recordingEventSink{}
+	app := NewApp()
+	app.events = events
+	emitter, cleanup := SetupLogger(context.Background(), app.emitDownloadEvent)
+	defer cleanup()
+
+	emitter.EmitDownloadStarted("TBS", "Show", "20261011200000")
+	emitter.EmitDownloadCompleted("TBS", "Show", "20261011200000", "/tmp/2026-10-11-2000_TBS_Show.aac")
+
+	rec := app.downloads[downloadKey("TBS", "20261011200000")]
+	if rec == nil || rec.item.State != DownloadCompleted {
+		t.Fatalf("record = %+v, want completed", rec)
+	}
+	if !slices.Contains(events.names(), downloadsChangedEvent) {
+		t.Errorf("events = %v, want %s", events.names(), downloadsChangedEvent)
 	}
 }
