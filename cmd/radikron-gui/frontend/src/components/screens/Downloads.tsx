@@ -98,7 +98,7 @@ export const Downloads: React.FC = () => {
       {shown.length === 0 ? (
         <p className="m-0 rounded-[14px] border border-border px-5 py-8 text-center text-muted-foreground">
           {filter === DownloadStates.completed
-            ? 'Nothing downloaded since Radikron started. Earlier downloads are in your download folder.'
+            ? 'Nothing completed since Radikron started. Earlier downloads are in your download folder.'
             : items.length === 0
               ? 'Nothing scheduled. Programs your rules match show up here.'
               : 'No downloads in this state.'}

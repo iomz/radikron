@@ -47,7 +47,7 @@ describe('Downloads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Failed 1' }));
     expect(screen.queryByText('Waiting Show')).toBeNull();
     expect(screen.getByText('encoding: ffmpeg not found')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Downloaded 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Completed 1' }));
     expect(screen.getByText('Downloaded Show')).toBeTruthy();
     expect(screen.queryByText('Failed Show')).toBeNull();
   });

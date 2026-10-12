@@ -25,7 +25,7 @@ const stateLabels: Record<string, string> = {
   [DownloadStates.waiting]: 'Upcoming',
   [DownloadStates.available]: 'Ready',
   [DownloadStates.downloading]: 'Downloading',
-  [DownloadStates.completed]: 'Downloaded',
+  [DownloadStates.completed]: 'Completed',
   [DownloadStates.failed]: 'Failed',
   [DownloadStates.expired]: 'Expired',
 };
@@ -134,7 +134,7 @@ export const downloadFilters = [
   { id: DownloadStates.downloading, label: 'Downloading' },
   { id: DownloadStates.failed, label: 'Failed' },
   { id: DownloadStates.expired, label: 'Expired' },
-  { id: DownloadStates.completed, label: 'Downloaded' },
+  { id: DownloadStates.completed, label: 'Completed' },
 ] as const;
 
 export type DownloadFilter = (typeof downloadFilters)[number]['id'];
