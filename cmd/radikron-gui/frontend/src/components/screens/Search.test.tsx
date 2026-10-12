@@ -35,7 +35,6 @@ async function searchFor(text: string) {
   await screen.findByText(/Enter words to search/);
   const keyword = screen.getByLabelText('Keyword');
   fireEvent.change(keyword, { target: { value: text } });
-  fireEvent.submit(keyword.closest('form')!);
 }
 
 describe('Search', () => {
@@ -50,14 +49,14 @@ describe('Search', () => {
 
   afterEach(() => cleanup());
 
-  it('searches only when the form is submitted', async () => {
+  it('searches once typing pauses', async () => {
     render(<Search />);
     await screen.findByText(/Enter words to search/);
+    fireEvent.change(screen.getByLabelText('Keyword'), { target: { value: 'シティ' } });
     fireEvent.change(screen.getByLabelText('Keyword'), { target: { value: 'シティポップ' } });
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(backend.SearchWeeklyPrograms).not.toHaveBeenCalled();
-    fireEvent.submit(screen.getByLabelText('Keyword').closest('form')!);
     await waitFor(() => expect(backend.SearchWeeklyPrograms).toHaveBeenCalledWith('', '', 'シティポップ', ''));
+    expect(backend.SearchWeeklyPrograms).toHaveBeenCalledTimes(1);
     await screen.findByText(/No programs found/);
   });
 
@@ -93,8 +92,6 @@ describe('Search', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create rule for every episode…' }));
     fireEvent.change(await screen.findByLabelText('Rule name'), { target: { value: 'My show' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create rule' }));
-    await waitFor(() =>
-      expect(backend.AddRule).toHaveBeenCalledWith(expect.objectContaining({ Name: 'My show', Title: 'Future Show' })),
-    );
+    await waitFor(() => expect(backend.AddRule).toHaveBeenCalledWith(expect.objectContaining({ Name: 'My show', Title: 'Future Show' })));
   });
 });

@@ -24,6 +24,9 @@ function searchDays(now: Date): string[] {
   });
 }
 
+// SEARCH_DELAY is how long typing must pause before the results update.
+const SEARCH_DELAY = 400;
+
 const actionLabels: Record<ProgramAction, { button: string; dialog: string; confirm: string; done: string }> = {
   download: { button: 'Download now', dialog: 'Download now', confirm: 'Download', done: 'Downloading' },
   schedule: { button: 'Schedule download', dialog: 'Schedule download', confirm: 'Schedule', done: 'Scheduled' },
@@ -60,6 +63,23 @@ export const Search: React.FC = () => {
   const shown = filterResults(results, { day, part }, broadcastDay);
   const narrowed = Boolean(station || day || part);
   const scheduledKeys = new Set((downloads?.scheduled ?? []).map((d) => downloadKey(d.stationId, d.start)));
+
+  // Search as the user types, once typing pauses. The day and time filters
+  // narrow the results here, so only picking or clearing any filter, which
+  // turns browsing on or off, needs a new search.
+  useEffect(() => {
+    if (initializing) return;
+    if (!keyword.trim() && !narrowed) {
+      clear();
+      return;
+    }
+    const timer = setTimeout(() => {
+      setExpanded(null);
+      void search(keyword, station, narrowed);
+    }, SEARCH_DELAY);
+    return () => clearTimeout(timer);
+    // search and clear never change.
+  }, [keyword, station, narrowed, initializing]);
 
   // Preview where the download will be saved for the chosen rule.
   useEffect(() => {
@@ -129,14 +149,7 @@ export const Search: React.FC = () => {
         <span className="text-muted-foreground">Searches radiko's schedule for the past week and the week ahead.</span>
       </header>
 
-      <form
-        className="flex flex-wrap items-end gap-2.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setExpanded(null);
-          void search(keyword, station, narrowed);
-        }}
-      >
+      <form className="flex flex-wrap items-end gap-2.5" onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-[1_1_260px] flex-col gap-1.5">
           <label htmlFor="keyword" className="text-xs text-muted-foreground">
             Keyword
@@ -156,7 +169,6 @@ export const Search: React.FC = () => {
                 onClick={() => {
                   setKeyword('');
                   setExpanded(null);
-                  clear();
                 }}
                 className="absolute right-2 top-1/2 grid size-7 -translate-y-1/2 cursor-pointer place-items-center rounded-full border-none bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
               >
@@ -205,9 +217,6 @@ export const Search: React.FC = () => {
             ))}
           </SelectField>
         </div>
-        <button type="submit" disabled={initializing || (!keyword.trim() && !narrowed)} className={primaryButton}>
-          {loading ? 'Searching…' : 'Search'}
-        </button>
       </form>
 
       {error && (
@@ -222,7 +231,11 @@ export const Search: React.FC = () => {
         <p className="m-0 text-muted-foreground">
           Enter words to search titles, hosts, and descriptions, or pick a station or day to browse. Only programs radiko still has are shown.
         </p>
-      ) : !loading && shown.length === 0 && !error ? (
+      ) : loading && shown.length === 0 ? (
+        <p role="status" className="m-0 text-muted-foreground">
+          Searching…
+        </p>
+      ) : shown.length === 0 && !error ? (
         <p className="m-0 text-muted-foreground">No programs found. Try other words or filters.</p>
       ) : shown.length > 0 ? (
         <span className="text-[13px] text-muted-foreground">
