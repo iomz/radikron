@@ -134,9 +134,21 @@ export const downloadFilters = [
   { id: DownloadStates.downloading, label: 'Downloading' },
   { id: DownloadStates.failed, label: 'Failed' },
   { id: DownloadStates.expired, label: 'Expired' },
+  { id: DownloadStates.completed, label: 'Downloaded' },
 ] as const;
 
 export type DownloadFilter = (typeof downloadFilters)[number]['id'];
+
+// downloadsList combines the scheduled programs with the ones downloaded in
+// this session, which leave the schedule once their file exists.
+export function downloadsList(downloads: Downloads | null): DownloadItem[] {
+  const scheduled = downloads?.scheduled ?? [];
+  const keys = new Set(scheduled.map((item) => downloadKey(item.stationId, item.start)));
+  const downloaded = (downloads?.recent ?? []).filter(
+    (item) => item.state === DownloadStates.completed && !keys.has(downloadKey(item.stationId, item.start)),
+  );
+  return [...scheduled, ...downloaded];
+}
 
 // countByFilter counts the items each filter shows.
 export function countByFilter(items: DownloadItem[]): Record<DownloadFilter, number> {

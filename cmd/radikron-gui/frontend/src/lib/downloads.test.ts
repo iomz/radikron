@@ -4,6 +4,7 @@ import {
   DownloadStates,
   downloadDetail,
   countByFilter,
+  downloadsList,
   downloadKey,
   filterDownloads,
   downloadNote,
@@ -91,5 +92,19 @@ describe('download filters', () => {
     expect(counts.expired).toBe(0);
     expect(filterDownloads(items, 'failed')).toHaveLength(1);
     expect(filterDownloads(items, 'all')).toHaveLength(3);
+  });
+});
+
+describe('downloadsList', () => {
+  it('appends this session\'s downloads that left the schedule', () => {
+    const list = downloadsList({
+      scheduled: [item({ title: 'A', start: '1' })],
+      recent: [
+        item({ title: 'Done', start: '2', state: DownloadStates.completed }),
+        item({ title: 'A failed earlier', start: '1', state: DownloadStates.failed }),
+        item({ title: 'A done', start: '1', state: DownloadStates.completed }),
+      ],
+    } as Downloads);
+    expect(list.map((i) => i.title)).toEqual(['A', 'Done']);
   });
 });

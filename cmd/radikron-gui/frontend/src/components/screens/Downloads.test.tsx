@@ -34,7 +34,7 @@ describe('Downloads', () => {
           row({ id: 'm', title: 'Manual Show', manual: true, start: '29990102100000' }),
           row({ id: 'f', title: 'Failed Show', state: 'failed', stage: 'encoding', error: 'ffmpeg not found', start: '29990103100000' }),
         ],
-        recent: [],
+        recent: [row({ id: 'd', title: 'Downloaded Show', state: 'completed', start: '20261011100000' })],
       } as unknown as DownloadsData,
     });
   });
@@ -47,6 +47,9 @@ describe('Downloads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Failed 1' }));
     expect(screen.queryByText('Waiting Show')).toBeNull();
     expect(screen.getByText('encoding: ffmpeg not found')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Downloaded 1' }));
+    expect(screen.getByText('Downloaded Show')).toBeTruthy();
+    expect(screen.queryByText('Failed Show')).toBeNull();
   });
 
   it('shows program details', async () => {

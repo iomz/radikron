@@ -7,6 +7,7 @@ import {
   downloadKey,
   downloadNote,
   downloadSource,
+  downloadsList,
   filterDownloads,
   formatAirTime,
   DownloadStates,
@@ -41,7 +42,7 @@ export const Downloads: React.FC = () => {
   const [toRemove, setToRemove] = useState<DownloadItem | null>(null);
   const [removing, setRemoving] = useState(false);
 
-  const items = downloads?.scheduled ?? [];
+  const items = downloadsList(downloads);
   const counts = countByFilter(items);
   const shown = filterDownloads(items, filter);
 
@@ -96,7 +97,11 @@ export const Downloads: React.FC = () => {
 
       {shown.length === 0 ? (
         <p className="m-0 rounded-[14px] border border-border px-5 py-8 text-center text-muted-foreground">
-          {items.length === 0 ? 'Nothing scheduled. Programs your rules match show up here.' : 'No downloads in this state.'}
+          {filter === DownloadStates.completed
+            ? 'Nothing downloaded since Radikron started. Earlier downloads are in your download folder.'
+            : items.length === 0
+              ? 'Nothing scheduled. Programs your rules match show up here.'
+              : 'No downloads in this state.'}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-[14px] border border-border">
