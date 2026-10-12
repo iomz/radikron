@@ -91,6 +91,7 @@ type App struct {
 	monitorWg              *sync.WaitGroup
 	monitorCancel          context.CancelFunc
 	programSnapshots       map[string]radikron.Progs   // stationID -> programs snapshot
+	snapshotLoad           *snapshotLoad               // the weekly programs being fetched, if any
 	manualInjections       map[string]*manualInjection // program ID -> injection data
 	pendingManualDownloads map[string]string           // program ID -> program ID (for tracking downloads in progress)
 	events                 frontendEventSink
@@ -1658,37 +1659,16 @@ func (a *App) GetAllStations() ([]string, error) {
 	return allStations, nil
 }
 
-// FetchProgramSnapshots fetches program snapshots from all available stations.
-// This function performs network I/O without holding the lock to avoid blocking.
-// The snapshots are used for program search and manual injection cleanup.
+// FetchProgramSnapshots loads the weekly programs of stations that have none
+// yet, for program search. Automatic checks keep them up to date.
 func (a *App) FetchProgramSnapshots() error {
-	// Get list of stations to fetch (read lock only to get the list)
 	a.mu.RLock()
-	if a.asset == nil {
-		a.mu.RUnlock()
+	ready := a.asset != nil
+	a.mu.RUnlock()
+	if !ready {
 		return fmt.Errorf("asset not initialized")
 	}
-	stations := make([]string, len(a.asset.AvailableStations))
-	copy(stations, a.asset.AvailableStations)
-	a.mu.RUnlock()
-
-	// Fetch programs from all stations without holding the lock
-	snapshots := make(map[string]radikron.Progs)
-	for _, stationID := range stations {
-		programs, err := radikron.FetchWeeklyPrograms(stationID)
-		if err != nil {
-			// Log error but continue with other stations
-			a.logger.Error(fmt.Sprintf("Failed to fetch programs for station %s: %v", stationID, err))
-			continue
-		}
-		snapshots[stationID] = programs
-	}
-
-	// Update snapshots with write lock (brief, no I/O)
-	a.mu.Lock()
-	a.programSnapshots = snapshots
-	a.mu.Unlock()
-
+	a.loadProgramSnapshots(radikron.FetchWeeklyPrograms, false)
 	return nil
 }
 
@@ -1948,47 +1928,26 @@ type programWithStation struct {
 	stationID string
 }
 
-// collectProgramsFromStations collects and deduplicates programs from all stations
+// collectProgramsFromStations refreshes the weekly programs of every station
+// and returns the ones on stations the rules watch, without duplicates.
 func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikronProgramFetcher) []*programWithStation {
+	a.loadProgramSnapshots(fetcher.FetchWeeklyPrograms, true)
+
 	allPrograms := make(map[string]*programWithStation) // key: program ID
-	snapshots := make(map[string]radikron.Progs)        // stationID -> programs for snapshot update
-
-	// Process all stations and collect programs
+	a.mu.RLock()
 	for _, stationID := range asset.AvailableStations {
-		// Fetch weekly programs for all stations (needed for manual injection cleanup)
-		weeklyPrograms, err := fetcher.FetchWeeklyPrograms(stationID)
-		if err != nil {
-			log.Printf("failed to fetch the %s program: %v", stationID, err)
-			continue
-		}
-
-		// Update snapshots for cleanup check
-		snapshots[stationID] = weeklyPrograms
-
-		// Skip if no rules match this station (for processing, but we still have snapshots)
 		if !asset.Rules.HasRuleWithoutStationID() && !asset.Rules.HasRuleForStationID(stationID) {
 			continue
 		}
-
-		// Collect programs, keeping only the first occurrence of each program ID
-		for _, p := range weeklyPrograms {
+		// Keep only the first occurrence of each program ID.
+		for _, p := range a.programSnapshots[stationID] {
 			if _, exists := allPrograms[p.ID]; !exists {
-				allPrograms[p.ID] = &programWithStation{
-					prog:      p,
-					stationID: stationID,
-				}
+				allPrograms[p.ID] = &programWithStation{prog: p, stationID: stationID}
 			}
 		}
 	}
+	a.mu.RUnlock()
 
-	// Update program snapshots for manual injection cleanup
-	a.mu.Lock()
-	for stationID, programs := range snapshots {
-		a.programSnapshots[stationID] = programs
-	}
-	a.mu.Unlock()
-
-	// Convert map to slice for deterministic iteration order
 	programList := make([]*programWithStation, 0, len(allPrograms))
 	for _, pws := range allPrograms {
 		programList = append(programList, pws)
