@@ -109,7 +109,10 @@ type App struct {
 	stationsErr            string                     // last failure to fetch the station catalog
 	downloads              map[string]*downloadRecord // last download event per program, by downloadKey
 	active                 map[string]*activeDownload // downloads in progress, by downloadKey
-	downloadsMu            sync.Mutex                 // guards downloads and active; never held with mu
+	skipped                map[string]*skippedProgram // programs the user skipped, by downloadKey
+	downloadsFile          string                     // where downloads and skipped are saved
+	downloadsMu            sync.Mutex                 // guards downloads, active, skipped, downloadsFile; never held with mu
+	downloadsSaveMu        sync.Mutex                 // serializes writes of downloadsFile
 	mu                     sync.RWMutex
 
 	// Test seams; nil uses the real implementation.
@@ -267,17 +270,25 @@ func (a *App) initialize() error {
 	// can run this again while the GUI is reading the previous state.
 	configFile := "config.yml"
 	manualInjectionsFile := "manual-injections.json"
+	downloadsFilePath := "downloads.json"
 	if appConfigDir, err := getAppConfigDir(); err != nil {
 		a.logger.Error(fmt.Sprintf("Failed to get app config directory: %v", err))
 		// Fall back to the current directory.
 	} else {
 		configFile = filepath.Join(appConfigDir, "config.yml")
 		manualInjectionsFile = filepath.Join(appConfigDir, "manual-injections.json")
+		downloadsFilePath = filepath.Join(appConfigDir, "downloads.json")
 	}
 	a.mu.Lock()
 	a.configFile = configFile
 	a.manualInjectionsFile = manualInjectionsFile
 	a.mu.Unlock()
+	a.downloadsMu.Lock()
+	a.downloadsFile = downloadsFilePath
+	a.downloadsMu.Unlock()
+	if err := a.loadDownloadsFile(downloadsFilePath, time.Now()); err != nil {
+		a.logger.Error(fmt.Sprintf("Failed to load download history: %v", err))
+	}
 
 	// Initialize the HTTP client used for Radiko requests.
 	client, err := radikron.NewRadikoHTTPClient()

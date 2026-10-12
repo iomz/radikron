@@ -52,7 +52,8 @@ func TestRecordDownloadEventTracksLifecycle(t *testing.T) {
 		for k, v := range extra {
 			data[k] = v
 		}
-		return app.recordDownloadEvent(name, data, now)
+		changed, _ := app.recordDownloadEvent(name, data, now)
+		return changed
 	}
 	record := func() DownloadItem {
 		return app.downloads[downloadKey("TBS", "20261011200000")].item
@@ -74,10 +75,10 @@ func TestRecordDownloadEventTracksLifecycle(t *testing.T) {
 		t.Fatalf("after completion: %+v", got)
 	}
 
-	if app.recordDownloadEvent("log-message", map[string]any{"station": "TBS", "start": "1"}, now) {
+	if changed, _ := app.recordDownloadEvent("log-message", map[string]any{"station": "TBS", "start": "1"}, now); changed {
 		t.Error("recorded a non-download event")
 	}
-	if app.recordDownloadEvent("download-failed", map[string]any{"station": "TBS", "title": "No start"}, now) {
+	if changed, _ := app.recordDownloadEvent("download-failed", map[string]any{"station": "TBS", "title": "No start"}, now); changed {
 		t.Error("recorded an event without a start time")
 	}
 }

@@ -6,8 +6,8 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * DownloadItem is a program Radikron will download, is downloading, or has
- * tried to download in this session.
+ * DownloadItem is a program Radikron will download, is downloading, has
+ * tried to download, or was told to skip.
  */
 export class DownloadItem {
     "id": string;
@@ -126,6 +126,11 @@ export enum DownloadState {
      * DownloadExpired means radiko no longer offers the recording.
      */
     DownloadExpired = "expired",
+
+    /**
+     * DownloadSkipped means the user skipped or canceled the program.
+     */
+    DownloadSkipped = "skipped",
 };
 
 /**
@@ -138,10 +143,15 @@ export class Downloads {
     "scheduled": DownloadItem[];
 
     /**
-     * Recent lists completed and failed downloads of this session, newest
-     * first. It is kept in memory only.
+     * Recent lists completed and failed downloads, newest first. They are
+     * kept between runs.
      */
     "recent": DownloadItem[];
+
+    /**
+     * Skipped lists programs the user skipped or canceled, ordered by start.
+     */
+    "skipped": DownloadItem[];
 
     /** Creates a new Downloads instance. */
     constructor($$source: Partial<Downloads> = {}) {
@@ -150,6 +160,9 @@ export class Downloads {
         }
         if (!("recent" in $$source)) {
             this["recent"] = [];
+        }
+        if (!("skipped" in $$source)) {
+            this["skipped"] = [];
         }
 
         Object.assign(this, $$source);
@@ -161,12 +174,16 @@ export class Downloads {
     static createFrom($$source: any = {}): Downloads {
         const $$createField0_0 = $$createType1;
         const $$createField1_0 = $$createType1;
+        const $$createField2_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("scheduled" in $$parsedSource) {
             $$parsedSource["scheduled"] = $$createField0_0($$parsedSource["scheduled"]);
         }
         if ("recent" in $$parsedSource) {
             $$parsedSource["recent"] = $$createField1_0($$parsedSource["recent"]);
+        }
+        if ("skipped" in $$parsedSource) {
+            $$parsedSource["skipped"] = $$createField2_0($$parsedSource["skipped"]);
         }
         return new Downloads($$parsedSource as Partial<Downloads>);
     }

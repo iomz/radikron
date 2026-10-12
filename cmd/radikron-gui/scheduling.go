@@ -95,13 +95,14 @@ func fileOnDisk(prog *radikron.Prog, asset *radikron.Asset) bool {
 }
 
 // leaveAlone reports whether a check should not try to download prog: it is
-// downloading or its file exists.
+// downloading, the user skipped it, or its file exists.
 func (a *App) leaveAlone(prog *radikron.Prog, asset *radikron.Asset) bool {
 	key := downloadKey(prog.StationID, prog.Ft)
 	a.downloadsMu.Lock()
 	_, running := a.active[key]
+	_, skipped := a.skipped[key]
 	a.downloadsMu.Unlock()
-	return running || fileOnDisk(prog, asset)
+	return running || skipped || fileOnDisk(prog, asset)
 }
 
 // rememberScheduledLocked adds prog to the schedule, replacing an older copy

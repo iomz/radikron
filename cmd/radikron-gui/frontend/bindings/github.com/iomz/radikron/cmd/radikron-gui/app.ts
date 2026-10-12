@@ -131,8 +131,8 @@ export function GetDesignatedFolder(prog: radikron$0.Prog | null, ruleFolder: st
 }
 
 /**
- * GetDownloads returns scheduled programs with their download state and the
- * downloads finished in this session.
+ * GetDownloads returns scheduled programs with their download state, the
+ * finished downloads, and the skipped programs.
  */
 export function GetDownloads(): $CancellablePromise<$models.Downloads> {
     return $Call.ByID(3093261880).then(($result: any) => {
@@ -308,6 +308,14 @@ export function SelectDirectory(): $CancellablePromise<string> {
 }
 
 /**
+ * SkipDownload skips a scheduled program, or cancels it while it downloads.
+ * Rules leave it alone afterwards, even after a restart, until UndoSkip.
+ */
+export function SkipDownload(stationID: string, start: string): $CancellablePromise<void> {
+    return $Call.ByID(3801545914, stationID, start);
+}
+
+/**
  * StartMonitoring starts the monitoring loop.
  * It creates a context, sets up the monitoring goroutine, and begins continuous program monitoring.
  */
@@ -321,6 +329,15 @@ export function StartMonitoring(): $CancellablePromise<void> {
  */
 export function StopMonitoring(): $CancellablePromise<void> {
     return $Call.ByID(3644465679);
+}
+
+/**
+ * UndoSkip lets Radikron download a skipped program again: rules pick it up
+ * at the next check, which starts now, and a program added from Search is
+ * added again.
+ */
+export function UndoSkip(stationID: string, start: string): $CancellablePromise<void> {
+    return $Call.ByID(3191497788, stationID, start);
 }
 
 /**

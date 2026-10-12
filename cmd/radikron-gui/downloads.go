@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/iomz/radikron"
@@ -16,8 +17,8 @@ const (
 	// archiveRetention is how long radiko keeps time-free recordings after a
 	// program starts; older programs cannot be downloaded any more.
 	archiveRetention = 7 * 24 * time.Hour
-	// maxRecentDownloads bounds the in-memory history of finished downloads.
-	maxRecentDownloads = 50
+	// maxRecentDownloads bounds the history of finished downloads.
+	maxRecentDownloads = 500
 )
 
 // DownloadState is where a program is in the download lifecycle.
@@ -35,10 +36,12 @@ const (
 	DownloadFailed      DownloadState = "failed"
 	// DownloadExpired means radiko no longer offers the recording.
 	DownloadExpired DownloadState = "expired"
+	// DownloadSkipped means the user skipped or canceled the program.
+	DownloadSkipped DownloadState = "skipped"
 )
 
-// DownloadItem is a program Radikron will download, is downloading, or has
-// tried to download in this session.
+// DownloadItem is a program Radikron will download, is downloading, has
+// tried to download, or was told to skip.
 type DownloadItem struct {
 	ID        string `json:"id"`
 	StationID string `json:"stationId"`
@@ -67,9 +70,11 @@ type DownloadItem struct {
 type Downloads struct {
 	// Scheduled lists programs that are not on disk yet, ordered by start.
 	Scheduled []DownloadItem `json:"scheduled"`
-	// Recent lists completed and failed downloads of this session, newest
-	// first. It is kept in memory only.
+	// Recent lists completed and failed downloads, newest first. They are
+	// kept between runs.
 	Recent []DownloadItem `json:"recent"`
+	// Skipped lists programs the user skipped or canceled, ordered by start.
+	Skipped []DownloadItem `json:"skipped"`
 }
 
 // downloadRecord is the last download event seen for a program.
@@ -88,17 +93,22 @@ func (a *App) emitDownloadEvent(ctx context.Context, name string, data any) {
 	if a.events != nil {
 		a.events.Emit(ctx, name, data)
 	}
-	if a.recordDownloadEvent(name, data, time.Now()) {
+	changed, finished := a.recordDownloadEvent(name, data, time.Now())
+	if finished {
+		a.saveDownloadsFileInBackground()
+	}
+	if changed {
 		a.emit(downloadsChangedEvent, nil)
 	}
 }
 
-// recordDownloadEvent updates the download state from a core event and
-// reports whether anything changed.
-func (a *App) recordDownloadEvent(name string, data any, now time.Time) bool {
+// recordDownloadEvent updates the download state from a core event. It
+// reports whether anything changed and whether a download finished, which
+// changes the saved history.
+func (a *App) recordDownloadEvent(name string, data any, now time.Time) (changed, finished bool) {
 	fields, ok := data.(map[string]any)
 	if !ok {
-		return false
+		return false, false
 	}
 	text := func(key string) string {
 		s, _ := fields[key].(string)
@@ -110,7 +120,7 @@ func (a *App) recordDownloadEvent(name string, data any, now time.Time) bool {
 	}
 	stationID, start := text("station"), text("start")
 	if stationID == "" || start == "" {
-		return false
+		return false, false
 	}
 
 	var state DownloadState
@@ -122,7 +132,7 @@ func (a *App) recordDownloadEvent(name string, data any, now time.Time) bool {
 	case "download-failed":
 		state = DownloadFailed
 	default:
-		return false
+		return false, false
 	}
 
 	a.downloadsMu.Lock()
@@ -132,6 +142,15 @@ func (a *App) recordDownloadEvent(name string, data any, now time.Time) bool {
 	}
 	key := downloadKey(stationID, start)
 	a.trackDownloadEventLocked(key, state)
+	_, skipped := a.skipped[key]
+	// A skipped program's download was canceled on purpose, and a download
+	// interrupted by quitting is tried again later; neither is a failure.
+	interrupted := state == DownloadFailed && strings.Contains(text("error"), context.Canceled.Error())
+	if skipped || interrupted {
+		_, had := a.downloads[key]
+		delete(a.downloads, key)
+		return had, had
+	}
 	rec := a.downloads[key]
 	if rec == nil {
 		rec = &downloadRecord{item: DownloadItem{StationID: stationID, Start: start}}
@@ -146,17 +165,33 @@ func (a *App) recordDownloadEvent(name string, data any, now time.Time) bool {
 	rec.item.Total = number("total")
 	rec.item.Error = text("error")
 	rec.updatedAt = now
-	a.pruneDownloadsLocked()
-	return true
+	a.pruneDownloadsLocked(now)
+	return true, state == DownloadCompleted || state == DownloadFailed
 }
 
-// pruneDownloadsLocked drops the oldest finished records beyond
-// maxRecentDownloads. Callers hold a.downloadsMu.
-func (a *App) pruneDownloadsLocked() {
+// pruneDownloadsLocked forgets finished downloads past their retention,
+// keeping at most maxRecentDownloads, and skipped programs radiko no longer
+// has. Callers hold a.downloadsMu.
+func (a *App) pruneDownloadsLocked(now time.Time) {
 	finished := make([]string, 0, len(a.downloads))
 	for key, rec := range a.downloads {
-		if rec.item.State != DownloadDownloading {
-			finished = append(finished, key)
+		retention := completedRetention
+		switch rec.item.State {
+		case DownloadDownloading:
+			continue
+		case DownloadFailed:
+			retention = failedRetention
+		}
+		if now.Sub(rec.updatedAt) > retention {
+			delete(a.downloads, key)
+			continue
+		}
+		finished = append(finished, key)
+	}
+	for key, skip := range a.skipped {
+		start, err := time.ParseInLocation(radikron.DatetimeLayout, skip.Start, radikron.Location)
+		if err == nil && now.Sub(start) > archiveRetention {
+			delete(a.skipped, key)
 		}
 	}
 	if len(finished) <= maxRecentDownloads {
@@ -170,14 +205,18 @@ func (a *App) pruneDownloadsLocked() {
 	}
 }
 
-// GetDownloads returns scheduled programs with their download state and the
-// downloads finished in this session.
+// GetDownloads returns scheduled programs with their download state, the
+// finished downloads, and the skipped programs.
 func (a *App) GetDownloads() (Downloads, error) {
 	a.downloadsMu.Lock()
 	records := make(map[string]*downloadRecord, len(a.downloads))
 	for key, rec := range a.downloads {
 		snapshot := *rec
 		records[key] = &snapshot
+	}
+	skipped := make(map[string]skippedProgram, len(a.skipped))
+	for key, skip := range a.skipped {
+		skipped[key] = *skip
 	}
 	a.downloadsMu.Unlock()
 
@@ -186,8 +225,11 @@ func (a *App) GetDownloads() (Downloads, error) {
 		return Downloads{}, err
 	}
 	now := time.Now()
-	result := Downloads{Scheduled: []DownloadItem{}, Recent: []DownloadItem{}}
+	result := Downloads{Scheduled: []DownloadItem{}, Recent: []DownloadItem{}, Skipped: []DownloadItem{}}
 	for _, prog := range scheduled {
+		if _, ok := skipped[downloadKey(prog.StationID, prog.Ft)]; ok {
+			continue
+		}
 		item := DownloadItem{
 			ID:        prog.ID,
 			StationID: prog.StationID,
@@ -214,6 +256,12 @@ func (a *App) GetDownloads() (Downloads, error) {
 			recent = append(recent, rec)
 		}
 	}
+	for key := range skipped {
+		skip := skipped[key]
+		result.Skipped = append(result.Skipped, skip.item())
+	}
+	sort.Slice(result.Skipped, func(i, j int) bool { return result.Skipped[i].Start < result.Skipped[j].Start })
+
 	sort.Slice(recent, func(i, j int) bool { return recent[i].updatedAt.After(recent[j].updatedAt) })
 	for _, rec := range recent {
 		item := rec.item
