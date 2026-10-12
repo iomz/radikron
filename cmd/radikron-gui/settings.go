@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/iomz/radikron"
 	"github.com/iomz/radikron/internal/config"
@@ -15,6 +17,17 @@ import (
 
 // areaIDPattern matches radiko's area IDs, JP1 to JP47.
 var areaIDPattern = regexp.MustCompile(`^JP([1-9]|[123]\d|4[0-7])$`)
+
+// configLoadMu keeps config file loads apart: the config package reads
+// through viper's global instance.
+var configLoadMu sync.Mutex
+
+// loadConfigFile loads and checks a config file.
+func loadConfigFile(path string) (*config.Config, error) {
+	configLoadMu.Lock()
+	defer configLoadMu.Unlock()
+	return config.LoadConfigWithoutAreaLookup(path)
+}
 
 // Settings are the parts of the configuration the Settings screen edits.
 // Rules are edited on their own, so saving settings never overwrites them.
@@ -76,6 +89,63 @@ func (a *App) SaveSettings(s *Settings) error {
 		return err
 	}
 	// The area or the extra and ignored stations may have changed the list.
+	a.emit("stations-loaded", nil)
+	return nil
+}
+
+// ImportConfigFile asks for a config file and replaces the settings and rules
+// with the ones in it, saved to Radikron's own config file. It returns the
+// imported file, or nil when the user cancels.
+func (a *App) ImportConfigFile() (*string, error) {
+	if a.wails == nil {
+		return nil, errors.New("file dialog unavailable before the app starts")
+	}
+	picked, err := a.wails.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
+		Title:          "Import a config file",
+		CanChooseFiles: true,
+		Filters: []application.FileFilter{
+			{DisplayName: "YAML Files (*.yml, *.yaml)", Pattern: "*.yml;*.yaml"},
+			{DisplayName: "All Files (*.*)", Pattern: "*.*"},
+		},
+	}).PromptForSingleSelection()
+	if err != nil || picked == "" {
+		return nil, nil //nolint:nilerr // the dialog reports a cancel as an error
+	}
+	if err := a.importConfig(picked); err != nil {
+		return nil, err
+	}
+	return &picked, nil
+}
+
+// importConfig replaces the settings and rules with the ones in the file at
+// path, checked like SaveSettings checks settings. If anything fails, the
+// configuration stays as it was.
+func (a *App) importConfig(path string) error {
+	imported, err := loadConfigFile(path)
+	if err != nil {
+		return fmt.Errorf("couldn't read %s: %w", filepath.Base(path), err)
+	}
+	s := Settings{
+		AreaID:                    imported.AreaID,
+		DownloadDir:               imported.DownloadDir,
+		FileFormat:                imported.FileFormat,
+		MinimumOutputSizeMB:       imported.MinimumOutputSize / (radikron.Kilobytes * radikron.Kilobytes),
+		ExtraStations:             imported.ExtraStations,
+		IgnoreStations:            imported.IgnoreStations,
+		MaxDownloadingConcurrency: imported.MaxDownloadingConcurrency,
+		MaxEncodingConcurrency:    imported.MaxEncodingConcurrency,
+	}
+	if err := cleanSettings(&s); err != nil {
+		return fmt.Errorf("%s: %w", filepath.Base(path), err)
+	}
+	if err := a.changeConfig(func(cfg *config.Config) error {
+		*cfg = *imported
+		cfg.AreaID, cfg.DownloadDir, cfg.FileFormat = s.AreaID, s.DownloadDir, s.FileFormat
+		cfg.ExtraStations, cfg.IgnoreStations = s.ExtraStations, s.IgnoreStations
+		return nil
+	}); err != nil {
+		return err
+	}
 	a.emit("stations-loaded", nil)
 	return nil
 }

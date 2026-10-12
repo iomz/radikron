@@ -203,6 +203,15 @@ export function HandleDownloadCompleted(stationID: string, title: string, startT
 }
 
 /**
+ * ImportConfigFile asks for a config file and replaces the settings and rules
+ * with the ones in it, saved to Radikron's own config file. It returns the
+ * imported file, or nil when the user cancels.
+ */
+export function ImportConfigFile(): $CancellablePromise<string | null> {
+    return $Call.ByID(859494620);
+}
+
+/**
  * InjectProgram adds a program to scheduled downloads.
  * For past programs, it attempts to download immediately.
  * For future programs, it adds them to schedules and updates the next fetch time.

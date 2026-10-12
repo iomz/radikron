@@ -110,3 +110,59 @@ func TestSaveSettingsKeepsPreviousConfigWhenSaveFails(t *testing.T) {
 		t.Errorf("failed save left the settings applied: config=%s asset=%s", app.config.FileFormat, app.asset.OutputFormat)
 	}
 }
+
+func TestImportConfigReplacesSettingsAndRules(t *testing.T) {
+	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Old", Criteria: radikron.Criteria{Title: "Old"}}})
+	ownFile := app.configFile
+	dir := t.TempDir()
+	other := testConfig(dir)
+	other.FileFormat = radikron.AudioFormatMP3
+	other.Rules = radikron.Rules{{Name: "New", Criteria: radikron.Criteria{Keyword: "jazz"}}}
+	source := filepath.Join(t.TempDir(), "other.yml")
+	if err := other.SaveConfig(source); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.importConfig(source); err != nil {
+		t.Fatal(err)
+	}
+	if app.configFile != ownFile {
+		t.Errorf("config file = %s, want Radikron's own %s", app.configFile, ownFile)
+	}
+	saved, err := loadConfigFile(ownFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.FileFormat != radikron.AudioFormatMP3 || saved.DownloadDir != dir {
+		t.Errorf("saved settings = %+v, want the imported ones", settingsOf(saved))
+	}
+	if len(saved.Rules) != 1 || saved.Rules[0].Name != "New" {
+		t.Errorf("saved rules = %+v, want the imported ones", saved.Rules)
+	}
+	if app.asset.OutputFormat != radikron.AudioFormatMP3 {
+		t.Error("imported settings were not applied")
+	}
+}
+
+func TestImportConfigKeepsConfigWhenFileIsBad(t *testing.T) {
+	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Old", Criteria: radikron.Criteria{Title: "Old"}}})
+	bad := testConfig(t.TempDir())
+	bad.FileFormat = "flac"
+	source := filepath.Join(t.TempDir(), "bad.yml")
+	if err := bad.SaveConfig(source); err != nil {
+		t.Fatal(err)
+	}
+	broken := filepath.Join(t.TempDir(), "broken.yml")
+	if err := os.WriteFile(broken, []byte("rules: [unclosed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{source, broken, filepath.Join(t.TempDir(), "missing.yml")} {
+		if err := app.importConfig(path); err == nil {
+			t.Errorf("importing %s succeeded", filepath.Base(path))
+		}
+	}
+	if app.config.FileFormat != radikron.AudioFormatAAC || len(app.config.Rules) != 1 || app.config.Rules[0].Name != "Old" {
+		t.Errorf("a failed import changed the config: %+v", app.config)
+	}
+}

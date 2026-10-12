@@ -318,7 +318,7 @@ func (a *App) initialize() error {
 		a.logger.Info(fmt.Sprintf("Created default config at %s", configFile))
 	} else if configExists {
 		// Config file exists, try to load it
-		cfg, err = config.LoadConfigWithoutAreaLookup(configFile)
+		cfg, err = loadConfigFile(configFile)
 		if err != nil {
 			return fmt.Errorf("failed to load config file at %s: %w", configFile, err)
 		}
@@ -1325,7 +1325,7 @@ func (a *App) loadConfig(filename string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	cfg, err := config.LoadConfigWithoutAreaLookup(filename)
+	cfg, err := loadConfigFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -1897,7 +1897,7 @@ func (a *App) reloadConfig() error {
 	}
 
 	// Load config using the snapshot (outside lock since it can take time)
-	cfg, err := config.LoadConfigWithoutAreaLookup(configFile)
+	cfg, err := loadConfigFile(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config from %s: %w", configFile, err)
 	}

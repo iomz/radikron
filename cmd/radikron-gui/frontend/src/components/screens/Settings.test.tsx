@@ -12,6 +12,7 @@ vi.mock('../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () =>
   GetAllStations: vi.fn(),
   GetConfigFile: vi.fn(),
   GetSettings: vi.fn(),
+  ImportConfigFile: vi.fn(),
   OpenDirectory: vi.fn(),
   SaveSettings: vi.fn(),
 }));
@@ -108,5 +109,18 @@ describe('Settings', () => {
     render(<Settings />);
     fireEvent.click(await screen.findByRole('link', { name: '文化放送' }));
     expect(Browser.OpenURL).toHaveBeenCalledWith('https://radiko.jp/#!/live/QRR');
+  });
+
+  it('imports a config file after the user confirms', async () => {
+    backend.ImportConfigFile.mockResolvedValue('/elsewhere/config.yml');
+    render(<Settings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Import config…' }));
+    expect(screen.getByText(/replaces your settings and rules/)).toBeTruthy();
+    expect(backend.ImportConfigFile).not.toHaveBeenCalled();
+    backend.GetSettings.mockResolvedValue({ ...current, fileFormat: 'mp3' } as Saved);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a file…' }));
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'MP3' }).getAttribute('aria-checked')).toBe('true'));
+    expect(useAppStore.getState().loadConfigInfo).toHaveBeenCalled();
+    expect(screen.queryByText(/replaces your settings and rules/)).toBeNull();
   });
 });

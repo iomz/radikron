@@ -156,6 +156,7 @@ export const Settings: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [allStations, setAllStations] = useState<string[]>([]);
   const [configFile, setConfigFile] = useState('');
+  const [confirmImport, setConfirmImport] = useState(false);
 
   const load = async () => {
     try {
@@ -235,6 +236,21 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const importConfig = async () => {
+    setConfirmImport(false);
+    try {
+      const imported = await App.ImportConfigFile();
+      if (!imported) return;
+      setSaveError(null);
+      await load();
+      await Promise.all([loadConfigInfo(), loadStations()]);
+      addActivityLog('success', `Imported settings and rules from ${imported}`);
+      toast.success('Imported the config file');
+    } catch (err) {
+      toast.error(`Couldn't import the config file: ${errorText(err)}`);
+    }
+  };
+
   // Stations outside the area that can be added, and the area's stations
   // that can be ignored.
   const watched = draft ? [...new Set([...stations, ...draft.ignoreStations])] : [];
@@ -252,10 +268,30 @@ export const Settings: React.FC = () => {
             </span>
           )}
         </div>
-        <button type="button" className={secondaryButton} onClick={() => void exportConfig()}>
-          Export config file…
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={secondaryButton} onClick={() => setConfirmImport(true)} disabled={busy}>
+            Import config…
+          </button>
+          <button type="button" className={secondaryButton} onClick={() => void exportConfig()}>
+            Export config…
+          </button>
+        </div>
       </header>
+
+      {confirmImport && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-signal/40 bg-signal/10 px-4 py-3">
+          <span className="flex-[1_1_320px]">
+            Importing replaces your settings and rules with the ones in the file.
+            {dirty && ' Your unsaved changes here are lost.'} Export first to keep a copy.
+          </span>
+          <button type="button" className={secondaryButton} onClick={() => setConfirmImport(false)}>
+            Cancel
+          </button>
+          <button type="button" className={primaryButton} onClick={() => void importConfig()}>
+            Choose a file…
+          </button>
+        </div>
+      )}
 
       {loadError && (
         <div
