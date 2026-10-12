@@ -105,7 +105,7 @@ func TestGetDownloadsCombinesSchedulesAndHistory(t *testing.T) {
 			{ID: "failing", StationID: "QRR", Title: "Failing", Ft: "29981231100000", To: "29981231110000"},
 		},
 	}
-	app.manualInjections["failing"] = &manualInjection{ProgramID: "failing"}
+	app.manualInjections[downloadKey("QRR", "29981231100000")] = &manualInjection{ProgramID: "failing"}
 
 	base := time.Now()
 	app.recordDownloadEvent("download-failed", map[string]any{

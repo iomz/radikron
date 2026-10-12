@@ -9,6 +9,18 @@ import (
 	"github.com/iomz/radikron"
 )
 
+// progKey identifies a program by station and start time. radiko gives the
+// parts of a split program, such as "Show (1)" and "Show (2)", the same ID,
+// so the ID alone does not tell programs apart.
+func progKey(p *radikron.Prog) string {
+	return downloadKey(p.StationID, p.Ft)
+}
+
+// key is the progKey of the injected program.
+func (inj *manualInjection) key() string {
+	return downloadKey(inj.StationID, inj.Ft)
+}
+
 // activeDownload is a download the GUI asked the core to start. Each has its
 // own context so it can be canceled alone.
 type activeDownload struct {
@@ -109,7 +121,7 @@ func (a *App) leaveAlone(prog *radikron.Prog, asset *radikron.Asset) bool {
 // of the same program. Callers hold a.mu.
 func (a *App) rememberScheduledLocked(prog *radikron.Prog) {
 	for i, s := range a.asset.Schedules {
-		if s.ID == prog.ID {
+		if progKey(s) == progKey(prog) {
 			a.asset.Schedules[i] = prog
 			return
 		}
@@ -128,7 +140,7 @@ func (a *App) pruneSchedulesLocked(active map[string]bool) bool {
 	changed := false
 	kept := a.asset.Schedules[:0]
 	for _, prog := range a.asset.Schedules {
-		if a.manualInjections[prog.ID] != nil || active[downloadKey(prog.StationID, prog.Ft)] {
+		if a.manualInjections[progKey(prog)] != nil || active[progKey(prog)] {
 			kept = append(kept, prog)
 			continue
 		}

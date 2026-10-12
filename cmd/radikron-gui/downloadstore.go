@@ -177,7 +177,7 @@ func (a *App) SkipDownload(stationID, start string) error {
 	if prog != nil {
 		skip.ProgramID, skip.End, skip.Title = prog.ID, prog.To, prog.Title
 		skip.RuleName, skip.RuleFolder = prog.RuleName, prog.RuleFolder
-		skip.Manual = a.manualInjections[prog.ID] != nil
+		skip.Manual = a.manualInjections[key] != nil
 	}
 	a.mu.RUnlock()
 
@@ -208,7 +208,7 @@ func (a *App) SkipDownload(stationID, start string) error {
 	if skip.Manual {
 		// A skipped program added from Search is not downloaded later; UndoSkip
 		// adds it again.
-		a.removeManualInjectionAndSave(skip.ProgramID, stationID, skip.Title)
+		a.removeManualInjectionAndSave(key, stationID, skip.Title)
 	}
 	a.saveDownloadsFileInBackground()
 	a.emit(downloadsChangedEvent, nil)

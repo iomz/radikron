@@ -92,8 +92,8 @@ type App struct {
 	monitorCancel          context.CancelFunc
 	programSnapshots       map[string]radikron.Progs   // stationID -> programs snapshot
 	snapshotLoad           *snapshotLoad               // the weekly programs being fetched, if any
-	manualInjections       map[string]*manualInjection // program ID -> injection data
-	pendingManualDownloads map[string]string           // program ID -> program ID (for tracking downloads in progress)
+	manualInjections       map[string]*manualInjection // progKey -> injection data
+	pendingManualDownloads map[string]string           // progKey -> program ID (for tracking downloads in progress)
 	events                 frontendEventSink
 	monitorLoop            func(context.Context)
 	startupReady           chan struct{}
@@ -342,7 +342,7 @@ func (a *App) initialize() error {
 	return nil
 }
 
-// fetchProgramDetailsForStations fetches weekly programs for given stations and returns a map of program IDs to full program details
+// fetchProgramDetailsForStations fetches weekly programs for given stations and returns full program details by progKey
 func (a *App) fetchProgramDetailsForStations(stationIDs []string) map[string]*radikron.Prog {
 	programDetailsMap := make(map[string]*radikron.Prog)
 	fetcher := &radikronProgramFetcher{}
@@ -357,7 +357,7 @@ func (a *App) fetchProgramDetailsForStations(stationIDs []string) map[string]*ra
 		}
 
 		for _, p := range weeklyPrograms {
-			programDetailsMap[p.ID] = p
+			programDetailsMap[progKey(p)] = p
 		}
 	}
 
@@ -366,7 +366,7 @@ func (a *App) fetchProgramDetailsForStations(stationIDs []string) map[string]*ra
 
 // updateProgWithDetails updates a program with full details if available
 func updateProgWithDetails(prog *radikron.Prog, programDetailsMap map[string]*radikron.Prog) {
-	if fullProg, exists := programDetailsMap[prog.ID]; exists {
+	if fullProg, exists := programDetailsMap[progKey(prog)]; exists {
 		prog.Desc = fullProg.Desc
 		prog.Info = fullProg.Info
 		prog.Pfm = fullProg.Pfm
@@ -405,9 +405,9 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 	ctx := context.WithValue(a.ctx, radikron.ContextKey("asset"), a.asset)
 
 	eventEmitter, cleanupLogger := SetupLogger(a.ctx, a.emitDownloadEvent)
-	programID := prog.ID
-	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, startTime string) {
-		a.HandleDownloadCompletedByID(programID, stationID, title, startTime)
+	key := progKey(prog)
+	eventEmitter.SetDownloadCompletedCallback(func(stationID, title, _ string) {
+		a.handleManualDownloadCompleted(key, stationID, title)
 	})
 	ctx = context.WithValue(ctx, radikron.ContextKey("eventEmitter"), eventEmitter)
 
@@ -429,7 +429,7 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 
 		// Track failure in manual injection
 		a.mu.Lock()
-		if inj, exists := a.manualInjections[programID]; exists {
+		if inj, exists := a.manualInjections[key]; exists {
 			now := time.Now()
 			inj.LastFailureTime = &now
 			inj.RetryCount++
@@ -449,7 +449,7 @@ func (a *App) downloadProgramImmediately(prog *radikron.Prog, errorMsgPrefix str
 
 	// Clear failure state on success
 	a.mu.Lock()
-	if inj, exists := a.manualInjections[programID]; exists {
+	if inj, exists := a.manualInjections[key]; exists {
 		inj.LastFailureTime = nil
 		inj.RetryCount = 0
 		inj.LastError = ""
@@ -475,10 +475,10 @@ func (a *App) shouldRetryDownload(inj *manualInjection) bool {
 	return timeSinceFailure >= nextRetryDelay
 }
 
-// findProgramInSchedules finds a program in schedules by ID.
-func (a *App) findProgramInSchedules(programID string) *radikron.Prog {
+// findProgramInSchedules finds a program in schedules by progKey.
+func (a *App) findProgramInSchedules(key string) *radikron.Prog {
 	for _, prog := range a.asset.Schedules {
-		if prog.ID == programID {
+		if progKey(prog) == key {
 			return prog
 		}
 	}
@@ -557,7 +557,7 @@ func (a *App) retryFailedDownloads() {
 
 	// Download outside the lock
 	for _, prog := range retryList {
-		inj := injectionMap[prog.ID]
+		inj := injectionMap[progKey(prog)]
 		if inj == nil {
 			continue
 		}
@@ -646,7 +646,7 @@ func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, 
 	startTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.Ft, radikron.Location)
 	if err != nil {
 		a.logger.Error(fmt.Sprintf("Failed to parse start time for loaded program %s: %v", prog.ID, err))
-		if !a.asset.Schedules.HasDuplicate(prog) {
+		if a.findProgramInSchedules(progKey(prog)) == nil {
 			a.asset.Schedules = append(a.asset.Schedules, prog)
 		}
 		return
@@ -668,20 +668,20 @@ func (a *App) processLoadedInjection(inj *manualInjection, prog *radikron.Prog, 
 			prog.RuleFolder,
 		)
 		if err == nil && output.IsExist() {
-			delete(a.manualInjections, inj.ProgramID)
+			delete(a.manualInjections, inj.key())
 			a.logger.Info(fmt.Sprintf("Skipping loaded program [%s]%s - file already exists", prog.StationID, prog.Title))
 			return
 		}
 
 		// Add to schedules for visibility
-		if !a.asset.Schedules.HasDuplicate(prog) {
+		if a.findProgramInSchedules(progKey(prog)) == nil {
 			a.asset.Schedules = append(a.asset.Schedules, prog)
 		}
 		// Mark for pending download (actual download happens in retry loop)
-		a.pendingManualDownloads[prog.ID] = prog.ID
+		a.pendingManualDownloads[progKey(prog)] = prog.ID
 	} else {
 		// Future program
-		if !a.asset.Schedules.HasDuplicate(prog) {
+		if a.findProgramInSchedules(progKey(prog)) == nil {
 			a.asset.Schedules = append(a.asset.Schedules, prog)
 		}
 		endTime, err := time.ParseInLocation(radikron.DatetimeLayout, prog.To, radikron.Location)
@@ -765,7 +765,7 @@ func (a *App) loadManualInjections() error {
 
 	// Store in map and add to schedules
 	for _, inj := range injections {
-		a.manualInjections[inj.ProgramID] = inj
+		a.manualInjections[inj.key()] = inj
 
 		prog := &radikron.Prog{
 			ID:         inj.ProgramID,
@@ -819,35 +819,36 @@ func (a *App) saveManualInjections() error {
 	return nil
 }
 
-// IsManualInjection checks if a program is manually injected.
-// It returns true if the program ID exists in the manual injections map.
-func (a *App) IsManualInjection(programID string) bool {
+// IsManualInjection reports whether the program on stationID starting at
+// start was added from Search.
+func (a *App) IsManualInjection(stationID, start string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	_, exists := a.manualInjections[programID]
+	_, exists := a.manualInjections[downloadKey(stationID, start)]
 	return exists
 }
 
 // DeleteManualInjection removes a manually injected program from schedules and persistence.
 // It removes the program from schedules, pending downloads, and the manual injections map,
 // then saves the updated state to disk.
-func (a *App) DeleteManualInjection(programID string) error {
+func (a *App) DeleteManualInjection(stationID, start string) error {
+	key := downloadKey(stationID, start)
 	a.mu.Lock()
 
 	// Check if it's a manual injection
-	if _, exists := a.manualInjections[programID]; !exists {
+	if _, exists := a.manualInjections[key]; !exists {
 		a.mu.Unlock()
-		return fmt.Errorf("program %s is not a manual injection", programID)
+		return fmt.Errorf("program on %s at %s is not a manual injection", stationID, start)
 	}
 
-	a.removeScheduledProgramLocked(programID)
+	a.removeScheduledProgramLocked(key)
 
 	// Remove from pending manual downloads
-	delete(a.pendingManualDownloads, programID)
+	delete(a.pendingManualDownloads, key)
 
 	// Remove from manual injections map
-	delete(a.manualInjections, programID)
+	delete(a.manualInjections, key)
 
 	// Release lock before saving to avoid deadlock (saveManualInjections acquires its own lock)
 	a.mu.Unlock()
@@ -857,19 +858,20 @@ func (a *App) DeleteManualInjection(programID string) error {
 		return fmt.Errorf("failed to save manual injections: %w", err)
 	}
 
-	a.logger.Info(fmt.Sprintf("Deleted manual injection: %s", programID))
+	a.logger.Info(fmt.Sprintf("Deleted manual injection: %s", key))
 	a.emit(downloadsChangedEvent, nil)
 	return nil
 }
 
-// removeScheduledProgramLocked removes a program from schedules. Caller must hold a.mu.
-func (a *App) removeScheduledProgramLocked(programID string) {
+// removeScheduledProgramLocked removes a program from schedules by progKey.
+// Caller must hold a.mu.
+func (a *App) removeScheduledProgramLocked(key string) {
 	if a.asset == nil {
 		return
 	}
 	schedules := a.asset.Schedules[:0]
 	for _, prog := range a.asset.Schedules {
-		if prog.ID != programID {
+		if progKey(prog) != key {
 			schedules = append(schedules, prog)
 		}
 	}
@@ -955,7 +957,7 @@ func (a *App) GetSchedules() (radikron.Progs, error) {
 		// Only include programs whose files don't exist yet
 		if !output.IsExist() {
 			// Set IsManualInjection flag based on whether program is in manualInjections map
-			prog.IsManualInjection = a.manualInjections[prog.ID] != nil
+			prog.IsManualInjection = a.manualInjections[progKey(prog)] != nil
 			pendingSchedules = append(pendingSchedules, prog)
 		}
 	}
@@ -1023,7 +1025,7 @@ func (a *App) findMatchingRuleForInjection(prog *radikron.Prog, ruleName string)
 // If the program is a duplicate and the file exists, it returns an error.
 // If the program is a duplicate but the file doesn't exist, it removes the duplicate from schedules.
 func (a *App) handleDuplicateCheckForInjection(prog *radikron.Prog, startTime time.Time) error {
-	if !a.asset.Schedules.HasDuplicate(prog) {
+	if a.findProgramInSchedules(progKey(prog)) == nil {
 		return nil
 	}
 
@@ -1045,12 +1047,7 @@ func (a *App) handleDuplicateCheckForInjection(prog *radikron.Prog, startTime ti
 	}
 
 	// File doesn't exist - remove from schedules to allow re-injection
-	for i, s := range a.asset.Schedules {
-		if s.ID == prog.ID {
-			a.asset.Schedules = append(a.asset.Schedules[:i], a.asset.Schedules[i+1:]...)
-			break
-		}
-	}
+	a.removeScheduledProgramLocked(progKey(prog))
 
 	return nil
 }
@@ -1130,7 +1127,7 @@ func (a *App) applyInjectionRule(prog *radikron.Prog, matchedRule *radikron.Rule
 // injectPastProgramLocked registers and downloads a past program. Caller holds a.mu.
 func (a *App) injectPastProgramLocked(prog *radikron.Prog) error {
 	progCopy := *prog
-	a.manualInjections[progCopy.ID] = &manualInjection{
+	a.manualInjections[progKey(&progCopy)] = &manualInjection{
 		ProgramID: progCopy.ID, StationID: progCopy.StationID, Ft: progCopy.Ft,
 		To: progCopy.To, Title: progCopy.Title, RuleName: progCopy.RuleName,
 		RuleFolder: progCopy.RuleFolder,
@@ -1142,7 +1139,7 @@ func (a *App) injectPastProgramLocked(prog *radikron.Prog) error {
 
 	downloadErr := a.downloadPastInjectedProgram(&progCopy)
 	a.mu.Lock()
-	if a.manualInjections[progCopy.ID] != nil && !a.asset.Schedules.HasDuplicate(&progCopy) {
+	if a.manualInjections[progKey(&progCopy)] != nil && a.findProgramInSchedules(progKey(&progCopy)) == nil {
 		a.asset.Schedules = append(a.asset.Schedules, &progCopy)
 	}
 	a.mu.Unlock()
@@ -1164,7 +1161,7 @@ func (a *App) injectFutureProgramLocked(prog *radikron.Prog) error {
 			a.asset.NextFetchTime = &next
 		}
 	}
-	a.manualInjections[prog.ID] = &manualInjection{
+	a.manualInjections[progKey(prog)] = &manualInjection{
 		ProgramID: prog.ID, StationID: prog.StationID, Ft: prog.Ft,
 		To: prog.To, Title: prog.Title, RuleName: prog.RuleName,
 		RuleFolder: prog.RuleFolder,
@@ -1180,20 +1177,20 @@ func (a *App) injectFutureProgramLocked(prog *radikron.Prog) error {
 	return nil
 }
 
-// findProgramIDFromPendingDownloads finds program ID from pending manual downloads.
-// It searches through pending downloads and schedules to match by station, title, and start time.
+// findProgramIDFromPendingDownloads finds the progKey of a pending manual
+// download that is still scheduled with the same title.
 func (a *App) findProgramIDFromPendingDownloads(stationID, title, startTime string) string {
-	for id := range a.pendingManualDownloads {
-		for _, s := range a.asset.Schedules {
-			if s.ID == id && s.StationID == stationID && s.Title == title && s.Ft == startTime {
-				return id
-			}
-		}
+	key := downloadKey(stationID, startTime)
+	if _, pending := a.pendingManualDownloads[key]; !pending {
+		return ""
+	}
+	if s := a.findProgramInSchedules(key); s != nil && s.Title == title {
+		return key
 	}
 	return ""
 }
 
-// findProgramIDFromManualInjections finds program ID from manual injections by matching metadata.
+// findProgramIDFromManualInjections finds the progKey of a manual injection by matching metadata.
 // It searches through manual injections to match by station ID, title, and start time.
 func (a *App) findProgramIDFromManualInjections(stationID, title, startTime string) string {
 	for id, inj := range a.manualInjections {
@@ -1204,18 +1201,17 @@ func (a *App) findProgramIDFromManualInjections(stationID, title, startTime stri
 	return ""
 }
 
-// removeManualInjectionAndSave removes a program from manual injections and saves to disk.
-// It removes the program from both manualInjections and pendingManualDownloads maps,
-// then saves the updated state to disk.
-func (a *App) removeManualInjectionAndSave(programID, stationID, title string) {
-	if programID == "" {
+// removeManualInjectionAndSave removes a program, by progKey, from manual
+// injections, pending downloads, and schedules, then saves to disk.
+func (a *App) removeManualInjectionAndSave(key, stationID, title string) {
+	if key == "" {
 		return
 	}
 
 	a.mu.Lock()
-	delete(a.manualInjections, programID)
-	delete(a.pendingManualDownloads, programID)
-	a.removeScheduledProgramLocked(programID)
+	delete(a.manualInjections, key)
+	delete(a.pendingManualDownloads, key)
+	a.removeScheduledProgramLocked(key)
 	a.mu.Unlock()
 
 	// Save outside the lock to avoid deadlock (saveManualInjections acquires its own lock)
@@ -1246,17 +1242,15 @@ func (a *App) HandleDownloadCompleted(stationID, title, startTime string) {
 	a.removeManualInjectionAndSave(programID, stationID, title)
 }
 
-// HandleDownloadCompletedByID is called when a download completes with a known program ID.
-// This is more reliable than matching by station/title/time as it uses the program ID directly.
-func (a *App) HandleDownloadCompletedByID(programID, stationID, title, _ string) {
+// handleManualDownloadCompleted is called when a download started for a
+// known program, by progKey, completes.
+func (a *App) handleManualDownloadCompleted(key, stationID, title string) {
 	a.mu.Lock()
-
-	// Check if this program ID is in manual injections
-	_, exists := a.manualInjections[programID]
+	_, exists := a.manualInjections[key]
 	a.mu.Unlock()
 
 	if exists {
-		a.removeManualInjectionAndSave(programID, stationID, title)
+		a.removeManualInjectionAndSave(key, stationID, title)
 	}
 }
 
@@ -1271,11 +1265,11 @@ func (a *App) checkAndCleanupManualInjections() {
 		return
 	}
 
-	// Build a set of available program IDs from snapshots
-	availableProgramIDs := make(map[string]bool)
+	// Build a set of available programs from snapshots
+	availablePrograms := make(map[string]bool)
 	for _, programs := range a.programSnapshots {
 		for _, prog := range programs {
-			availableProgramIDs[prog.ID] = true
+			availablePrograms[progKey(prog)] = true
 		}
 	}
 
@@ -1288,17 +1282,10 @@ func (a *App) checkAndCleanupManualInjections() {
 
 	for id, inj := range a.manualInjections {
 		// Check if program is still available
-		if !availableProgramIDs[id] {
+		if !availablePrograms[id] {
 			// Program is no longer available - remove it
 			delete(a.manualInjections, id)
-
-			// Also remove from schedules
-			for i, s := range a.asset.Schedules {
-				if s.ID == id {
-					a.asset.Schedules = append(a.asset.Schedules[:i], a.asset.Schedules[i+1:]...)
-					break
-				}
-			}
+			a.removeScheduledProgramLocked(id)
 
 			removed = true
 			// Capture logging data while holding the lock
@@ -1945,19 +1932,24 @@ type programWithStation struct {
 
 // collectProgramsFromStations refreshes the weekly programs of every station
 // and returns the ones on stations the rules watch, without duplicates.
-func (a *App) collectProgramsFromStations(asset *radikron.Asset, fetcher *radikronProgramFetcher) []*programWithStation {
-	a.loadProgramSnapshots(fetcher.FetchWeeklyPrograms, true)
+func (a *App) collectProgramsFromStations(
+	asset *radikron.Asset,
+	fetch func(stationID string) (radikron.Progs, error),
+) []*programWithStation {
+	a.loadProgramSnapshots(fetch, true)
 
-	allPrograms := make(map[string]*programWithStation) // key: program ID
+	allPrograms := make(map[string]*programWithStation) // by downloadKey
 	a.mu.RLock()
 	for _, stationID := range asset.AvailableStations {
 		if !asset.Rules.HasRuleWithoutStationID() && !asset.Rules.HasRuleForStationID(stationID) {
 			continue
 		}
-		// Keep only the first occurrence of each program ID.
+		// Keep only the first occurrence of each program. Not by ID: radiko
+		// gives the parts of a split program the same ID.
 		for _, p := range a.programSnapshots[stationID] {
-			if _, exists := allPrograms[p.ID]; !exists {
-				allPrograms[p.ID] = &programWithStation{prog: p, stationID: stationID}
+			key := downloadKey(stationID, p.Ft)
+			if _, exists := allPrograms[key]; !exists {
+				allPrograms[key] = &programWithStation{prog: p, stationID: stationID}
 			}
 		}
 	}
@@ -1997,7 +1989,7 @@ func (a *App) findMatchingRuleForProcessProgram(
 // It copies rule name and folder from the manual injection to the program.
 // Returns true if the program is a manual injection, false otherwise.
 func (a *App) setupManualInjectionForProcess(p *radikron.Prog) bool {
-	if inj, exists := a.manualInjections[p.ID]; exists {
+	if inj, exists := a.manualInjections[progKey(p)]; exists {
 		p.RuleName = inj.RuleName
 		p.RuleFolder = inj.RuleFolder
 		return true
@@ -2028,12 +2020,18 @@ func (a *App) processProgram(
 	p := pws.prog
 	stationID := pws.stationID
 
+	// Ensure StationID is set correctly (it should be set from XML, but ensure it matches)
+	if p.StationID == "" {
+		p.StationID = stationID
+	}
+	key := progKey(p)
+
 	a.mu.Lock()
-	if processedInThisIteration[p.ID] {
+	if processedInThisIteration[key] {
 		a.mu.Unlock()
 		return false, true
 	}
-	processedInThisIteration[p.ID] = true
+	processedInThisIteration[key] = true
 	isManualInjection := a.setupManualInjectionForProcess(p)
 	a.mu.Unlock()
 
@@ -2042,10 +2040,6 @@ func (a *App) processProgram(
 		return false, false
 	}
 	a.applyRuleToProgram(p, matchedRule, isManualInjection)
-	// Ensure StationID is set correctly (it should be set from XML, but ensure it matches)
-	if p.StationID == "" {
-		p.StationID = stationID
-	}
 
 	if a.leaveAlone(p, asset) {
 		return true, true
@@ -2098,7 +2092,7 @@ func (a *App) processAllPrograms(
 	a.mu.Unlock()
 
 	// Collect all programs from all stations
-	programList := a.collectProgramsFromStations(asset, fetcher)
+	programList := a.collectProgramsFromStations(asset, fetcher.FetchWeeklyPrograms)
 	log.Printf("collected %d programs from stations", len(programList))
 
 	// Track programs processed in this iteration to prevent duplicates

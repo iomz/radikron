@@ -69,8 +69,8 @@ export function ChooseRuleFolder(current: string): $CancellablePromise<string | 
  * It removes the program from schedules, pending downloads, and the manual injections map,
  * then saves the updated state to disk.
  */
-export function DeleteManualInjection(programID: string): $CancellablePromise<void> {
-    return $Call.ByID(690399293, programID);
+export function DeleteManualInjection(stationID: string, start: string): $CancellablePromise<void> {
+    return $Call.ByID(690399293, stationID, start);
 }
 
 /**
@@ -186,14 +186,6 @@ export function HandleDownloadCompleted(stationID: string, title: string, startT
 }
 
 /**
- * HandleDownloadCompletedByID is called when a download completes with a known program ID.
- * This is more reliable than matching by station/title/time as it uses the program ID directly.
- */
-export function HandleDownloadCompletedByID(programID: string, stationID: string, title: string, $3: string): $CancellablePromise<void> {
-    return $Call.ByID(681301072, programID, stationID, title, $3);
-}
-
-/**
  * InjectProgram adds a program to scheduled downloads.
  * For past programs, it attempts to download immediately.
  * For future programs, it adds them to schedules and updates the next fetch time.
@@ -204,11 +196,11 @@ export function InjectProgram(prog: radikron$0.Prog | null, ruleName: string): $
 }
 
 /**
- * IsManualInjection checks if a program is manually injected.
- * It returns true if the program ID exists in the manual injections map.
+ * IsManualInjection reports whether the program on stationID starting at
+ * start was added from Search.
  */
-export function IsManualInjection(programID: string): $CancellablePromise<boolean> {
-    return $Call.ByID(1033822608, programID);
+export function IsManualInjection(stationID: string, start: string): $CancellablePromise<boolean> {
+    return $Call.ByID(1033822608, stationID, start);
 }
 
 /**

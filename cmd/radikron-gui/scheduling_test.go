@@ -72,7 +72,7 @@ func TestRemovingARuleDropsItsScheduledPrograms(t *testing.T) {
 	processOnce(app, &fakeDownloads{app: app})
 	manual := &radikron.Prog{ID: "m1", StationID: "TBS", Title: "Show", Ft: "29990102100000", To: "29990102110000"}
 	app.asset.Schedules = append(app.asset.Schedules, manual)
-	app.manualInjections[manual.ID] = &manualInjection{ProgramID: manual.ID}
+	app.manualInjections[progKey(manual)] = &manualInjection{ProgramID: manual.ID}
 
 	if err := app.RemoveRule("Show"); err != nil {
 		t.Fatal(err)
@@ -159,5 +159,47 @@ func TestFinishedDownloadsOutliveARestart(t *testing.T) {
 	}
 	if _, err := os.Stat(app.downloadsFile + ".tmp"); !os.IsNotExist(err) {
 		t.Error("left a temporary file behind")
+	}
+}
+
+func TestPartsOfASplitProgramAreDownloadedSeparately(t *testing.T) {
+	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Show", Criteria: radikron.Criteria{Title: "Show"}}})
+	// radiko gives both parts of a split program the same ID.
+	parts := radikron.Progs{
+		{ID: "p1", StationID: "TBS", Title: "Show (1)", Ft: "29990101100000", To: "29990101110000"},
+		{ID: "p1", StationID: "TBS", Title: "Show (2)", Ft: "29990101110000", To: "29990101120000"},
+	}
+	app.asset.AvailableStations = []string{"TBS"}
+	fetch := func(string) (radikron.Progs, error) { return parts, nil }
+
+	f := &fakeDownloads{app: app}
+	processed := map[string]bool{}
+	for _, pws := range app.collectProgramsFromStations(app.asset, fetch) {
+		app.processProgram(pws, app.asset, context.Background(), processed, f.download)
+	}
+	if f.calls != 2 {
+		t.Errorf("download tried %d times, want once for each part", f.calls)
+	}
+	if len(app.asset.Schedules) != 2 {
+		t.Errorf("schedules = %+v, want both parts", app.asset.Schedules)
+	}
+}
+
+func TestBothPartsOfASplitProgramCanBeAddedFromSearch(t *testing.T) {
+	app, _ := ruleTestApp(t, nil)
+	app.manualInjectionsFile = filepath.Join(t.TempDir(), "manual-injections.json")
+	for _, part := range []*radikron.Prog{
+		{ID: "p1", StationID: "TBS", Title: "Show (1)", Ft: "29990101100000", To: "29990101110000"},
+		{ID: "p1", StationID: "TBS", Title: "Show (2)", Ft: "29990101110000", To: "29990101120000"},
+	} {
+		if err := app.InjectProgram(part, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(app.manualInjections) != 2 || len(app.asset.Schedules) != 2 {
+		t.Errorf("injections = %d, schedules = %d, want both parts", len(app.manualInjections), len(app.asset.Schedules))
+	}
+	if !app.IsManualInjection("TBS", "29990101110000") {
+		t.Error("the second part is not a manual injection")
 	}
 }
