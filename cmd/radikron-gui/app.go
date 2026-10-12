@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	goRuntime "runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -1607,6 +1608,33 @@ func applyStationCatalog(asset *radikron.Asset, cfg *config.Config, stations rad
 	return append([]string{}, asset.AvailableStations...), nil
 }
 
+// searchMatcher returns the program filter for SearchWeeklyPrograms. Unlike
+// rules, search ignores case. The keyword is split on spaces (including
+// full-width ones) and every word must appear in the title, performer, info,
+// description, or tags; title and pfm, when set, must appear in those fields.
+// With nothing to match it accepts every program, so the GUI can list a
+// station or day. Stations are filtered by the caller.
+func searchMatcher(title, pfm, keyword string) func(string, *radikron.Prog) bool {
+	lower := strings.ToLower
+	title, pfm = lower(title), lower(pfm)
+	terms := strings.Fields(lower(keyword))
+	return func(_ string, prog *radikron.Prog) bool {
+		if title != "" && !strings.Contains(lower(prog.Title), title) {
+			return false
+		}
+		if pfm != "" && !strings.Contains(lower(prog.Pfm), pfm) {
+			return false
+		}
+		text := lower(strings.Join(append([]string{prog.Title, prog.Pfm, prog.Info, prog.Desc}, prog.Tags...), "\n"))
+		for _, term := range terms {
+			if !strings.Contains(text, term) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
 // GetAllStations returns all stations from asset.Stations (all possible stations, not just available ones)
 func (a *App) GetAllStations() ([]string, error) {
 	a.mu.RLock()
@@ -1675,16 +1703,7 @@ func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationI
 		return nil, fmt.Errorf("asset not initialized")
 	}
 
-	// Create a temporary rule for matching
-	tempRule := &radikron.Rule{
-		Name: "search",
-		Criteria: radikron.Criteria{
-			Title:     ruleTitle,
-			Pfm:       rulePfm,
-			Keyword:   ruleKeyword,
-			StationID: ruleStationID,
-		},
-	}
+	matches := searchMatcher(ruleTitle, rulePfm, ruleKeyword)
 
 	// Get stations to search (all if no station specified, otherwise just the specified one)
 	stationsToSearch := a.asset.AvailableStations
@@ -1715,7 +1734,7 @@ func (a *App) SearchWeeklyPrograms(ruleTitle, rulePfm, ruleKeyword, ruleStationI
 
 		// Filter programs using the rule
 		for _, prog := range programs {
-			if tempRule.MatchSilent(stationID, prog) {
+			if matches(stationID, prog) {
 				matchingPrograms = append(matchingPrograms, prog)
 			}
 		}
