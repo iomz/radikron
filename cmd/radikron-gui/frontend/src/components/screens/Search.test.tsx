@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Backend from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import { useAppStore } from '@/store/useAppStore';
 import { Search } from './Search';
+import { todayBroadcastDay } from '@/lib/timetable';
 
 vi.mock('../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
   AddRule: vi.fn(),
@@ -93,5 +94,24 @@ describe('Search', () => {
     fireEvent.change(await screen.findByLabelText('Rule name'), { target: { value: 'My show' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create rule' }));
     await waitFor(() => expect(backend.AddRule).toHaveBeenCalledWith(expect.objectContaining({ Name: 'My show', Title: 'Future Show' })));
+  });
+
+  it('shows only the programs of the chosen day, even when radiko repeats a program ID', async () => {
+    const today = todayBroadcastDay(new Date());
+    // React leaves stale rows behind when rows share a key.
+    const consoleError = vi.spyOn(console, 'error');
+    backend.SearchWeeklyPrograms.mockResolvedValue([
+      // radiko splits long programs into parts that share one ID.
+      { ID: 'split', Title: 'Long Show (1)', StationID: 'TBS', Ft: '29990101200000', To: '29990101210000' },
+      { ID: 'split', Title: 'Long Show (2)', StationID: 'TBS', Ft: '29990101210000', To: '29990101220000' },
+      { ID: 'tonight', Title: 'Tonight Show', StationID: 'TBS', Ft: `${today}230000`, To: `${today}235900` },
+    ] as SearchResult);
+    await searchFor('Show');
+    await screen.findByText('3 programs for “Show”');
+    fireEvent.change(screen.getByLabelText('Day'), { target: { value: today } });
+    await screen.findByText('1 program for “Show”');
+    expect(screen.getAllByRole('article').map((a) => a.textContent)).toEqual([expect.stringContaining('Tonight Show')]);
+    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('same key'), expect.anything(), expect.anything());
+    consoleError.mockRestore();
   });
 });

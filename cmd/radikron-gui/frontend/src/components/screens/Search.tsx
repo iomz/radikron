@@ -251,7 +251,7 @@ export const Search: React.FC = () => {
           const action = programAction(prog.Ft, prog.To);
           const scheduled = scheduledKeys.has(key);
           return (
-            <article key={prog.ID || key} className={cn('rounded-[14px] border bg-card', open ? 'border-signal' : 'border-border')}>
+            <article key={key} className={cn('rounded-[14px] border bg-card', open ? 'border-signal' : 'border-border')}>
               <button
                 type="button"
                 aria-expanded={open}
