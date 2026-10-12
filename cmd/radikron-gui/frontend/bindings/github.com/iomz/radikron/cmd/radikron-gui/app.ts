@@ -55,6 +55,14 @@ export function CheckNow(): $CancellablePromise<void> {
 }
 
 /**
+ * ChooseDownloadFolder lets the user pick the download folder, starting from
+ * current. It returns nil when the user cancels.
+ */
+export function ChooseDownloadFolder(current: string): $CancellablePromise<string | null> {
+    return $Call.ByID(3450604780, current);
+}
+
+/**
  * ChooseRuleFolder lets the user pick a rule folder, starting from current.
  * A folder inside the download folder is returned relative to it ("" for the
  * download folder itself) so the config stays portable; any other folder is
@@ -158,11 +166,20 @@ export function GetSchedules(): $CancellablePromise<radikron$0.Progs> {
 }
 
 /**
+ * GetSettings returns the current settings.
+ */
+export function GetSettings(): $CancellablePromise<$models.Settings> {
+    return $Call.ByID(2554697378).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+/**
  * GetStationNames returns display names keyed by station ID.
  */
 export function GetStationNames(): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(2645635047).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType9($result);
     });
 }
 
@@ -172,7 +189,7 @@ export function GetStationNames(): $CancellablePromise<{ [_ in string]?: string 
  */
 export function GetStatus(): $CancellablePromise<$models.Status> {
     return $Call.ByID(1043986649).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType10($result);
     });
 }
 
@@ -269,7 +286,7 @@ export function Retry(): $CancellablePromise<void> {
  */
 export function RuleFromProgram(prog: radikron$0.Prog | null): $CancellablePromise<radikron$0.Rule> {
     return $Call.ByID(905458793, prog).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType11($result);
     });
 }
 
@@ -279,6 +296,14 @@ export function RuleFromProgram(prog: radikron$0.Prog | null): $CancellablePromi
  */
 export function SaveConfig(filename: string): $CancellablePromise<void> {
     return $Call.ByID(3442292638, filename);
+}
+
+/**
+ * SaveSettings checks s, saves it to the config file, and applies it. If the
+ * save fails, the running configuration stays as it was.
+ */
+export function SaveSettings(s: $models.Settings | null): $CancellablePromise<void> {
+    return $Call.ByID(1949631069, s);
 }
 
 /**
@@ -370,6 +395,7 @@ var $$createType4 = (function $$initCreateType4(...args: any[]): any {
 const $$createType5 = radikron$0.Prog.createFrom;
 const $$createType6 = $Create.Nullable($$createType5);
 const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = $Create.Map($Create.Any, $Create.Any);
-const $$createType9 = $models.Status.createFrom;
-const $$createType10 = radikron$0.Rule.createFrom;
+const $$createType8 = $models.Settings.createFrom;
+const $$createType9 = $Create.Map($Create.Any, $Create.Any);
+const $$createType10 = $models.Status.createFrom;
+const $$createType11 = radikron$0.Rule.createFrom;

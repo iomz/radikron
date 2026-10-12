@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/iomz/radikron"
+	"github.com/iomz/radikron/internal/config"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -222,51 +223,14 @@ func ruleIndex(rules radikron.Rules, name string) int {
 	return slices.IndexFunc(rules, func(r *radikron.Rule) bool { return r != nil && r.Name == name })
 }
 
-// changeRules applies the rules that change returns, saves the config file,
-// drops scheduled programs no rule matches any more, and wakes automatic
-// checks. If the save fails, the running configuration stays as it was.
-// Downloads in progress finish.
+// changeRules applies the rules that change returns, as changeConfig does.
 func (a *App) changeRules(change func(radikron.Rules) (radikron.Rules, error)) error {
-	if err := a.waitForStartup(); err != nil {
-		return fmt.Errorf("startup failed: %w", err)
-	}
-
-	active := a.activeKeys()
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.config == nil || a.asset == nil {
-		return errors.New("config not loaded")
-	}
-	if a.configFile == "" {
-		return errors.New("config file path not set")
-	}
-
-	previous := a.config
-	rules, err := change(previous.Rules)
-	if err != nil {
-		return err
-	}
-	updated := *previous
-	updated.Rules = rules
-	if err := updated.ApplyToAsset(a.asset); err != nil {
-		return fmt.Errorf("failed to apply rules: %w", err)
-	}
-	if err := updated.SaveConfig(a.configFile); err != nil {
-		// Keep the running configuration in line with the file on disk.
-		if restoreErr := previous.ApplyToAsset(a.asset); restoreErr != nil {
-			a.logger.Error(fmt.Sprintf("Failed to restore the previous config: %v", restoreErr))
+	return a.changeConfig(func(cfg *config.Config) error {
+		rules, err := change(cfg.Rules)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-	a.config = &updated
-	pruned := a.pruneSchedulesLocked(active)
-	a.signalConfigChanged()
-	a.emit("config-saved", map[string]any{
-		"success": true,
-		"file":    a.configFile,
+		cfg.Rules = rules
+		return nil
 	})
-	if pruned {
-		a.emit(downloadsChangedEvent, nil)
-	}
-	return nil
 }

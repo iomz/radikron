@@ -190,6 +190,67 @@ export class Downloads {
 }
 
 /**
+ * Settings are the parts of the configuration the Settings screen edits.
+ * Rules are edited on their own, so saving settings never overwrites them.
+ */
+export class Settings {
+    "areaId": string;
+    "downloadDir": string;
+    "fileFormat": string;
+    "minimumOutputSizeMb": number;
+    "extraStations": string[];
+    "ignoreStations": string[];
+    "maxDownloadingConcurrency": number;
+    "maxEncodingConcurrency": number;
+
+    /** Creates a new Settings instance. */
+    constructor($$source: Partial<Settings> = {}) {
+        if (!("areaId" in $$source)) {
+            this["areaId"] = "";
+        }
+        if (!("downloadDir" in $$source)) {
+            this["downloadDir"] = "";
+        }
+        if (!("fileFormat" in $$source)) {
+            this["fileFormat"] = "";
+        }
+        if (!("minimumOutputSizeMb" in $$source)) {
+            this["minimumOutputSizeMb"] = 0;
+        }
+        if (!("extraStations" in $$source)) {
+            this["extraStations"] = [];
+        }
+        if (!("ignoreStations" in $$source)) {
+            this["ignoreStations"] = [];
+        }
+        if (!("maxDownloadingConcurrency" in $$source)) {
+            this["maxDownloadingConcurrency"] = 0;
+        }
+        if (!("maxEncodingConcurrency" in $$source)) {
+            this["maxEncodingConcurrency"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Settings instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Settings {
+        const $$createField4_0 = $$createType2;
+        const $$createField5_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("extraStations" in $$parsedSource) {
+            $$parsedSource["extraStations"] = $$createField4_0($$parsedSource["extraStations"]);
+        }
+        if ("ignoreStations" in $$parsedSource) {
+            $$parsedSource["ignoreStations"] = $$createField5_0($$parsedSource["ignoreStations"]);
+        }
+        return new Settings($$parsedSource as Partial<Settings>);
+    }
+}
+
+/**
  * Status summarizes what the backend is doing, so the GUI can show the state
  * of automatic downloads and any failure that needs the user's attention.
  * Times are RFC 3339 strings in local time, or "" when unknown.
@@ -273,3 +334,4 @@ export class Status {
 // Private type creation functions
 const $$createType0 = DownloadItem.createFrom;
 const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Array($Create.Any);
