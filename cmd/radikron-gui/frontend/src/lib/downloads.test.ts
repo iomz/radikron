@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DownloadItem, Downloads } from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
 import {
   DownloadStates,
+  downloadAction,
   downloadDetail,
   countByFilter,
   downloadsList,
@@ -93,6 +94,23 @@ describe('download filters', () => {
     expect(counts.expired).toBe(0);
     expect(filterDownloads(items, 'failed')).toHaveLength(1);
     expect(filterDownloads(items, 'all')).toHaveLength(3);
+  });
+
+  it('keeps skipped programs out of All', () => {
+    const withSkipped = [...items, item({ state: DownloadStates.skipped })];
+    expect(countByFilter(withSkipped).all).toBe(3);
+    expect(countByFilter(withSkipped).skipped).toBe(1);
+    expect(filterDownloads(withSkipped, 'all')).toHaveLength(3);
+    expect(filterDownloads(withSkipped, 'skipped')).toHaveLength(1);
+  });
+
+  it('offers cancel, skip, or undo by state', () => {
+    expect(downloadAction({ state: DownloadStates.downloading })).toBe('cancel');
+    expect(downloadAction({ state: DownloadStates.waiting })).toBe('skip');
+    expect(downloadAction({ state: DownloadStates.failed })).toBe('skip');
+    expect(downloadAction({ state: DownloadStates.skipped })).toBe('undo');
+    expect(downloadAction({ state: DownloadStates.completed })).toBeNull();
+    expect(downloadAction({ state: DownloadStates.expired })).toBeNull();
   });
 });
 

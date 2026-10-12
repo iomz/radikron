@@ -6,12 +6,13 @@ import { useAppStore } from '@/store/useAppStore';
 import { Downloads } from './Downloads';
 
 vi.mock('../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
-  DeleteManualInjection: vi.fn(),
   GetDownloads: vi.fn(),
   GetSchedules: vi.fn(),
+  SkipDownload: vi.fn(),
+  UndoSkip: vi.fn(),
 }));
 vi.mock('@wailsio/runtime', () => ({ Browser: { OpenURL: vi.fn() } }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 const backend = vi.mocked(Backend);
 type DownloadsData = Awaited<ReturnType<typeof Backend.GetDownloads>>;
@@ -61,14 +62,33 @@ describe('Downloads', () => {
     expect(await screen.findByText('TBSラジオ · Host Name')).toBeTruthy();
   });
 
-  it('removes a manual program after confirmation', async () => {
-    backend.DeleteManualInjection.mockResolvedValue(undefined);
-    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [] } as unknown as DownloadsData);
+  it('skips a program, keeps it out of All, and undoes the skip', async () => {
+    backend.SkipDownload.mockResolvedValue(undefined);
+    backend.UndoSkip.mockResolvedValue(undefined);
+    backend.GetDownloads.mockResolvedValue({
+      scheduled: [],
+      recent: [],
+      skipped: [row({ id: 'w', title: 'Waiting Show', state: 'skipped' })],
+    } as unknown as DownloadsData);
     render(<Downloads />);
-    expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Remove')!);
-    await waitFor(() => expect(backend.DeleteManualInjection).toHaveBeenCalledWith('m'));
+    fireEvent.click(screen.getByRole('button', { name: 'Skip Waiting Show' }));
+    await waitFor(() => expect(backend.SkipDownload).toHaveBeenCalledWith('TBS', '29990101100000'));
+
+    await waitFor(() => expect(screen.queryByText('Waiting Show')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Skipped 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo skip Waiting Show' }));
+    await waitFor(() => expect(backend.UndoSkip).toHaveBeenCalledWith('TBS', '29990101100000'));
+  });
+
+  it('cancels a download in progress', async () => {
+    backend.SkipDownload.mockResolvedValue(undefined);
+    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [], skipped: [] } as unknown as DownloadsData);
+    useAppStore.setState({
+      downloads: { scheduled: [row({ title: 'Live Show', state: 'downloading' })], recent: [], skipped: [] } as unknown as DownloadsData,
+    });
+    render(<Downloads />);
+    expect(screen.queryByRole('button', { name: 'Skip Live Show' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Live Show' }));
+    await waitFor(() => expect(backend.SkipDownload).toHaveBeenCalledWith('TBS', '29990101100000'));
   });
 });

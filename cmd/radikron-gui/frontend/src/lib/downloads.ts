@@ -10,6 +10,7 @@ export const DownloadStates = {
   completed: 'completed',
   failed: 'failed',
   expired: 'expired',
+  skipped: 'skipped',
 } as const;
 
 // downloadKey identifies a program the way the backend does: a station
@@ -25,6 +26,7 @@ const stateLabels: Record<string, string> = {
   [DownloadStates.completed]: 'Completed',
   [DownloadStates.failed]: 'Failed',
   [DownloadStates.expired]: 'Expired',
+  [DownloadStates.skipped]: 'Skipped',
 };
 
 const stateDescriptions: Record<string, string> = {
@@ -34,6 +36,7 @@ const stateDescriptions: Record<string, string> = {
   [DownloadStates.completed]: 'Downloaded.',
   [DownloadStates.failed]: 'The last download attempt failed.',
   [DownloadStates.expired]: 'No longer available on radiko.',
+  [DownloadStates.skipped]: 'You skipped it, so rules leave it alone.',
 };
 
 export function downloadStateLabel(state: string): string {
@@ -122,6 +125,8 @@ export function downloadNote(item: DownloadItem): string {
       return 'No longer on radiko';
     case DownloadStates.completed:
       return 'Downloaded';
+    case DownloadStates.skipped:
+      return 'Rules leave it alone';
     default:
       return '';
   }
@@ -136,25 +141,27 @@ export const downloadFilters = [
   { id: DownloadStates.failed, label: 'Failed' },
   { id: DownloadStates.expired, label: 'Expired' },
   { id: DownloadStates.completed, label: 'Completed' },
+  { id: DownloadStates.skipped, label: 'Skipped' },
 ] as const;
 
 export type DownloadFilter = (typeof downloadFilters)[number]['id'];
 
-// downloadsList combines the scheduled programs with the ones downloaded in
-// this session, which leave the schedule once their file exists.
+// downloadsList combines the scheduled programs with the finished downloads,
+// which leave the schedule once their file exists, and the skipped programs.
 export function downloadsList(downloads: Downloads | null): DownloadItem[] {
   const scheduled = downloads?.scheduled ?? [];
   const keys = new Set(scheduled.map((item) => downloadKey(item.stationId, item.start)));
   const downloaded = (downloads?.recent ?? []).filter(
     (item) => item.state === DownloadStates.completed && !keys.has(downloadKey(item.stationId, item.start)),
   );
-  return [...scheduled, ...downloaded];
+  return [...scheduled, ...downloaded, ...(downloads?.skipped ?? [])];
 }
 
-// countByFilter counts the items each filter shows.
+// countByFilter counts the items each filter shows. All leaves out skipped
+// programs, which have their own filter.
 export function countByFilter(items: DownloadItem[]): Record<DownloadFilter, number> {
   const counts = Object.fromEntries(downloadFilters.map((f) => [f.id, 0])) as Record<DownloadFilter, number>;
-  counts.all = items.length;
+  counts.all = items.filter((item) => item.state !== DownloadStates.skipped).length;
   for (const item of items) {
     if (item.state in counts) {
       counts[item.state as DownloadFilter] += 1;
@@ -164,5 +171,25 @@ export function countByFilter(items: DownloadItem[]): Record<DownloadFilter, num
 }
 
 export function filterDownloads(items: DownloadItem[], filter: DownloadFilter): DownloadItem[] {
-  return filter === 'all' ? items : items.filter((item) => item.state === filter);
+  return filter === 'all' ? items.filter((item) => item.state !== DownloadStates.skipped) : items.filter((item) => item.state === filter);
+}
+
+// downloadAction is what a download can be told to do: cancel it while it
+// downloads, skip it before, or undo a skip. Finished and expired programs
+// have none.
+export type DownloadAction = 'cancel' | 'skip' | 'undo';
+
+export function downloadAction(item: { state: string }): DownloadAction | null {
+  switch (item.state) {
+    case DownloadStates.downloading:
+      return 'cancel';
+    case DownloadStates.waiting:
+    case DownloadStates.available:
+    case DownloadStates.failed:
+      return 'skip';
+    case DownloadStates.skipped:
+      return 'undo';
+    default:
+      return null;
+  }
 }

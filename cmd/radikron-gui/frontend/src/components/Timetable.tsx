@@ -15,9 +15,17 @@ const blockStyles: Record<string, string> = {
   [DownloadStates.failed]: 'bg-state-failed/15 border-2 border-state-failed text-state-failed',
   [DownloadStates.completed]: 'bg-state-completed/20 text-state-completed',
   [DownloadStates.expired]: 'bg-muted text-state-expired line-through',
+  [DownloadStates.skipped]: 'border border-dashed border-input bg-transparent text-muted-foreground',
 };
 
-const legendStates = [DownloadStates.downloading, DownloadStates.available, DownloadStates.waiting, DownloadStates.failed, DownloadStates.completed];
+const legendStates = [
+  DownloadStates.downloading,
+  DownloadStates.available,
+  DownloadStates.waiting,
+  DownloadStates.failed,
+  DownloadStates.completed,
+  DownloadStates.skipped,
+];
 
 // Tick marks every two hours, labelled in clock time (26:00 shows as 02:00).
 const ticks = Array.from({ length: DAY_HOURS / 2 - 1 }, (_, i) => DAY_START_HOUR + 1 + i * 2);

@@ -8,6 +8,7 @@ const chipStyles: Record<string, string> = {
   [DownloadStates.waiting]: 'bg-muted text-state-waiting',
   [DownloadStates.failed]: 'bg-state-failed/15 text-state-failed',
   [DownloadStates.expired]: 'bg-muted text-state-expired line-through',
+  [DownloadStates.skipped]: 'bg-muted text-muted-foreground',
   [DownloadStates.completed]: 'bg-state-completed/15 text-state-completed',
 };
 

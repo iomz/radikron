@@ -5,6 +5,7 @@ import { DownloadStates, downloadNote, downloadSource, formatAirTime, nextDownlo
 import { getAreaName } from '@/lib/regions';
 import type { ScreenId } from '@/lib/navigation';
 import { StateChip } from '@/components/StateChip';
+import { DownloadActionButton } from '@/components/DownloadActionButton';
 import { cn } from '@/lib/utils';
 import * as App from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import type { DownloadItem } from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
@@ -42,6 +43,7 @@ const NextRow: React.FC<{ item: DownloadItem; now: Date }> = ({ item, now }) => 
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{item.title}</span>
           <StateChip state={item.state} />
+          {downloading && <DownloadActionButton item={item} className="ml-auto min-h-8 px-2.5 text-xs" />}
         </div>
         <span className="text-[13px] text-muted-foreground">
           {stationLabel(item.stationId)} · {downloadSource(item)}

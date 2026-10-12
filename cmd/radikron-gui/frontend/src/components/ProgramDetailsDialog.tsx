@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { downloadKey, downloadNote, downloadSource } from '@/lib/downloads';
 import { StateChip } from '@/components/StateChip';
+import { DownloadActionButton } from '@/components/DownloadActionButton';
 import { SanitizedHTML } from '@/components/SanitizedHTML';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import * as App from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
@@ -58,6 +59,7 @@ export const ProgramDetailsDialog: React.FC<{ item: DownloadItem | null; onClose
                 <span className="text-muted-foreground">
                   {downloadNote(item)} · {downloadSource(item)}
                 </span>
+                <DownloadActionButton item={item} className="ml-auto" onDone={onClose} />
               </div>
               {prog?.Desc && <SanitizedHTML html={prog.Desc} className={htmlClass} />}
               {prog?.Info && <SanitizedHTML html={prog.Info} className={htmlClass} />}
