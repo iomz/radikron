@@ -1904,6 +1904,7 @@ func (a *App) reloadConfig() error {
 		return fmt.Errorf("failed to load config from %s: %w", configFile, err)
 	}
 
+	active := a.activeKeys()
 	// Lock while mutating a.asset and a.config
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1919,6 +1920,8 @@ func (a *App) reloadConfig() error {
 
 	// Update config while holding the lock
 	a.config = cfg
+	// The rules may have changed in the file.
+	a.pruneSchedulesLocked(active)
 
 	return nil
 }

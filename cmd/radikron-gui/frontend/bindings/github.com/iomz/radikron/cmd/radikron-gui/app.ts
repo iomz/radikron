@@ -55,6 +55,16 @@ export function CheckNow(): $CancellablePromise<void> {
 }
 
 /**
+ * ChooseRuleFolder lets the user pick a rule folder, starting from current.
+ * A folder inside the download folder is returned relative to it ("" for the
+ * download folder itself) so the config stays portable; any other folder is
+ * returned as an absolute path. It returns nil when the user cancels.
+ */
+export function ChooseRuleFolder(current: string): $CancellablePromise<string | null> {
+    return $Call.ByID(2412197782, current);
+}
+
+/**
  * DeleteManualInjection removes a manually injected program from schedules and persistence.
  * It removes the program from schedules, pending downloads, and the manual injections map,
  * then saves the updated state to disk.
@@ -71,9 +81,8 @@ export function ExportConfigFile(): $CancellablePromise<void> {
 }
 
 /**
- * FetchProgramSnapshots fetches program snapshots from all available stations.
- * This function performs network I/O without holding the lock to avoid blocking.
- * The snapshots are used for program search and manual injection cleanup.
+ * FetchProgramSnapshots loads the weekly programs of stations that have none
+ * yet, for program search. Automatic checks keep them up to date.
  */
 export function FetchProgramSnapshots(): $CancellablePromise<void> {
     return $Call.ByID(2470895138);
@@ -218,6 +227,17 @@ export function OpenDirectory(dirPath: string): $CancellablePromise<void> {
 }
 
 /**
+ * PreviewRule lists the programs in radiko's weekly schedule that rule
+ * matches, so the user can check a rule before saving it. The rule's name is
+ * not needed.
+ */
+export function PreviewRule(rule: radikron$0.Rule | null): $CancellablePromise<radikron$0.Progs> {
+    return $Call.ByID(106876769, rule).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
+/**
  * ReadConfigFile reads the config file content and returns it as a string
  */
 export function ReadConfigFile(): $CancellablePromise<string> {
@@ -231,6 +251,14 @@ export function RefreshStations(): $CancellablePromise<string[]> {
     return $Call.ByID(2921949673).then(($result: any) => {
         return $$createType0($result);
     });
+}
+
+/**
+ * RemoveRule removes the rule called name and saves the config file. Programs
+ * it already scheduled stay scheduled.
+ */
+export function RemoveRule(name: string): $CancellablePromise<void> {
+    return $Call.ByID(1379976755, name);
 }
 
 /**
@@ -300,6 +328,15 @@ export function StopMonitoring(): $CancellablePromise<void> {
  */
 export function UpdateConfig(newConfig: config$0.Config | null): $CancellablePromise<void> {
     return $Call.ByID(481689322, newConfig);
+}
+
+/**
+ * UpdateRule replaces the rule called name with rule, which may rename it, and
+ * saves the config file. It wakes automatic checks so the changed rule applies
+ * right away.
+ */
+export function UpdateRule(name: string, rule: radikron$0.Rule | null): $CancellablePromise<void> {
+    return $Call.ByID(480709666, name, rule);
 }
 
 /**

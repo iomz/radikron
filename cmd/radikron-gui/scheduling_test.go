@@ -63,3 +63,18 @@ func TestDownloadInProgressIsNotStartedTwice(t *testing.T) {
 		t.Error("a finished download's context was not released")
 	}
 }
+
+func TestRemovingARuleDropsItsScheduledPrograms(t *testing.T) {
+	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Show", Criteria: radikron.Criteria{Title: "Show"}}})
+	processOnce(app, &fakeDownloads{app: app})
+	manual := &radikron.Prog{ID: "m1", StationID: "TBS", Title: "Show", Ft: "29990102100000", To: "29990102110000"}
+	app.asset.Schedules = append(app.asset.Schedules, manual)
+	app.manualInjections[manual.ID] = &manualInjection{ProgramID: manual.ID}
+
+	if err := app.RemoveRule("Show"); err != nil {
+		t.Fatal(err)
+	}
+	if len(app.asset.Schedules) != 1 || app.asset.Schedules[0].ID != "m1" {
+		t.Errorf("schedules after removing the rule = %+v, want only the program added from Search", app.asset.Schedules)
+	}
+}

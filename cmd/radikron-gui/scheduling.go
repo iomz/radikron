@@ -115,3 +115,34 @@ func (a *App) rememberScheduledLocked(prog *radikron.Prog) {
 	}
 	a.asset.Schedules = append(a.asset.Schedules, prog)
 }
+
+// pruneSchedulesLocked drops scheduled programs that no rule matches any
+// more and refreshes the rule of the others, so a removed or edited rule
+// stops downloads that have not started. Programs added from Search and
+// downloads in progress stay. Callers hold a.mu; active comes from activeKeys.
+func (a *App) pruneSchedulesLocked(active map[string]bool) bool {
+	if a.asset == nil {
+		return false
+	}
+	changed := false
+	kept := a.asset.Schedules[:0]
+	for _, prog := range a.asset.Schedules {
+		if a.manualInjections[prog.ID] != nil || active[downloadKey(prog.StationID, prog.Ft)] {
+			kept = append(kept, prog)
+			continue
+		}
+		rule := a.asset.Rules.FindMatchSilent(prog.StationID, prog)
+		if rule == nil {
+			changed = true
+			continue
+		}
+		if prog.RuleName != rule.Name || prog.RuleFolder != rule.Folder {
+			prog.RuleName, prog.RuleFolder = rule.Name, rule.Folder
+			changed = true
+		}
+		kept = append(kept, prog)
+	}
+	clear(a.asset.Schedules[len(kept):])
+	a.asset.Schedules = kept
+	return changed
+}
