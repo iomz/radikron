@@ -202,6 +202,7 @@ func (a *App) GetDownloads() (Downloads, error) {
 		}
 		result.Scheduled = append(result.Scheduled, item)
 	}
+	a.rememberScheduleDetails(result.Scheduled)
 	sort.SliceStable(result.Scheduled, func(i, j int) bool {
 		return result.Scheduled[i].Start < result.Scheduled[j].Start
 	})
@@ -219,6 +220,23 @@ func (a *App) GetDownloads() (Downloads, error) {
 		result.Recent = append(result.Recent, item)
 	}
 	return result, nil
+}
+
+// rememberScheduleDetails copies what only the schedule knows (end time,
+// rule, source) into the download records, so a program keeps them in the
+// recent results after it leaves the schedule.
+func (a *App) rememberScheduleDetails(items []DownloadItem) {
+	a.downloadsMu.Lock()
+	defer a.downloadsMu.Unlock()
+	for i := range items {
+		item := &items[i]
+		if rec := a.downloads[downloadKey(item.StationID, item.Start)]; rec != nil {
+			rec.item.ID = item.ID
+			rec.item.End = item.End
+			rec.item.RuleName = item.RuleName
+			rec.item.Manual = item.Manual
+		}
+	}
 }
 
 func applyRecord(item *DownloadItem, rec *downloadRecord) {

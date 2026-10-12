@@ -201,3 +201,30 @@ func TestCoreDownloadEventsAreRecorded(t *testing.T) {
 		t.Errorf("events = %v, want %s", events.names(), downloadsChangedEvent)
 	}
 }
+
+func TestRecentDownloadsKeepScheduleDetails(t *testing.T) {
+	dir := t.TempDir()
+	app := NewApp()
+	app.asset = &radikron.Asset{
+		OutputFormat: radikron.AudioFormatAAC,
+		DownloadDir:  dir,
+		Schedules: radikron.Schedules{
+			{ID: "p", StationID: "TBS", Title: "Show", Ft: "29990101100000", To: "29990101110000", RuleName: "news"},
+		},
+	}
+	app.recordDownloadEvent("download-started", map[string]any{"station": "TBS", "title": "Show", "start": "29990101100000"}, time.Now())
+	if _, err := app.GetDownloads(); err != nil {
+		t.Fatal(err)
+	}
+	// The download completes and the program leaves the schedule.
+	app.recordDownloadEvent("download-completed", map[string]any{"station": "TBS", "title": "Show", "start": "29990101100000"}, time.Now())
+	app.asset.Schedules = nil
+
+	downloads, err := app.GetDownloads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(downloads.Recent) != 1 || downloads.Recent[0].End != "29990101110000" || downloads.Recent[0].RuleName != "news" {
+		t.Fatalf("recent = %+v, want the schedule's end time and rule", downloads.Recent)
+	}
+}
