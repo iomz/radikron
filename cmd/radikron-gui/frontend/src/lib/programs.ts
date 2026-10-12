@@ -29,3 +29,74 @@ export function programAction(ft: string, to: string, now: Date = new Date()): P
   }
   return 'schedule';
 }
+
+interface RuleLike {
+  Name?: string;
+  StationID?: string;
+  Title?: string;
+  Pfm?: string;
+  Keyword?: string;
+}
+
+interface ProgramLike {
+  StationID: string;
+  Title: string;
+  Pfm?: string;
+  Desc?: string;
+}
+
+// suggestRuleName picks the first rule that would match the program, so its
+// folder is preselected when the program is downloaded by hand. It returns ""
+// when none matches.
+export function suggestRuleName(rules: RuleLike[], prog: ProgramLike): string {
+  const match = rules.find((rule) => {
+    if (rule.StationID && rule.StationID !== prog.StationID) return false;
+    if (rule.Title && !prog.Title.includes(rule.Title)) return false;
+    if (rule.Pfm && rule.Pfm !== prog.Pfm) return false;
+    if (rule.Keyword && !prog.Title.includes(rule.Keyword) && !prog.Desc?.includes(rule.Keyword)) return false;
+    return Boolean(rule.Title || rule.Pfm || rule.Keyword);
+  });
+  return match?.Name ?? '';
+}
+
+// Parts of the broadcast day for the Search time filter, by broadcast hour
+// (radiko counts 00:00–04:59 as 24–28 of the previous day).
+export const dayParts = [
+  { id: 'morning', label: 'Morning (5–12)', from: 5, to: 12 },
+  { id: 'afternoon', label: 'Afternoon (12–18)', from: 12, to: 18 },
+  { id: 'evening', label: 'Evening (18–24)', from: 18, to: 24 },
+  { id: 'late', label: 'Late night (24–29)', from: 24, to: 29 },
+] as const;
+
+export type DayPart = (typeof dayParts)[number]['id'];
+
+function broadcastHour(ft: string): number {
+  const hour = Number(ft.slice(8, 10));
+  return hour < 5 ? hour + 24 : hour;
+}
+
+interface ResultFilter {
+  // Broadcast day "YYYYMMDD", or "" for any day.
+  day: string;
+  part: DayPart | '';
+}
+
+// filterResults keeps the programs Radikron can still download that air on
+// the chosen broadcast day and part of the day.
+export function filterResults<T extends { Ft: string; To: string }>(
+  progs: T[],
+  filter: ResultFilter,
+  dayOf: (ft: string) => string | null,
+  now: Date = new Date(),
+): T[] {
+  const part = dayParts.find((p) => p.id === filter.part);
+  return progs.filter((prog) => {
+    if (programAction(prog.Ft, prog.To, now) === 'expired') return false;
+    if (filter.day && dayOf(prog.Ft) !== filter.day) return false;
+    if (part) {
+      const hour = broadcastHour(prog.Ft);
+      if (hour < part.from || hour >= part.to) return false;
+    }
+    return true;
+  });
+}

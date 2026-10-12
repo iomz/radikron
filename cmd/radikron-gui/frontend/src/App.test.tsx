@@ -22,7 +22,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
 vi.mock('@/components/screens/Overview', () => ({ Overview: () => <div>Dashboard content</div> }));
 vi.mock('@/components/RulesEditor', () => ({ RulesEditor: () => <div>Rules content</div> }));
 vi.mock('@/components/screens/Downloads', () => ({ Downloads: () => <div>Schedules content</div> }));
-vi.mock('@/components/ProgramSearchBrowser', () => ({ ProgramSearchBrowser: () => <div>Programs content</div> }));
+vi.mock('@/components/screens/Search', () => ({ Search: () => <div>Programs content</div> }));
 vi.mock('@/components/ThemeToggle', () => ({ ThemeToggle: () => <button>Theme</button> }));
 vi.mock('@/components/Settings', () => ({ Settings: () => <div>Settings content</div> }));
 vi.mock('@/components/Timetable', () => ({ Timetable: () => <div>Timetable content</div> }));

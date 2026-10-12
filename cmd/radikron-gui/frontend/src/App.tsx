@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Overview } from "@/components/screens/Overview";
 import { RulesEditor } from "@/components/RulesEditor";
 import { Downloads } from "@/components/screens/Downloads";
-import { ProgramSearchBrowser } from "@/components/ProgramSearchBrowser";
+import { Search } from "@/components/screens/Search";
 import { Settings } from "@/components/Settings";
 import { Timetable } from "@/components/Timetable";
 import { AppShell } from "@/components/shell/AppShell";
@@ -208,7 +208,7 @@ const AppComponent: React.FC = () => {
           {screen === "overview" && <Overview onNavigate={setScreen} />}
           {screen === "downloads" && <Downloads />}
           {screen === "timetable" && <Timetable />}
-          {screen === "search" && <ProgramSearchBrowser />}
+          {screen === "search" && <Search />}
           {screen === "rules" && <RulesEditor />}
           {screen === "settings" && <Settings />}
         </AppShell>
