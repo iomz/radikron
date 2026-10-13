@@ -1,6 +1,6 @@
 # radikron
 
-![radikron](https://i.imgur.com/S0NIoIW.png)
+<img src="cmd/radikron-gui/build/appicon.svg" alt="radikron" width="128">
 
 [![build status](https://github.com/iomz/radikron/workflows/build/badge.svg)](https://github.com/iomz/radikron/actions?query=workflow%3Abuild)
 [![docker status](https://github.com/iomz/radikron/actions/workflows/docker.yml/badge.svg)](https://github.com/iomz/radikron/actions/workflows/docker.yml)
