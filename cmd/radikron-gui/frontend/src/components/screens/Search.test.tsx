@@ -82,6 +82,23 @@ describe('Search', () => {
     await waitFor(() => expect(backend.InjectProgram).toHaveBeenCalledWith(expect.objectContaining({ ID: 'future' }), ''));
   });
 
+  it('shows the description, info, and tags of an expanded result', async () => {
+    backend.SearchWeeklyPrograms.mockResolvedValue([
+      { ...results[1], Info: '<p>Guest: ハマ・オカモト</p>', Tags: ['音楽'] },
+    ] as SearchResult);
+    await searchFor('ハマ');
+
+    fireEvent.click(await screen.findByRole('button', { name: /Future Show/ }));
+    expect(screen.getByText('音楽')).toBeTruthy();
+    // The description and info start collapsed so the actions stay in view.
+    const details = screen.getByText('Description').closest('details')!;
+    expect(details.open).toBe(false);
+    fireEvent.click(screen.getByText('Description'));
+    expect(details.open).toBe(true);
+    expect(screen.getByText('About it')).toBeTruthy();
+    expect(screen.getByText('Guest: ハマ・オカモト')).toBeTruthy();
+  });
+
   it('creates a rule from a result', async () => {
     backend.SearchWeeklyPrograms.mockResolvedValue(results);
     backend.RuleFromProgram.mockResolvedValue({ Name: 'Future Show', Title: 'Future Show', StationID: 'TBS' } as Rule);
