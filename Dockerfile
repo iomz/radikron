@@ -27,9 +27,9 @@ WORKDIR /app
 COPY --from=build /build/radikron /app/radikron
 
 # set timezone
-ENV TZ "Asia/Tokyo"
+ENV TZ=Asia/Tokyo
 # set the default download dir
 VOLUME ["/radiko"]
 
 ENTRYPOINT ["/app/radikron"]
-CMD ["-c", "/app/config.yml"]
+CMD ["--config", "/app/config.yml"]

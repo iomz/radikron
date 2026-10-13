@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -17,18 +16,15 @@ import (
 
 func TestMainPrintsVersion(t *testing.T) {
 	oldArgs := os.Args
-	oldCommandLine := flag.CommandLine
 	oldStdout := os.Stdout
 	oldVersion := version
 	t.Cleanup(func() {
 		os.Args = oldArgs
-		flag.CommandLine = oldCommandLine
 		os.Stdout = oldStdout
 		version = oldVersion
 	})
 
 	os.Args = []string{"radikron", "-v"}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	version = "v1.2.3-test"
 
 	reader, writer, err := os.Pipe()

@@ -38,7 +38,7 @@ func currentVersion() string {
 	return version
 }
 
-// runUpdateCommand handles -check-update and -self-update.
+// runUpdateCommand handles --check-update and --self-update.
 func runUpdateCommand(apply bool, current string) error {
 	src, err := update.NewClient(current)
 	if err != nil {
@@ -74,7 +74,7 @@ func checkUpdate(ctx context.Context, w io.Writer, src releaseSource, current st
 	if selfUpdate == "disabled" {
 		fmt.Fprintln(w, "Self-update is disabled in this build; update it the way you installed it.")
 	} else {
-		fmt.Fprintln(w, "Run `radikron -self-update` to install it.")
+		fmt.Fprintln(w, "Run `radikron --self-update` to install it.")
 	}
 	return nil
 }
