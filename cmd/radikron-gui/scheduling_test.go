@@ -32,6 +32,14 @@ func (f *fakeDownloads) download(ctx context.Context, _ *sync.WaitGroup, prog *r
 
 var showProg = &radikron.Prog{ID: "p1", StationID: "TBS", Title: "Show", Ft: "29990101100000", To: "29990101110000"}
 
+// useDownloadsFile saves app's downloads in a temporary file, and waits for
+// background saves before the file's directory is removed.
+func useDownloadsFile(t *testing.T, app *App) {
+	t.Helper()
+	app.downloadsFile = filepath.Join(t.TempDir(), "downloads.json")
+	t.Cleanup(app.downloadsSaves.Wait)
+}
+
 func processOnce(app *App, f *fakeDownloads) {
 	prog := *showProg
 	app.processProgram(&programWithStation{prog: &prog, stationID: "TBS"}, app.asset, context.Background(), map[string]bool{}, f.download)
@@ -84,7 +92,7 @@ func TestRemovingARuleDropsItsScheduledPrograms(t *testing.T) {
 
 func TestSkipCancelsAndOutlivesARestart(t *testing.T) {
 	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Show", Criteria: radikron.Criteria{Title: "Show"}}})
-	app.downloadsFile = filepath.Join(t.TempDir(), "downloads.json")
+	useDownloadsFile(t, app)
 	f := &fakeDownloads{app: app, start: true}
 	processOnce(app, f)
 
@@ -130,7 +138,7 @@ func TestSkipCancelsAndOutlivesARestart(t *testing.T) {
 
 func TestFinishedDownloadsOutliveARestart(t *testing.T) {
 	app := NewApp()
-	app.downloadsFile = filepath.Join(t.TempDir(), "downloads.json")
+	useDownloadsFile(t, app)
 	now := time.Now()
 	event := func(name, title, start string, at time.Time, extra ...string) {
 		data := map[string]any{"station": "TBS", "title": title, "start": start}
@@ -206,7 +214,7 @@ func TestBothPartsOfASplitProgramCanBeAddedFromSearch(t *testing.T) {
 
 func TestClearHistoryForgetsFinishedAndSkippedDownloads(t *testing.T) {
 	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Show", Criteria: radikron.Criteria{Title: "Show"}}})
-	app.downloadsFile = filepath.Join(t.TempDir(), "downloads.json")
+	useDownloadsFile(t, app)
 	now := time.Now()
 	event := func(name, start string, extra ...string) {
 		data := map[string]any{"station": "TBS", "title": "Show", "start": start}

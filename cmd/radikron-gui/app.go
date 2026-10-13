@@ -113,6 +113,7 @@ type App struct {
 	downloadsFile          string                     // where downloads and skipped are saved
 	downloadsMu            sync.Mutex                 // guards downloads, active, skipped, downloadsFile; never held with mu
 	downloadsSaveMu        sync.Mutex                 // serializes writes of downloadsFile
+	downloadsSaves         sync.WaitGroup             // background saves of downloadsFile
 	mu                     sync.RWMutex
 
 	// Test seams; nil uses the real implementation.

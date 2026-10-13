@@ -145,7 +145,9 @@ func (a *App) saveDownloadsFile() error {
 // saveDownloadsFileInBackground saves without blocking the caller, logging a
 // failure.
 func (a *App) saveDownloadsFileInBackground() {
+	a.downloadsSaves.Add(1)
 	go func() {
+		defer a.downloadsSaves.Done()
 		if err := a.saveDownloadsFile(); err != nil {
 			a.logger.Error(fmt.Sprintf("Failed to save download history: %v", err))
 		}
