@@ -31,6 +31,11 @@ describe('suggestRuleName', () => {
     ).toBe('Jazz');
     expect(suggestRuleName([{ Name: 'Rock', Keyword: 'rock' }], prog)).toBe('');
   });
+
+  it('matches a keyword in the host or info as the backend does', () => {
+    expect(suggestRuleName([{ Name: 'By host', Keyword: 'Host' }], prog)).toBe('By host');
+    expect(suggestRuleName([{ Name: 'By info', Keyword: 'live' }], { ...prog, Info: 'live session' })).toBe('By info');
+  });
 });
 
 describe('filterResults', () => {

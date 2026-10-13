@@ -43,6 +43,7 @@ interface ProgramLike {
   Title: string;
   Pfm?: string;
   Desc?: string;
+  Info?: string;
 }
 
 // suggestRuleName picks the first rule that would match the program, so its
@@ -53,7 +54,8 @@ export function suggestRuleName(rules: RuleLike[], prog: ProgramLike): string {
     if (rule.StationID && rule.StationID !== prog.StationID) return false;
     if (rule.Title && !prog.Title.includes(rule.Title)) return false;
     if (rule.Pfm && rule.Pfm !== prog.Pfm) return false;
-    if (rule.Keyword && !prog.Title.includes(rule.Keyword) && !prog.Desc?.includes(rule.Keyword)) return false;
+    // The same fields the backend's keyword match searches.
+    if (rule.Keyword && ![prog.Title, prog.Pfm, prog.Info, prog.Desc].some((field) => field?.includes(rule.Keyword!))) return false;
     return Boolean(rule.Title || rule.Pfm || rule.Keyword);
   });
   return match?.Name ?? '';

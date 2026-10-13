@@ -261,3 +261,16 @@ func TestAProgramWhoseFileExistsShowsAsDownloaded(t *testing.T) {
 		t.Error("each later check updated the record again")
 	}
 }
+
+func TestUndoSkipKeepsTheSkipWhenAddingFails(t *testing.T) {
+	app, _ := ruleTestApp(t, nil)
+	key := downloadKey("TBS", "not-a-time")
+	app.skipped = map[string]*skippedProgram{}
+	app.skipped[key] = &skippedProgram{StationID: "TBS", Start: "not-a-time", Title: "Show", Manual: true}
+	if err := app.UndoSkip("TBS", "not-a-time"); err == nil {
+		t.Fatal("UndoSkip succeeded for a program that cannot be added")
+	}
+	if app.skipped[key] == nil {
+		t.Error("a failed undo dropped the skip")
+	}
+}

@@ -477,7 +477,15 @@ export const Settings: React.FC = () => {
               >
                 {saveError ?? 'You have unsaved changes.'}
               </span>
-              <button type="button" className={secondaryButton} onClick={() => setDraft(saved)} disabled={busy}>
+              <button
+                type="button"
+                className={secondaryButton}
+                onClick={() => {
+                  setDraft(saved);
+                  setSaveError(null);
+                }}
+                disabled={busy}
+              >
                 Discard
               </button>
               <button type="submit" className={primaryButton} disabled={busy}>

@@ -201,7 +201,7 @@ export const Overview: React.FC<{ onNavigate: (screen: ScreenId) => void }> = ({
             <h2 id="recent-heading" className="m-0 text-[15px] font-semibold">
               Recent results
             </h2>
-            <span className="text-xs text-muted-foreground">Since Radikron started</span>
+            <span className="text-xs text-muted-foreground">Latest first</span>
           </div>
           {recent.length === 0 ? (
             <p className="m-0 border-t border-border py-3 text-muted-foreground">No downloads have finished yet.</p>

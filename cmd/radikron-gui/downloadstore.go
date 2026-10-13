@@ -235,6 +235,12 @@ func (a *App) UndoSkip(stationID, start string) error {
 			Title: skip.Title, RuleName: skip.RuleName, RuleFolder: skip.RuleFolder,
 		}
 		if err := a.InjectProgram(prog, skip.RuleName); err != nil {
+			// Keep the skip so the program stays listed and the undo can be
+			// tried again.
+			a.downloadsMu.Lock()
+			a.skipped[key] = skip
+			a.downloadsMu.Unlock()
+			a.saveDownloadsFileInBackground()
 			return err
 		}
 	} else {

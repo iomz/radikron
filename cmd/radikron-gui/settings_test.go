@@ -166,3 +166,25 @@ func TestImportConfigKeepsConfigWhenFileIsBad(t *testing.T) {
 		t.Errorf("a failed import changed the config: %+v", app.config)
 	}
 }
+
+func TestImportConfigRejectsInvalidRules(t *testing.T) {
+	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Old", Criteria: radikron.Criteria{Title: "Old"}}})
+	for name, rules := range map[string]radikron.Rules{
+		"no criteria": {{Name: "Empty"}},
+		"bad day":     {{Name: "Bad", Criteria: radikron.Criteria{Title: "Show", DoW: []string{"someday"}}}},
+		"same name":   {{Name: "Show", Criteria: radikron.Criteria{Title: "A"}}, {Name: " Show", Criteria: radikron.Criteria{Title: "B"}}},
+	} {
+		other := testConfig(t.TempDir())
+		other.Rules = rules
+		source := filepath.Join(t.TempDir(), "other.yml")
+		if err := other.SaveConfig(source); err != nil {
+			t.Fatal(err)
+		}
+		if err := app.importConfig(source); err == nil {
+			t.Errorf("%s: import succeeded", name)
+		}
+	}
+	if len(app.config.Rules) != 1 || app.config.Rules[0].Name != "Old" {
+		t.Errorf("a rejected import changed the rules: %+v", app.config.Rules)
+	}
+}

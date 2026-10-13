@@ -138,8 +138,13 @@ func (a *App) importConfig(path string) error {
 	if err := cleanSettings(&s); err != nil {
 		return fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
+	rules, err := cleanImportedRules(imported.Rules)
+	if err != nil {
+		return fmt.Errorf("%s: %w", filepath.Base(path), err)
+	}
 	if err := a.changeConfig(func(cfg *config.Config) error {
 		*cfg = *imported
+		cfg.Rules = rules
 		cfg.AreaID, cfg.DownloadDir, cfg.FileFormat = s.AreaID, s.DownloadDir, s.FileFormat
 		cfg.ExtraStations, cfg.IgnoreStations = s.ExtraStations, s.IgnoreStations
 		return nil
@@ -148,6 +153,26 @@ func (a *App) importConfig(path string) error {
 	}
 	a.emit("stations-loaded", nil)
 	return nil
+}
+
+// cleanImportedRules checks imported rules as the rule editor does and
+// rejects names used twice.
+func cleanImportedRules(rules radikron.Rules) (radikron.Rules, error) {
+	cleaned := make(radikron.Rules, 0, len(rules))
+	for _, rule := range rules {
+		r, err := cleanRule(rule)
+		if err != nil {
+			if rule != nil && rule.Name != "" {
+				return nil, fmt.Errorf("rule %q: %w", rule.Name, err)
+			}
+			return nil, err
+		}
+		if ruleIndex(cleaned, r.Name) >= 0 {
+			return nil, fmt.Errorf("two rules are named %q", r.Name)
+		}
+		cleaned = append(cleaned, r)
+	}
+	return cleaned, nil
 }
 
 // cleanSettings trims s, drops repeated stations, and rejects values the
