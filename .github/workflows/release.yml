@@ -77,6 +77,14 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: cmd/radikron-gui/frontend
 
+      - name: Select Xcode 26 or later
+        if: matrix.goos == 'darwin'
+        run: |
+          # actool from Xcode 26 compiles build/darwin/appicon.icon into
+          # Assets.car, the macOS 26 app icon.
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -iv beta | sort -V | tail -1)"
+          xcodebuild -version
+
       - name: Build GUI application
         working-directory: cmd/radikron-gui
         shell: bash
@@ -87,6 +95,10 @@ jobs:
           # and `wails3 build` shortcuts do not forward ARCH to the tasks.
           if [ "${{ matrix.goos }}" = "darwin" ]; then
             wails3 task package ARCH=${{ matrix.goarch }}
+            if [ ! -f bin/Radikron.app/Contents/Resources/Assets.car ]; then
+              echo "Radikron.app has no Assets.car; actool needs Xcode 26 or later"
+              exit 1
+            fi
           else
             wails3 task build ARCH=${{ matrix.goarch }}
           fi

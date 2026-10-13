@@ -4,8 +4,10 @@ build/bin/
 *.syso
 .task/
 
-# Generated from build/appicon.png by `wails3 task common:generate:icons`
+# Generated from build/appicon.png and build/darwin/appicon.icon by
+# `wails3 task common:generate:icons`
 build/darwin/icons.icns
+build/darwin/Assets.car
 build/windows/icon.ico
 
 # Downloaded by the NSIS packaging task
