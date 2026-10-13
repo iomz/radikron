@@ -8,10 +8,11 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
 
 ## Features
 
-- **Configuration Management**: Load and manage configuration files
-- **Station Browser**: View available radio stations
-- **Monitoring Control**: Start/stop the automatic monitoring and downloading
-- **Activity Log**: Real-time view of download activities
+- **Overview**: Next check, upcoming downloads, and recent results
+- **Downloads and Timetable**: Scheduled programs and their states, with cancel, skip, undo, and clearing the history
+- **Search**: Programs in radiko's past and coming week, downloaded or scheduled one at a time
+- **Rules**: Rule editor with a preview of matching programs
+- **Settings**: Download, station, and performance settings, config import and export, and the activity log
 - **Event System**: Real-time updates via Wails events
 
 ## Development

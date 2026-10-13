@@ -87,10 +87,16 @@ Manually add any program to the download queue (past or future), with persistent
 
 ### 🖱️ GUI Features {#gui-features}
 
-Configuration management, station browser, program search with filtering, scheduled downloads view, monitoring control, and real-time activity logs.
+- **Overview**: when the next check runs, what downloads next, and recent results
+- **Downloads**: every scheduled program with its state; cancel, skip, or undo a skip, and clear the history
+- **Timetable**: each station's broadcast day, colored by download state
+- **Search**: find programs in radiko's past and coming week as you type, then download, schedule, or turn one into a rule
+- **Rules**: edit rules with a live preview of the programs they match
+- **Settings**: download folder, format, area and stations, import and export the config file, and the activity log
+- Light and dark themes, and updates from GitHub Releases
 
-![config-editor](https://github.com/user-attachments/assets/4f3e0509-d669-4e48-8adf-da50827925ed)
-![program-search](https://github.com/user-attachments/assets/ba4741c9-37d8-4d20-ad8b-d6f2d21364bc)
+![Overview in the dark theme](docs/images/gui-dark.png)
+![Downloads in the light theme](docs/images/gui-light.png)
 
 ### 🐳 Docker Support {#docker-support}
 
@@ -372,23 +378,12 @@ For production use, consider running it as a systemd service or using a process 
 
 The GUI version provides a visual interface for managing radikron:
 
-1. **Launch the application**: Run the built binary or use `wails3 dev` for development
-2. **Load configuration**: Use the configuration panel to load your `config.yml` file
-3. **View stations**: Browse available radio stations in your region
-4. **Search programs**: Use the program search browser to find programs across all stations
-5. **Manual injection**: Add programs manually to the download queue (useful for one-off downloads or programs that don't match your rules)
-6. **View scheduled downloads**: See all scheduled downloads, including manual injections (marked with a "Manual" badge)
-7. **Start monitoring**: Click "Start Monitoring" to begin automatic downloading
-8. **Monitor activity**: Watch real-time updates in the activity log
-
-**Manual Injection Workflow**:
-
-- Search for programs using the program search browser
-- Click on a program to view details
-- Click "Inject" to add it to the download queue
-- Past programs will download immediately; future programs will be scheduled
-- View all scheduled downloads (including manual injections) in the Scheduled Downloads panel
-- Delete manual injections if needed (they will be removed from the queue)
+1. **Launch the application**: Radikron loads your config file and checks radiko for programs your rules match while it is open
+2. **Set up**: Choose the download folder, format, and area in **Settings**, or import an existing `config.yml` with **Import config…**
+3. **Add rules**: Create rules in **Rules**; the editor previews the programs each rule matches
+4. **Find programs**: Search radiko's past and coming week in **Search** and download or schedule a single program, or create a rule from it
+5. **Follow downloads**: See what is scheduled, downloading, done, or failed in **Downloads** and **Timetable**; skip a program to keep rules from downloading it
+6. **Check activity**: The activity log at the bottom of **Settings** shows what Radikron has done
 
 The GUI shares the same configuration format and behavior as the CLI version, so you can use the same `config.yml` file with both interfaces.
 
