@@ -155,16 +155,20 @@ tasks:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts
 
   generate:icons:
-    summary: Generates Windows `.ico` and Mac `.icns` from appicon.png
+    summary: Generates Windows `.ico` and Mac `.icns` from appicon.png, and Mac `Assets.car` from appicon.icon
     run: once
     dir: build
     sources:
       - "appicon.png"
+      - "darwin/appicon.icon/**/*"
     generates:
       - "darwin/icons.icns"
       - "windows/icon.ico"
     cmds:
-      - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
+      # With Xcode 26 or later, actool compiles the Icon Composer icon into
+      # Assets.car, the macOS 26 icon that also follows the tinted style. Elsewhere
+      # wails3 falls back to icons.icns from appicon.png.
+      - wails3 generate icons -input appicon.png -iconcomposerinput darwin/appicon.icon -macassetdir darwin -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
 
   dev:frontend:
     summary: Runs the frontend in development mode

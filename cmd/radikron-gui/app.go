@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goRuntime "runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1587,9 +1588,16 @@ func (a *App) applyFetchedStations(stations radikron.Stations, fetchErr error) (
 	if a.asset == nil {
 		return nil, fmt.Errorf("asset not initialized")
 	}
+	previous := slices.Clone(a.asset.AvailableStations)
 	available, err := applyStationCatalog(a.asset, a.config, stations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply station configuration: %w", err)
+	}
+	// Startup checks before the catalog arrives, when only stations named in
+	// the config are known; check again so rules see the area's stations.
+	slices.Sort(previous)
+	if !slices.Equal(previous, slices.Sorted(slices.Values(available))) {
+		a.signalConfigChanged()
 	}
 	return available, nil
 }

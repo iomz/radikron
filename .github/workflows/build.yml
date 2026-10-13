@@ -48,6 +48,13 @@ jobs:
       - name: Install Wails CLI
         if: runner.os != 'Linux'
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
+      - name: Select Xcode 26 or later
+        if: runner.os == 'macOS'
+        run: |
+          # actool from Xcode 26 compiles build/darwin/appicon.icon into
+          # Assets.car, the macOS 26 app icon.
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -iv beta | sort -V | tail -1)"
+          xcodebuild -version
       - name: Build GUI with Wails
         if: runner.os != 'Linux'
         working-directory: cmd/radikron-gui
@@ -57,6 +64,10 @@ jobs:
           # here instead of during a release.
           if [ "${{ runner.os }}" = "macOS" ]; then
             wails3 task package
+            if [ ! -f bin/Radikron.app/Contents/Resources/Assets.car ]; then
+              echo "Radikron.app has no Assets.car; actool needs Xcode 26 or later"
+              exit 1
+            fi
           else
             wails3 task build
           fi

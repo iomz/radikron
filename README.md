@@ -1,15 +1,22 @@
-# radikron
+<div align="center">
 
-![radikron](https://i.imgur.com/S0NIoIW.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="cmd/radikron-gui/build/appicon.svg">
+  <img src="cmd/radikron-gui/build/appicon-light.svg" alt="" width="128">
+</picture>
 
-[![build status](https://github.com/iomz/radikron/workflows/build/badge.svg)](https://github.com/iomz/radikron/actions?query=workflow%3Abuild)
-[![docker status](https://github.com/iomz/radikron/actions/workflows/docker.yml/badge.svg)](https://github.com/iomz/radikron/actions/workflows/docker.yml)
+# Radikron
 
-[![docker image size](https://ghcr-badge.egpl.dev/iomz/radikron/size)](https://github.com/iomz/radikron/pkgs/container/radikron)
-[![godoc](https://godoc.org/github.com/iomz/radikron?status.svg)](https://godoc.org/github.com/iomz/radikron)
+Keep your favorite radiko.jp shows before they leave the timeshift.
+
+[![release](https://img.shields.io/github/v/release/iomz/radikron)](https://github.com/iomz/radikron/releases/latest)
+[![build](https://github.com/iomz/radikron/actions/workflows/build.yml/badge.svg)](https://github.com/iomz/radikron/actions/workflows/build.yml)
+[![docker](https://github.com/iomz/radikron/actions/workflows/docker.yml/badge.svg)](https://github.com/iomz/radikron/actions/workflows/docker.yml)
 [![codecov](https://codecov.io/gh/iomz/radikron/branch/main/graph/badge.svg?token=fjhUp7BLPB)](https://codecov.io/gh/iomz/radikron)
-[![go report](https://goreportcard.com/badge/github.com/iomz/radikron)](https://goreportcard.com/report/github.com/iomz/radikron)
-[![license: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Go Reference](https://pkg.go.dev/badge/github.com/iomz/radikron.svg)](https://pkg.go.dev/github.com/iomz/radikron)
+[![license: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+
+</div>
 
 Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they get vanished from <http://radiko.jp/#!/timeshift> – let's just keep them automatically saved in your local disk, from AoE.
 
@@ -390,6 +397,8 @@ The GUI shares the same configuration format and behavior as the CLI version, so
 For detailed GUI setup and development instructions, see the [GUI README](cmd/radikron-gui/README.md).
 
 ### Try with Docker
+
+[![docker image size](https://ghcr-badge.egpl.dev/iomz/radikron/size)](https://github.com/iomz/radikron/pkgs/container/radikron)
 
 By default, it mounts `./config.yml` and `./radiko` to the container.
 

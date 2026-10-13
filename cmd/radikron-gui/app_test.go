@@ -287,6 +287,36 @@ func TestApplyStationCatalogPreservesAssetAndSchedulingState(t *testing.T) {
 	}
 }
 
+func TestFetchedStationsStartACheckWhenTheyChange(t *testing.T) {
+	app := NewApp()
+	app.asset = &radikron.Asset{}
+	app.config = testConfig(t.TempDir())
+	// Startup has no catalog yet, so the first check sees only the stations
+	// named in the config.
+	if err := app.config.ApplyToAsset(app.asset); err != nil {
+		t.Fatal(err)
+	}
+	catalog := radikron.Stations{"QRR": {Areas: []string{app.config.AreaID}}}
+
+	if _, err := app.applyFetchedStations(catalog, nil); err != nil {
+		t.Fatalf("applyFetchedStations() error: %v", err)
+	}
+	select {
+	case <-app.configChanged:
+	default:
+		t.Fatal("new stations did not start a check")
+	}
+
+	if _, err := app.applyFetchedStations(catalog, nil); err != nil {
+		t.Fatalf("applyFetchedStations() error: %v", err)
+	}
+	select {
+	case <-app.configChanged:
+		t.Fatal("an unchanged catalog started a check")
+	default:
+	}
+}
+
 func TestHasMonitoringCriteria(t *testing.T) {
 	tests := []struct {
 		name  string
