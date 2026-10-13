@@ -29,8 +29,8 @@ const (
 	// days while it monitors stations.
 	updateCheckInterval = 24 * time.Hour
 
-	signatureTimeout  = 30 * time.Second
-	maxSignatureBytes = 1 << 10
+	signatureTimeout   = 30 * time.Second
+	maxSignaturesBytes = 64 << 10
 )
 
 // buildConfig is the Wails build configuration. Its info.version is the GUI
@@ -57,13 +57,15 @@ func guiVersion() (string, error) {
 }
 
 // guiAssetName returns the release asset that updates the GUI on goos/goarch,
-// or "" when releases ship no GUI update for that platform. The names follow
-// release.yml; installer packages (-installer.dmg) are for first installs only.
+// or "" when releases ship no GUI update for that platform. Releases ship the
+// GUI for Apple Silicon Macs and 64-bit x86 Windows only; the names follow
+// release.yml, and installer packages (-installer.dmg) are for first installs
+// only.
 func guiAssetName(goos, goarch string) string {
-	switch goos {
-	case "darwin":
+	switch goos + "/" + goarch {
+	case "darwin/arm64":
 		return guiAssetPrefix + goos + "_" + goarch + ".app.zip"
-	case "windows":
+	case "windows/amd64":
 		return guiAssetPrefix + goos + "_" + goarch + ".exe"
 	}
 	return ""
@@ -86,11 +88,11 @@ func matchGUIAsset(req updater.CheckRequest, assets []github.ReleaseAsset) int {
 }
 
 // signedProvider adds signature verification to the Wails GitHub provider,
-// which only understands checksum sidecars. Every release asset has a
-// detached "<asset>.sig" (ECDSA P-256 over SHA-256, DER encoded); Check
-// attaches it so the Updater verifies the download against the embedded
-// release key. A release without a signature is reported as an error, never
-// as an unverified update.
+// which only understands checksum sidecars. The release's signatures.txt
+// lists every asset's signature (ECDSA P-256 over SHA-256, DER encoded);
+// Check attaches the update asset's signature so the Updater verifies the
+// download against the embedded release key. A release without a signature
+// is reported as an error, never as an unverified update.
 type signedProvider struct {
 	*github.Provider
 	client *http.Client
@@ -113,7 +115,14 @@ func (p *signedProvider) Check(ctx context.Context, req updater.CheckRequest) (*
 	if assetURL == "" {
 		return nil, errors.New("github release metadata has no asset URL")
 	}
-	sig, err := p.fetchSignature(ctx, assetURL+".sig")
+	// Release assets share one download directory, so signatures.txt sits
+	// next to the update asset.
+	signaturesURL := assetURL[:strings.LastIndex(assetURL, "/")+1] + releasekey.SignaturesAsset
+	signatures, err := p.fetchSignatures(ctx, signaturesURL)
+	if err != nil {
+		return nil, fmt.Errorf("signature for %s: %w", rel.Artifact.Filename, err)
+	}
+	sig, err := releasekey.Signature(signatures, rel.Artifact.Filename)
 	if err != nil {
 		return nil, fmt.Errorf("signature for %s: %w", rel.Artifact.Filename, err)
 	}
@@ -124,7 +133,7 @@ func (p *signedProvider) Check(ctx context.Context, req updater.CheckRequest) (*
 	return rel, nil
 }
 
-func (p *signedProvider) fetchSignature(ctx context.Context, url string) ([]byte, error) {
+func (p *signedProvider) fetchSignatures(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
@@ -140,20 +149,21 @@ func (p *signedProvider) fetchSignature(ctx context.Context, url string) ([]byte
 		// uploading assets.
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	sig, err := io.ReadAll(io.LimitReader(resp.Body, maxSignatureBytes+1))
+	signatures, err := io.ReadAll(io.LimitReader(resp.Body, maxSignaturesBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(sig) == 0 || len(sig) > maxSignatureBytes {
-		return nil, fmt.Errorf("unexpected signature size %d", len(sig))
+	if len(signatures) > maxSignaturesBytes {
+		return nil, fmt.Errorf("%s is larger than %d bytes", releasekey.SignaturesAsset, maxSignaturesBytes)
 	}
-	return sig, nil
+	return signatures, nil
 }
 
 // canSelfUpdate reports whether this build can replace itself with a release
-// asset: releases ship GUI updates for macOS and Windows only, and on macOS
-// the Updater swaps the whole .app bundle, so a bare binary (for example
-// bin/radikron-gui from a development build) is not updated.
+// asset: releases ship GUI updates for Apple Silicon Macs and x86-64 Windows
+// only, and on macOS the Updater swaps the whole .app bundle, so a bare
+// binary (for example bin/radikron-gui from a development build) is not
+// updated.
 func canSelfUpdate(goos, goarch, exe string) bool {
 	if guiAssetName(goos, goarch) == "" {
 		return false

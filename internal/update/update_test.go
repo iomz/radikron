@@ -10,8 +10,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -75,14 +77,19 @@ func newKey(t *testing.T) *ecdsa.PrivateKey {
 	return key
 }
 
-func sign(t *testing.T, key *ecdsa.PrivateKey, data []byte) []byte {
+// signatures returns a signatures.txt that signs each named asset with key.
+func signatures(t *testing.T, key *ecdsa.PrivateKey, assets map[string][]byte) []byte {
 	t.Helper()
-	digest := sha256.Sum256(data)
-	sig, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
-	if err != nil {
-		t.Fatal(err)
+	var buf bytes.Buffer
+	for name, data := range assets {
+		digest := sha256.Sum256(data)
+		sig, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&buf, "%s  %s\n", base64.StdEncoding.EncodeToString(sig), name)
 	}
-	return sig
+	return buf.Bytes()
 }
 
 // fakeGitHub serves a "latest release" with the given assets.
@@ -150,7 +157,6 @@ func TestArchiveName(t *testing.T) {
 	tests := []struct{ goos, goarch, want string }{
 		{"darwin", "arm64", "radikron_Darwin_arm64.tar.gz"},
 		{"darwin", "amd64", "radikron_Darwin_x86_64.tar.gz"},
-		{"linux", "386", "radikron_Linux_i386.tar.gz"},
 		{"linux", "arm64", "radikron_Linux_arm64.tar.gz"},
 		{"windows", "amd64", "radikron_Windows_x86_64.zip"},
 		{"windows", "arm64", "radikron_Windows_arm64.zip"},
@@ -170,8 +176,8 @@ func TestLatestAndApplyTarGz(t *testing.T) {
 	)
 	name := ArchiveName("linux", "amd64")
 	srv := fakeGitHub(t, "v0.11.0", map[string][]byte{
-		name:          archive,
-		name + ".sig": sign(t, key, archive),
+		name:             archive,
+		"signatures.txt": signatures(t, key, map[string][]byte{name: archive}),
 		// GUI assets in the same release must not be picked up.
 		"radikron-gui_windows_amd64.exe": []byte("gui"),
 	})
@@ -211,8 +217,8 @@ func TestApplyWindowsZip(t *testing.T) {
 	archive := makeZip(t, testFile{"radikron.exe", []byte("new binary")})
 	name := ArchiveName("windows", "amd64")
 	srv := fakeGitHub(t, "v0.11.0", map[string][]byte{
-		name:          archive,
-		name + ".sig": sign(t, key, archive),
+		name:             archive,
+		"signatures.txt": signatures(t, key, map[string][]byte{name: archive}),
 	})
 	c := testClient(srv, key, "windows")
 	rel, err := c.Latest(context.Background())
@@ -242,8 +248,8 @@ func TestApplyRejectsWrongSignature(t *testing.T) {
 	archive := makeTarGz(t, testFile{"radikron", []byte("evil binary")})
 	name := ArchiveName("linux", "amd64")
 	srv := fakeGitHub(t, "v0.11.0", map[string][]byte{
-		name:          archive,
-		name + ".sig": sign(t, otherKey, archive),
+		name:             archive,
+		"signatures.txt": signatures(t, otherKey, map[string][]byte{name: archive}),
 	})
 	c := testClient(srv, key, "linux")
 	rel, err := c.Latest(context.Background())
@@ -284,13 +290,36 @@ func TestApplyWithoutSignatureIsNotReady(t *testing.T) {
 	}
 }
 
+func TestApplyWithoutArchiveSignatureFails(t *testing.T) {
+	key := newKey(t)
+	archive := makeTarGz(t, testFile{"radikron", []byte("new binary")})
+	name := ArchiveName("linux", "amd64")
+	srv := fakeGitHub(t, "v0.11.0", map[string][]byte{
+		name: archive,
+		// signatures.txt exists but does not list this archive.
+		"signatures.txt": signatures(t, key, map[string][]byte{"checksums.txt": []byte("sums")}),
+	})
+	c := testClient(srv, key, "linux")
+	rel, err := c.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe := writeExe(t, "radikron")
+	if err := c.Apply(context.Background(), rel, exe); err == nil {
+		t.Fatal("Apply() installed an archive without a signature")
+	}
+	if got := readFile(t, exe); got != "old binary" {
+		t.Errorf("executable changed to %q after a rejected update", got)
+	}
+}
+
 func TestApplyFollowsSymlink(t *testing.T) {
 	key := newKey(t)
 	archive := makeTarGz(t, testFile{"radikron", []byte("new binary")})
 	name := ArchiveName("linux", "amd64")
 	srv := fakeGitHub(t, "v0.11.0", map[string][]byte{
-		name:          archive,
-		name + ".sig": sign(t, key, archive),
+		name:             archive,
+		"signatures.txt": signatures(t, key, map[string][]byte{name: archive}),
 	})
 	c := testClient(srv, key, "linux")
 	rel, err := c.Latest(context.Background())

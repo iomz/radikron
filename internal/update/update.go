@@ -1,9 +1,9 @@
 // Package update checks GitHub Releases for a newer radikron CLI and replaces
 // the running executable with a verified release build.
 //
-// Every downloaded archive must carry a "<asset>.sig" signature that verifies
-// against the key embedded by internal/releasekey; an unsigned or tampered
-// archive is never installed.
+// Every downloaded archive must have a signature in the release's
+// signatures.txt that verifies against the key embedded by
+// internal/releasekey; an unsigned or tampered archive is never installed.
 package update
 
 import (
@@ -28,9 +28,9 @@ const (
 	httpTimeout       = 5 * time.Minute
 
 	// Limits guard against a hostile or broken server streaming forever.
-	maxMetadataSize = 1 << 20
-	maxArchiveSize  = 256 << 20
-	maxSignatureLen = 1 << 10
+	maxMetadataSize   = 1 << 20
+	maxArchiveSize    = 256 << 20
+	maxSignaturesSize = 64 << 10
 )
 
 // ErrAssetNotReady means the newest release has no archive for this
@@ -42,8 +42,8 @@ type Release struct {
 	Version string // without the leading "v"
 	URL     string // release page
 
-	archive   asset
-	signature asset
+	archive    asset
+	signatures asset
 }
 
 type asset struct {
@@ -84,11 +84,8 @@ func NewClient(currentVersion string) (*Client, error) {
 // the name_template in .goreleaser.yml.
 func ArchiveName(goos, goarch string) string {
 	arch := goarch
-	switch goarch {
-	case "amd64":
+	if goarch == "amd64" {
 		arch = "x86_64"
-	case "386":
-		arch = "i386"
 	}
 	ext := ".tar.gz"
 	if goos == "windows" {
@@ -128,8 +125,8 @@ func (c *Client) Latest(ctx context.Context) (*Release, error) {
 		switch a.Name {
 		case name:
 			rel.archive = a
-		case name + ".sig":
-			rel.signature = a
+		case releasekey.SignaturesAsset:
+			rel.signatures = a
 		}
 	}
 	return rel, nil
@@ -138,16 +135,20 @@ func (c *Client) Latest(ctx context.Context) (*Release, error) {
 // Apply downloads the release archive for this platform, verifies its
 // signature, and replaces the executable at exePath with the binary inside.
 func (c *Client) Apply(ctx context.Context, rel *Release, exePath string) error {
-	if rel.archive.URL == "" || rel.signature.URL == "" {
+	if rel.archive.URL == "" || rel.signatures.URL == "" {
 		return ErrAssetNotReady
 	}
 	archive, err := c.get(ctx, rel.archive.URL, "application/octet-stream", maxArchiveSize)
 	if err != nil {
 		return err
 	}
-	sig, err := c.get(ctx, rel.signature.URL, "application/octet-stream", maxSignatureLen)
+	signatures, err := c.get(ctx, rel.signatures.URL, "application/octet-stream", maxSignaturesSize)
 	if err != nil {
 		return err
+	}
+	sig, err := releasekey.Signature(signatures, rel.archive.Name)
+	if err != nil {
+		return fmt.Errorf("update: %w", err)
 	}
 	digest := sha256.Sum256(archive)
 	if !ecdsa.VerifyASN1(c.PublicKey, digest[:], sig) {
