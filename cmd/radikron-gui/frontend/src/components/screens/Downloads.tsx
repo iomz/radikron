@@ -15,6 +15,8 @@ import {
 import { StateChip } from '@/components/StateChip';
 import { ProgramDetailsDialog } from '@/components/ProgramDetailsDialog';
 import { DownloadActionButton } from '@/components/DownloadActionButton';
+import { ClearHistoryButton } from '@/components/ClearHistoryButton';
+import { secondaryButton } from '@/components/form';
 import { cn } from '@/lib/utils';
 import type { DownloadItem } from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
 
@@ -41,25 +43,26 @@ export const Downloads: React.FC = () => {
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="m-0 text-[28px] font-semibold">Downloads</h1>
-        <div role="group" aria-label="Filter by state" className="flex flex-wrap gap-1.5">
-          {downloadFilters.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              aria-pressed={filter === f.id}
-              onClick={() => setFilter(f.id)}
-              className={cn(
-                'min-h-9 cursor-pointer rounded-full px-3.5 text-[13px]',
-                filter === f.id
-                  ? 'border border-signal bg-signal/10 text-signal'
-                  : 'border border-input bg-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {f.label} {counts[f.id]}
-            </button>
-          ))}
-        </div>
+        <ClearHistoryButton className={secondaryButton} />
       </header>
+      <div role="group" aria-label="Filter by state" className="flex flex-wrap gap-1.5">
+        {downloadFilters.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            aria-pressed={filter === f.id}
+            onClick={() => setFilter(f.id)}
+            className={cn(
+              'min-h-9 cursor-pointer rounded-full px-3.5 text-[13px]',
+              filter === f.id
+                ? 'border border-signal bg-signal/10 text-signal'
+                : 'border border-input bg-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {f.label} {counts[f.id]}
+          </button>
+        ))}
+      </div>
 
       {shown.length === 0 ? (
         <p className="m-0 rounded-[14px] border border-border px-5 py-8 text-center text-muted-foreground">

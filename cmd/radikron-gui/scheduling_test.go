@@ -203,3 +203,61 @@ func TestBothPartsOfASplitProgramCanBeAddedFromSearch(t *testing.T) {
 		t.Error("the second part is not a manual injection")
 	}
 }
+
+func TestClearHistoryForgetsFinishedAndSkippedDownloads(t *testing.T) {
+	app, _ := ruleTestApp(t, radikron.Rules{{Name: "Show", Criteria: radikron.Criteria{Title: "Show"}}})
+	app.downloadsFile = filepath.Join(t.TempDir(), "downloads.json")
+	now := time.Now()
+	event := func(name, start string, extra ...string) {
+		data := map[string]any{"station": "TBS", "title": "Show", "start": start}
+		if len(extra) > 0 {
+			data["error"] = extra[0]
+		}
+		app.recordDownloadEvent(name, data, now)
+	}
+	event("download-completed", "20261011200000")
+	event("download-failed", "20261011210000", "HTTP 403")
+	event("download-started", "20261011220000")
+	processOnce(app, &fakeDownloads{app: app})
+	if err := app.SkipDownload("TBS", showProg.Ft); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.ClearHistory(); err != nil {
+		t.Fatal(err)
+	}
+	if len(app.skipped) != 0 {
+		t.Errorf("skipped = %+v, want none", app.skipped)
+	}
+	if len(app.downloads) != 1 || app.downloads[downloadKey("TBS", "20261011220000")] == nil {
+		t.Errorf("downloads = %+v, want only the one in progress", app.downloads)
+	}
+	restarted := NewApp()
+	if err := restarted.loadDownloadsFile(app.downloadsFile, now); err != nil {
+		t.Fatal(err)
+	}
+	if len(restarted.downloads) != 0 || len(restarted.skipped) != 0 {
+		t.Errorf("the saved history was not cleared: downloads=%d skipped=%d", len(restarted.downloads), len(restarted.skipped))
+	}
+}
+
+func TestAProgramWhoseFileExistsShowsAsDownloaded(t *testing.T) {
+	app := NewApp()
+	skip := func(reason string) (changed, finished bool) {
+		return app.recordDownloadEvent("download-skipped", map[string]any{
+			"reason": reason, "station": "TBS", "title": "Show", "start": "20261011200000",
+		}, time.Now())
+	}
+	if changed, _ := skip("not yet available"); changed {
+		t.Error("a program skipped for another reason was recorded")
+	}
+	if changed, finished := skip("already exists"); !changed || !finished {
+		t.Error("a program whose file exists was not recorded")
+	}
+	if rec := app.downloads[downloadKey("TBS", "20261011200000")]; rec == nil || rec.item.State != DownloadCompleted {
+		t.Fatalf("record = %+v, want completed", rec)
+	}
+	if changed, _ := skip("already exists"); changed {
+		t.Error("each later check updated the record again")
+	}
+}

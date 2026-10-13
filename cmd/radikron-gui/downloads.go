@@ -102,6 +102,23 @@ func (a *App) emitDownloadEvent(ctx context.Context, name string, data any) {
 	}
 }
 
+// eventState is the download state a core event reports, if any.
+func eventState(name, reason string) (DownloadState, bool) {
+	switch name {
+	case "download-started", "download-progress":
+		return DownloadDownloading, true
+	case "download-completed":
+		return DownloadCompleted, true
+	case "download-failed":
+		return DownloadFailed, true
+	case "download-skipped":
+		// The core skips a program whose file is already there; it was
+		// downloaded before, perhaps before the history was cleared.
+		return DownloadCompleted, strings.Contains(reason, "already exists")
+	}
+	return "", false
+}
+
 // recordDownloadEvent updates the download state from a core event. It
 // reports whether anything changed and whether a download finished, which
 // changes the saved history.
@@ -123,15 +140,8 @@ func (a *App) recordDownloadEvent(name string, data any, now time.Time) (changed
 		return false, false
 	}
 
-	var state DownloadState
-	switch name {
-	case "download-started", "download-progress":
-		state = DownloadDownloading
-	case "download-completed":
-		state = DownloadCompleted
-	case "download-failed":
-		state = DownloadFailed
-	default:
+	state, ok := eventState(name, text("reason"))
+	if !ok {
 		return false, false
 	}
 
@@ -152,6 +162,9 @@ func (a *App) recordDownloadEvent(name string, data any, now time.Time) (changed
 		return had, had
 	}
 	rec := a.downloads[key]
+	if name == "download-skipped" && rec != nil && rec.item.State == DownloadCompleted {
+		return false, false
+	}
 	if rec == nil {
 		rec = &downloadRecord{item: DownloadItem{StationID: stationID, Start: start}}
 		a.downloads[key] = rec

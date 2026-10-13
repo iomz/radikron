@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Browser } from '@wailsio/runtime';
 import { useAppStore } from '@/store/useAppStore';
 import { getAreaName, regionsData } from '@/lib/regions';
+import { ClearHistoryButton, historyCounts } from '@/components/ClearHistoryButton';
 import { SelectField, fieldClass, primaryButton, secondaryButton } from '@/components/form';
 import { cn } from '@/lib/utils';
 import * as App from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
@@ -23,6 +24,8 @@ const linkClass = 'cursor-pointer border-none bg-transparent p-0 text-signal hov
 
 // stationPage is the station's page on radiko.
 const stationPage = (stationID: string) => `https://radiko.jp/#!/live/${encodeURIComponent(stationID)}`;
+
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -148,6 +151,7 @@ export const Settings: React.FC = () => {
   const loadConfigInfo = useAppStore((state) => state.loadConfigInfo);
   const loadStations = useAppStore((state) => state.loadStations);
   const addActivityLog = useAppStore((state) => state.addActivityLog);
+  const history = historyCounts(useAppStore((state) => state.downloads));
 
   const [saved, setSaved] = useState<SettingsModel | null>(null);
   const [draft, setDraft] = useState<SettingsModel | null>(null);
@@ -483,6 +487,17 @@ export const Settings: React.FC = () => {
           )}
         </form>
       )}
+
+      <Card title="History">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <span className="text-muted-foreground">
+            {history.finished + history.skipped === 0
+              ? 'Radikron remembers no finished or skipped downloads.'
+              : `Radikron remembers ${plural(history.finished, 'finished download')} and ${plural(history.skipped, 'skipped program')}.`}
+          </span>
+          <ClearHistoryButton className={secondaryButton} />
+        </div>
+      </Card>
 
       <Card title="Activity log">
         <ActivityLog />

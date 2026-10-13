@@ -73,6 +73,16 @@ export function ChooseRuleFolder(current: string): $CancellablePromise<string | 
 }
 
 /**
+ * ClearHistory forgets finished downloads and skipped programs. Downloads in
+ * progress go on, and files stay on disk. A check starts now: rules may
+ * download programs that were skipped, and programs whose files are already
+ * there show as downloaded again.
+ */
+export function ClearHistory(): $CancellablePromise<void> {
+    return $Call.ByID(3429172794);
+}
+
+/**
  * DeleteManualInjection removes a manually injected program from schedules and persistence.
  * It removes the program from schedules, pending downloads, and the manual injections map,
  * then saves the updated state to disk.

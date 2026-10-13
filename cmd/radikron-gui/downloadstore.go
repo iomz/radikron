@@ -243,3 +243,25 @@ func (a *App) UndoSkip(stationID, start string) error {
 	a.emit(downloadsChangedEvent, nil)
 	return nil
 }
+
+// ClearHistory forgets finished downloads and skipped programs. Downloads in
+// progress go on, and files stay on disk. A check starts now: rules may
+// download programs that were skipped, and programs whose files are already
+// there show as downloaded again.
+func (a *App) ClearHistory() error {
+	a.downloadsMu.Lock()
+	for key, rec := range a.downloads {
+		if rec.item.State != DownloadDownloading {
+			delete(a.downloads, key)
+		}
+	}
+	a.skipped = make(map[string]*skippedProgram)
+	a.downloadsMu.Unlock()
+
+	if err := a.saveDownloadsFile(); err != nil {
+		return fmt.Errorf("failed to save download history: %w", err)
+	}
+	a.signalConfigChanged()
+	a.emit(downloadsChangedEvent, nil)
+	return nil
+}

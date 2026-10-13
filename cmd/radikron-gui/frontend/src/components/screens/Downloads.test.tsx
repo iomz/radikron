@@ -1,11 +1,12 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Backend from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import { useAppStore } from '@/store/useAppStore';
 import { Downloads } from './Downloads';
 
 vi.mock('../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app', () => ({
+  ClearHistory: vi.fn(),
   GetDownloads: vi.fn(),
   GetSchedules: vi.fn(),
   SkipDownload: vi.fn(),
@@ -90,5 +91,18 @@ describe('Downloads', () => {
     expect(screen.queryByRole('button', { name: 'Skip Live Show' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel Live Show' }));
     await waitFor(() => expect(backend.SkipDownload).toHaveBeenCalledWith('TBS', '29990101100000'));
+  });
+
+  it('clears the history after the user confirms', async () => {
+    backend.ClearHistory.mockResolvedValue(undefined);
+    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [], skipped: [] } as unknown as DownloadsData);
+    render(<Downloads />);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear history' }));
+    const dialog = screen.getByRole('dialog', { name: 'Clear the download history?' });
+    expect(backend.ClearHistory).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear history' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(backend.ClearHistory).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Clear history' }).hasAttribute('disabled')).toBe(true);
   });
 });

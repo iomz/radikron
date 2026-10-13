@@ -123,4 +123,13 @@ describe('Settings', () => {
     expect(useAppStore.getState().loadConfigInfo).toHaveBeenCalled();
     expect(screen.queryByText(/replaces your settings and rules/)).toBeNull();
   });
+
+  it('counts the remembered history', async () => {
+    useAppStore.setState({
+      downloads: { scheduled: [], recent: [{}, {}], skipped: [{}] } as unknown as ReturnType<typeof useAppStore.getState>['downloads'],
+    });
+    render(<Settings />);
+    expect(await screen.findByText('Radikron remembers 2 finished downloads and 1 skipped program.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Clear history' }).hasAttribute('disabled')).toBe(false);
+  });
 });

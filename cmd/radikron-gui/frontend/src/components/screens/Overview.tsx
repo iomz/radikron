@@ -6,6 +6,8 @@ import { getAreaName } from '@/lib/regions';
 import type { ScreenId } from '@/lib/navigation';
 import { StateChip } from '@/components/StateChip';
 import { DownloadActionButton } from '@/components/DownloadActionButton';
+import { ClearHistoryButton } from '@/components/ClearHistoryButton';
+import { secondaryButton } from '@/components/form';
 import { cn } from '@/lib/utils';
 import * as App from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
 import type { DownloadItem } from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
@@ -143,14 +145,17 @@ export const Overview: React.FC<{ onNavigate: (screen: ScreenId) => void }> = ({
           <h1 className="m-0 text-[28px] font-semibold leading-tight">{headline.title}</h1>
           {headline.detail && <span className="text-muted-foreground">{headline.detail}</span>}
         </div>
-        <button
-          type="button"
-          onClick={() => void App.CheckNow()}
-          disabled={!status?.monitoring || status.checking}
-          className="min-h-11 cursor-pointer rounded-[10px] border border-input bg-secondary px-[18px] disabled:cursor-default disabled:opacity-50"
-        >
-          Check now
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <ClearHistoryButton className={secondaryButton} />
+          <button
+            type="button"
+            onClick={() => void App.CheckNow()}
+            disabled={!status?.monitoring || status.checking}
+            className="min-h-11 cursor-pointer rounded-[10px] border border-input bg-secondary px-[18px] disabled:cursor-default disabled:opacity-50"
+          >
+            Check now
+          </button>
+        </div>
       </header>
 
       {errors.length > 0 && (
