@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -51,7 +52,8 @@ func TestRecordDownloadEventTracksLifecycle(t *testing.T) {
 		for k, v := range extra {
 			data[k] = v
 		}
-		return app.recordDownloadEvent(name, data, now)
+		changed, _ := app.recordDownloadEvent(name, data, now)
+		return changed
 	}
 	record := func() DownloadItem {
 		return app.downloads[downloadKey("TBS", "20261011200000")].item
@@ -73,10 +75,10 @@ func TestRecordDownloadEventTracksLifecycle(t *testing.T) {
 		t.Fatalf("after completion: %+v", got)
 	}
 
-	if app.recordDownloadEvent("log-message", map[string]any{"station": "TBS", "start": "1"}, now) {
+	if changed, _ := app.recordDownloadEvent("log-message", map[string]any{"station": "TBS", "start": "1"}, now); changed {
 		t.Error("recorded a non-download event")
 	}
-	if app.recordDownloadEvent("download-failed", map[string]any{"station": "TBS", "title": "No start"}, now) {
+	if changed, _ := app.recordDownloadEvent("download-failed", map[string]any{"station": "TBS", "title": "No start"}, now); changed {
 		t.Error("recorded an event without a start time")
 	}
 }
@@ -103,7 +105,7 @@ func TestGetDownloadsCombinesSchedulesAndHistory(t *testing.T) {
 			{ID: "failing", StationID: "QRR", Title: "Failing", Ft: "29981231100000", To: "29981231110000"},
 		},
 	}
-	app.manualInjections["failing"] = &manualInjection{ProgramID: "failing"}
+	app.manualInjections[downloadKey("QRR", "29981231100000")] = &manualInjection{ProgramID: "failing"}
 
 	base := time.Now()
 	app.recordDownloadEvent("download-failed", map[string]any{
@@ -177,5 +179,53 @@ func TestDownloadFailedEventUsesProgramStart(t *testing.T) {
 	data := downloadFailedEvent(&radikron.Prog{StationID: "TBS", Title: "Show", Ft: "20261011200000"}, errors.New("boom"))
 	if data["start"] != "20261011200000" || data["error"] != "boom" {
 		t.Errorf("event data = %v", data)
+	}
+}
+
+// TestCoreDownloadEventsAreRecorded drives the emitter the core uses, so a
+// download the core reports reaches GetDownloads.
+func TestCoreDownloadEventsAreRecorded(t *testing.T) {
+	events := &recordingEventSink{}
+	app := NewApp()
+	app.events = events
+	emitter, cleanup := SetupLogger(context.Background(), app.emitDownloadEvent)
+	defer cleanup()
+
+	emitter.EmitDownloadStarted("TBS", "Show", "20261011200000")
+	emitter.EmitDownloadCompleted("TBS", "Show", "20261011200000", "/tmp/2026-10-11-2000_TBS_Show.aac")
+
+	rec := app.downloads[downloadKey("TBS", "20261011200000")]
+	if rec == nil || rec.item.State != DownloadCompleted {
+		t.Fatalf("record = %+v, want completed", rec)
+	}
+	if !slices.Contains(events.names(), downloadsChangedEvent) {
+		t.Errorf("events = %v, want %s", events.names(), downloadsChangedEvent)
+	}
+}
+
+func TestRecentDownloadsKeepScheduleDetails(t *testing.T) {
+	dir := t.TempDir()
+	app := NewApp()
+	app.asset = &radikron.Asset{
+		OutputFormat: radikron.AudioFormatAAC,
+		DownloadDir:  dir,
+		Schedules: radikron.Schedules{
+			{ID: "p", StationID: "TBS", Title: "Show", Ft: "29990101100000", To: "29990101110000", RuleName: "news"},
+		},
+	}
+	app.recordDownloadEvent("download-started", map[string]any{"station": "TBS", "title": "Show", "start": "29990101100000"}, time.Now())
+	if _, err := app.GetDownloads(); err != nil {
+		t.Fatal(err)
+	}
+	// The download completes and the program leaves the schedule.
+	app.recordDownloadEvent("download-completed", map[string]any{"station": "TBS", "title": "Show", "start": "29990101100000"}, time.Now())
+	app.asset.Schedules = nil
+
+	downloads, err := app.GetDownloads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(downloads.Recent) != 1 || downloads.Recent[0].End != "29990101110000" || downloads.Recent[0].RuleName != "news" {
+		t.Fatalf("recent = %+v, want the schedule's end time and rule", downloads.Recent)
 	}
 }

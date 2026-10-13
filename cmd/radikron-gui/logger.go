@@ -240,11 +240,11 @@ func (e *EventLogger) emitLogEvent(message string) {
 // Returns the event emitter and a cleanup function
 func SetupLogger(
 	ctx context.Context,
-	sink frontendEventSink,
 	emitEvent func(ctx context.Context, eventName string, data any),
 ) (emitter *WailsEventEmitter, cleanup func()) {
-	// Create structured event emitter
-	emitter = NewWailsEventEmitter(ctx, sink.Emit)
+	// Create structured event emitter. Its events go through emitEvent, which
+	// records download states before forwarding them to the frontend.
+	emitter = NewWailsEventEmitter(ctx, emitEvent)
 
 	// Also create legacy event logger for backward compatibility (catches any log.Printf calls)
 	eventLogger := NewEventLogger(ctx, emitEvent)

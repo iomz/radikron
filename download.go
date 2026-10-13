@@ -212,19 +212,6 @@ func checkProgramUnavailable(ctx context.Context, asset *Asset, prog *Prog, star
 	return true, nil
 }
 
-// checkDuplicateInSchedules checks if the program is already in schedules.
-// Returns true if duplicate (and was handled), false otherwise.
-func checkDuplicateInSchedules(ctx context.Context, asset *Asset, prog *Prog, title, start string) bool {
-	if !asset.Schedules.HasDuplicate(prog) {
-		return false
-	}
-
-	msg := fmt.Sprintf("duplicate program already in schedules, skipping [%s]%s (%s)", prog.StationID, title, start)
-	emitDownloadSkipped(ctx, "duplicate program", prog.StationID, title, start)
-	emitLogMessage(ctx, "info", msg)
-	return true
-}
-
 // setupOutputConfig creates and sets up the output configuration.
 func setupOutputConfig(ctx context.Context, asset *Asset, prog *Prog, startTime time.Time) (*OutputConfig, error) {
 	fileBaseName := fmt.Sprintf(
@@ -294,13 +281,6 @@ func Download(
 	if handled, err := checkProgramUnavailable(ctx, asset, prog, startTime, title, start); err != nil {
 		return err
 	} else if handled {
-		return nil
-	}
-
-	// Check for duplicate in schedules (for direct calls to Download, e.g., in CLI mode or tests)
-	// Note: In GUI mode, processProgram() adds programs to schedules before calling Download(),
-	// but we still need this check for CLI mode and tests where Download() is called directly.
-	if checkDuplicateInSchedules(ctx, asset, prog, title, start) {
 		return nil
 	}
 
@@ -946,7 +926,7 @@ func checkConfiguredFoldersForDuplicate(
 	downloadDir, fileBaseName, fileFormat, targetPath string,
 ) (exists bool, existingPath string) {
 	for folder := range configuredFolders {
-		configuredPath, err := GetRadikronPath(filepath.Join(downloadDir, folder))
+		configuredPath, err := GetRadikronPath(RuleFolderPath(downloadDir, folder))
 		if err != nil {
 			continue
 		}
@@ -1041,13 +1021,22 @@ func handleDuplicate(
 	return nil
 }
 
+// RuleFolderPath returns where a rule's programs are saved: folder inside
+// downloadDir, or folder itself when it is an absolute path.
+func RuleFolderPath(downloadDir, folder string) string {
+	switch {
+	case folder == "":
+		return downloadDir
+	case filepath.IsAbs(folder):
+		return folder
+	default:
+		return filepath.Join(downloadDir, folder)
+	}
+}
+
 // NewOutputConfig prepares the outputdir
 func NewOutputConfig(fileBaseName, fileFormat, downloadDir, folder string) (*OutputConfig, error) {
-	basePath := downloadDir
-	if folder != "" {
-		basePath = filepath.Join(downloadDir, folder)
-	}
-	fullPath, err := GetRadikronPath(basePath)
+	fullPath, err := GetRadikronPath(RuleFolderPath(downloadDir, folder))
 	if err != nil {
 		return nil, err
 	}

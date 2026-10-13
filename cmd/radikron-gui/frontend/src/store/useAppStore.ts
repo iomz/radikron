@@ -43,6 +43,10 @@ interface AppState {
   loadDownloads: () => Promise<void>;
   // Saves a new rule to the config file; throws when the backend rejects it.
   addRule: (rule: Rule) => Promise<void>;
+  // Replaces the rule called name; throws when the backend rejects it.
+  updateRule: (name: string, rule: Rule) => Promise<void>;
+  // Removes the rule called name; throws when the backend rejects it.
+  removeRule: (name: string) => Promise<void>;
   // Retries what failed (startup, config reload, station catalog) and reloads
   // the data that depends on it.
   retry: () => Promise<void>;
@@ -174,6 +178,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   addRule: async (rule) => {
     await App.AddRule(rule);
     get().addActivityLog('success', `Added rule "${rule.Name}"`);
+    await get().loadConfigInfo();
+  },
+
+  updateRule: async (name, rule) => {
+    await App.UpdateRule(name, rule);
+    get().addActivityLog('success', `Saved rule "${rule.Name.trim()}"`);
+    await get().loadConfigInfo();
+  },
+
+  removeRule: async (name) => {
+    await App.RemoveRule(name);
+    get().addActivityLog('success', `Removed rule "${name}"`);
     await get().loadConfigInfo();
   },
 

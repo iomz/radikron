@@ -6,8 +6,8 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * DownloadItem is a program Radikron will download, is downloading, or has
- * tried to download in this session.
+ * DownloadItem is a program Radikron will download, is downloading, has
+ * tried to download, or was told to skip.
  */
 export class DownloadItem {
     "id": string;
@@ -126,6 +126,11 @@ export enum DownloadState {
      * DownloadExpired means radiko no longer offers the recording.
      */
     DownloadExpired = "expired",
+
+    /**
+     * DownloadSkipped means the user skipped or canceled the program.
+     */
+    DownloadSkipped = "skipped",
 };
 
 /**
@@ -138,10 +143,15 @@ export class Downloads {
     "scheduled": DownloadItem[];
 
     /**
-     * Recent lists completed and failed downloads of this session, newest
-     * first. It is kept in memory only.
+     * Recent lists completed and failed downloads, newest first. They are
+     * kept between runs.
      */
     "recent": DownloadItem[];
+
+    /**
+     * Skipped lists programs the user skipped or canceled, ordered by start.
+     */
+    "skipped": DownloadItem[];
 
     /** Creates a new Downloads instance. */
     constructor($$source: Partial<Downloads> = {}) {
@@ -150,6 +160,9 @@ export class Downloads {
         }
         if (!("recent" in $$source)) {
             this["recent"] = [];
+        }
+        if (!("skipped" in $$source)) {
+            this["skipped"] = [];
         }
 
         Object.assign(this, $$source);
@@ -161,6 +174,7 @@ export class Downloads {
     static createFrom($$source: any = {}): Downloads {
         const $$createField0_0 = $$createType1;
         const $$createField1_0 = $$createType1;
+        const $$createField2_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("scheduled" in $$parsedSource) {
             $$parsedSource["scheduled"] = $$createField0_0($$parsedSource["scheduled"]);
@@ -168,7 +182,71 @@ export class Downloads {
         if ("recent" in $$parsedSource) {
             $$parsedSource["recent"] = $$createField1_0($$parsedSource["recent"]);
         }
+        if ("skipped" in $$parsedSource) {
+            $$parsedSource["skipped"] = $$createField2_0($$parsedSource["skipped"]);
+        }
         return new Downloads($$parsedSource as Partial<Downloads>);
+    }
+}
+
+/**
+ * Settings are the parts of the configuration the Settings screen edits.
+ * Rules are edited on their own, so saving settings never overwrites them.
+ */
+export class Settings {
+    "areaId": string;
+    "downloadDir": string;
+    "fileFormat": string;
+    "minimumOutputSizeMb": number;
+    "extraStations": string[];
+    "ignoreStations": string[];
+    "maxDownloadingConcurrency": number;
+    "maxEncodingConcurrency": number;
+
+    /** Creates a new Settings instance. */
+    constructor($$source: Partial<Settings> = {}) {
+        if (!("areaId" in $$source)) {
+            this["areaId"] = "";
+        }
+        if (!("downloadDir" in $$source)) {
+            this["downloadDir"] = "";
+        }
+        if (!("fileFormat" in $$source)) {
+            this["fileFormat"] = "";
+        }
+        if (!("minimumOutputSizeMb" in $$source)) {
+            this["minimumOutputSizeMb"] = 0;
+        }
+        if (!("extraStations" in $$source)) {
+            this["extraStations"] = [];
+        }
+        if (!("ignoreStations" in $$source)) {
+            this["ignoreStations"] = [];
+        }
+        if (!("maxDownloadingConcurrency" in $$source)) {
+            this["maxDownloadingConcurrency"] = 0;
+        }
+        if (!("maxEncodingConcurrency" in $$source)) {
+            this["maxEncodingConcurrency"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Settings instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Settings {
+        const $$createField4_0 = $$createType2;
+        const $$createField5_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("extraStations" in $$parsedSource) {
+            $$parsedSource["extraStations"] = $$createField4_0($$parsedSource["extraStations"]);
+        }
+        if ("ignoreStations" in $$parsedSource) {
+            $$parsedSource["ignoreStations"] = $$createField5_0($$parsedSource["ignoreStations"]);
+        }
+        return new Settings($$parsedSource as Partial<Settings>);
     }
 }
 
@@ -256,3 +334,4 @@ export class Status {
 // Private type creation functions
 const $$createType0 = DownloadItem.createFrom;
 const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Array($Create.Any);

@@ -35,6 +35,8 @@
   --color-state-available: #1F55E0;
   --color-state-waiting: #5B6270;
   --color-state-failed: #B42318;
+  --color-danger: #B42318;
+  --color-danger-foreground: #FFF4F2;
   --color-state-completed: #1F55E0;
   --color-state-expired: #8A9099;
   --radius: 0.625rem;
@@ -66,6 +68,8 @@
   --color-state-available: #9AD1FF;
   --color-state-waiting: #B5B9BF;
   --color-state-failed: #FF9A94;
+  --color-danger: #A8332C;
+  --color-danger-foreground: #F6DCD9;
   --color-state-completed: #9AD1FF;
   --color-state-expired: #7D838B;
 }
@@ -97,6 +101,8 @@
   --color-state-available: var(--color-state-available);
   --color-state-waiting: var(--color-state-waiting);
   --color-state-failed: var(--color-state-failed);
+  --color-danger: var(--color-danger);
+  --color-danger-foreground: var(--color-danger-foreground);
   --color-state-completed: var(--color-state-completed);
   --color-state-expired: var(--color-state-expired);
   --radius: var(--radius);

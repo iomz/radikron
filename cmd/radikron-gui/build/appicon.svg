@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Source of appicon.png: rsvg-convert -w 1024 -h 1024 appicon.svg -o appicon.png -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1D2129"/>
+      <stop offset="1" stop-color="#0F1115"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="270" fill="none" stroke="#F5A524" stroke-width="56"/>
+  <path d="M512 512 L690 334" stroke="#F5A524" stroke-width="56" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="62" fill="#F5A524"/>
+</svg>

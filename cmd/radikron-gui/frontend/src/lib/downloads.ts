@@ -1,7 +1,4 @@
-import type {
-  DownloadItem,
-  Downloads,
-} from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
+import type { DownloadItem, Downloads } from '../../bindings/github.com/iomz/radikron/cmd/radikron-gui/models';
 
 // Download states as the backend reports them (DownloadState in Go). They are
 // repeated here so this module does not load the Wails runtime, which the
@@ -13,6 +10,7 @@ export const DownloadStates = {
   completed: 'completed',
   failed: 'failed',
   expired: 'expired',
+  skipped: 'skipped',
 } as const;
 
 // downloadKey identifies a program the way the backend does: a station
@@ -22,21 +20,23 @@ export function downloadKey(stationID: string, start: string): string {
 }
 
 const stateLabels: Record<string, string> = {
-  [DownloadStates.waiting]: 'Waiting',
-  [DownloadStates.available]: 'Available',
+  [DownloadStates.waiting]: 'Upcoming',
+  [DownloadStates.available]: 'Ready',
   [DownloadStates.downloading]: 'Downloading',
   [DownloadStates.completed]: 'Completed',
   [DownloadStates.failed]: 'Failed',
   [DownloadStates.expired]: 'Expired',
+  [DownloadStates.skipped]: 'Skipped',
 };
 
 const stateDescriptions: Record<string, string> = {
-  [DownloadStates.waiting]: 'Not available yet: the program has not finished airing.',
-  [DownloadStates.available]: 'Available on radiko; the next check downloads it.',
+  [DownloadStates.waiting]: 'The program has not aired yet.',
+  [DownloadStates.available]: 'The recording is on radiko; the next check downloads it.',
   [DownloadStates.downloading]: 'Downloading now.',
   [DownloadStates.completed]: 'Downloaded.',
   [DownloadStates.failed]: 'The last download attempt failed.',
   [DownloadStates.expired]: 'No longer available on radiko.',
+  [DownloadStates.skipped]: 'You skipped it, so rules leave it alone.',
 };
 
 export function downloadStateLabel(state: string): string {
@@ -70,7 +70,126 @@ export function downloadDetail(item: DownloadItem): string {
 // nextDownloads returns the scheduled programs that can still be
 // downloaded, soonest first.
 export function nextDownloads(downloads: Downloads | null, limit: number): DownloadItem[] {
-  return (downloads?.scheduled ?? [])
-    .filter((item) => item.state !== DownloadStates.expired)
-    .slice(0, limit);
+  return (downloads?.scheduled ?? []).filter((item) => item.state !== DownloadStates.expired).slice(0, limit);
+}
+
+const JST = 'Asia/Tokyo';
+
+function jstDay(date: Date): string {
+  return date.toLocaleDateString('en-US', { timeZone: JST, year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+// formatAirTime formats a radiko start time (Japan time) as "13:00" for
+// today, "Mon 01:00" within a week, or "10/04 22:00" otherwise.
+export function formatAirTime(start: string, now: Date = new Date()): string {
+  if (!/^\d{14}$/.test(start)) {
+    return start;
+  }
+  const time = `${start.slice(8, 10)}:${start.slice(10, 12)}`;
+  const date = new Date(`${start.slice(0, 4)}-${start.slice(4, 6)}-${start.slice(6, 8)}T${time}:00+09:00`);
+  if (jstDay(date) === jstDay(now)) {
+    return time;
+  }
+  const days = Math.abs(date.getTime() - now.getTime()) / 86_400_000;
+  if (days < 6) {
+    return `${date.toLocaleDateString('en-US', { timeZone: JST, weekday: 'short' })} ${time}`;
+  }
+  return `${start.slice(4, 6)}/${start.slice(6, 8)} ${time}`;
+}
+
+// formatAirRange adds the end time to formatAirTime: "Mon 13:00–14:00".
+export function formatAirRange(start: string, end: string, now: Date = new Date()): string {
+  const to = /^\d{14}$/.test(end) ? `–${end.slice(8, 10)}:${end.slice(10, 12)}` : '';
+  return `${formatAirTime(start, now)}${to}`;
+}
+
+// downloadSource names where a download came from.
+export function downloadSource(item: Pick<DownloadItem, 'manual' | 'ruleName'>): string {
+  if (item.manual) return 'Manual';
+  return item.ruleName ? `Rule · ${item.ruleName}` : 'Rule';
+}
+
+// downloadNote is the one-line explanation under a download.
+export function downloadNote(item: DownloadItem): string {
+  const time = (v: string) => (/^\d{14}$/.test(v) ? `${v.slice(8, 10)}:${v.slice(10, 12)}` : '');
+  switch (item.state) {
+    case DownloadStates.downloading:
+      return downloadDetail(item) || 'Downloading';
+    case DownloadStates.available:
+      return 'Downloads at the next check';
+    case DownloadStates.waiting:
+      return item.end ? `Airs ${time(item.start)}–${time(item.end)}` : 'Not aired yet';
+    case DownloadStates.failed:
+      return downloadDetail(item) || 'Download failed';
+    case DownloadStates.expired:
+      return 'No longer on radiko';
+    case DownloadStates.completed:
+      return 'Downloaded';
+    case DownloadStates.skipped:
+      return 'Rules leave it alone';
+    default:
+      return '';
+  }
+}
+
+// downloadFilters are the Downloads screen filters, in display order.
+export const downloadFilters = [
+  { id: 'all', label: 'All' },
+  { id: DownloadStates.waiting, label: 'Upcoming' },
+  { id: DownloadStates.available, label: 'Ready' },
+  { id: DownloadStates.downloading, label: 'Downloading' },
+  { id: DownloadStates.failed, label: 'Failed' },
+  { id: DownloadStates.expired, label: 'Expired' },
+  { id: DownloadStates.completed, label: 'Completed' },
+  { id: DownloadStates.skipped, label: 'Skipped' },
+] as const;
+
+export type DownloadFilter = (typeof downloadFilters)[number]['id'];
+
+// downloadsList combines the scheduled programs with the finished downloads,
+// which leave the schedule once their file exists, and the skipped programs.
+export function downloadsList(downloads: Downloads | null): DownloadItem[] {
+  const scheduled = downloads?.scheduled ?? [];
+  const keys = new Set(scheduled.map((item) => downloadKey(item.stationId, item.start)));
+  const downloaded = (downloads?.recent ?? []).filter(
+    (item) => item.state === DownloadStates.completed && !keys.has(downloadKey(item.stationId, item.start)),
+  );
+  return [...scheduled, ...downloaded, ...(downloads?.skipped ?? [])];
+}
+
+// countByFilter counts the items each filter shows. All leaves out skipped
+// programs, which have their own filter.
+export function countByFilter(items: DownloadItem[]): Record<DownloadFilter, number> {
+  const counts = Object.fromEntries(downloadFilters.map((f) => [f.id, 0])) as Record<DownloadFilter, number>;
+  counts.all = items.filter((item) => item.state !== DownloadStates.skipped).length;
+  for (const item of items) {
+    if (item.state in counts) {
+      counts[item.state as DownloadFilter] += 1;
+    }
+  }
+  return counts;
+}
+
+export function filterDownloads(items: DownloadItem[], filter: DownloadFilter): DownloadItem[] {
+  return filter === 'all' ? items.filter((item) => item.state !== DownloadStates.skipped) : items.filter((item) => item.state === filter);
+}
+
+// downloadAction is what a download can be told to do: cancel it while it
+// downloads, skip it before, or undo a skip. Finished and expired programs
+// have none.
+export type DownloadAction = 'cancel' | 'skip' | 'undo';
+
+export function downloadAction(item: { state: string }): DownloadAction | null {
+  switch (item.state) {
+    case DownloadStates.downloading:
+      return 'cancel';
+    case DownloadStates.waiting:
+    case DownloadStates.available:
+    case DownloadStates.failed:
+      return 'skip';
+    case DownloadStates.skipped:
+      return 'undo';
+    default:
+      return null;
+  }
 }

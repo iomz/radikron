@@ -165,3 +165,24 @@ func TestStatusReportsStartupAndNextCheck(t *testing.T) {
 		t.Errorf("status = %+v, want started and without rules", status)
 	}
 }
+
+func TestCheckNowWakesAutomaticChecks(t *testing.T) {
+	app := NewApp()
+	app.CheckNow()
+	select {
+	case <-app.configChanged:
+	default:
+		t.Fatal("CheckNow() did not wake automatic checks")
+	}
+}
+
+func TestHasManualInjections(t *testing.T) {
+	app := NewApp()
+	if app.hasManualInjections() {
+		t.Fatal("new app reports manual injections")
+	}
+	app.manualInjections["p"] = &manualInjection{ProgramID: "p"}
+	if !app.hasManualInjections() {
+		t.Fatal("manual injection not reported")
+	}
+}

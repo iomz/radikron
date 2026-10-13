@@ -76,3 +76,21 @@ func TestSearchAndSchedulesExcludeUnsupportedArchiveStations(t *testing.T) {
 		t.Errorf("GetSchedules() contains unsupported schedule: %v", schedules)
 	}
 }
+
+func TestSearchMatcherRequiresEveryWord(t *testing.T) {
+	prog := &radikron.Prog{Title: "MIDDAY LOUNGE", Desc: "Smooth jazz and city pop"}
+	tests := []struct {
+		keyword string
+		want    bool
+	}{
+		{"MIDDAY LOUNGE", true},
+		{"midday　jazz", true}, // full-width space
+		{"MIDDAY rock", false},
+		{"", true},
+	}
+	for _, tt := range tests {
+		if got := searchMatcher("", "", tt.keyword)("TBS", prog); got != tt.want {
+			t.Errorf("searchMatcher(%q) = %v, want %v", tt.keyword, got, tt.want)
+		}
+	}
+}

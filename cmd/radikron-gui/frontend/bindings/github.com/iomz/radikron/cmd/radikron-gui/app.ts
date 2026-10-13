@@ -48,12 +48,47 @@ export function CheckForUpdates(): $CancellablePromise<void> {
 }
 
 /**
+ * CheckNow starts a check right away instead of waiting for the next one.
+ */
+export function CheckNow(): $CancellablePromise<void> {
+    return $Call.ByID(1278432937);
+}
+
+/**
+ * ChooseDownloadFolder lets the user pick the download folder, starting from
+ * current. It returns nil when the user cancels.
+ */
+export function ChooseDownloadFolder(current: string): $CancellablePromise<string | null> {
+    return $Call.ByID(3450604780, current);
+}
+
+/**
+ * ChooseRuleFolder lets the user pick a rule folder, starting from current.
+ * A folder inside the download folder is returned relative to it ("" for the
+ * download folder itself) so the config stays portable; any other folder is
+ * returned as an absolute path. It returns nil when the user cancels.
+ */
+export function ChooseRuleFolder(current: string): $CancellablePromise<string | null> {
+    return $Call.ByID(2412197782, current);
+}
+
+/**
+ * ClearHistory forgets finished downloads and skipped programs. Downloads in
+ * progress go on, and files stay on disk. A check starts now: rules may
+ * download programs that were skipped, and programs whose files are already
+ * there show as downloaded again.
+ */
+export function ClearHistory(): $CancellablePromise<void> {
+    return $Call.ByID(3429172794);
+}
+
+/**
  * DeleteManualInjection removes a manually injected program from schedules and persistence.
  * It removes the program from schedules, pending downloads, and the manual injections map,
  * then saves the updated state to disk.
  */
-export function DeleteManualInjection(programID: string): $CancellablePromise<void> {
-    return $Call.ByID(690399293, programID);
+export function DeleteManualInjection(stationID: string, start: string): $CancellablePromise<void> {
+    return $Call.ByID(690399293, stationID, start);
 }
 
 /**
@@ -64,9 +99,8 @@ export function ExportConfigFile(): $CancellablePromise<void> {
 }
 
 /**
- * FetchProgramSnapshots fetches program snapshots from all available stations.
- * This function performs network I/O without holding the lock to avoid blocking.
- * The snapshots are used for program search and manual injection cleanup.
+ * FetchProgramSnapshots loads the weekly programs of stations that have none
+ * yet, for program search. Automatic checks keep them up to date.
  */
 export function FetchProgramSnapshots(): $CancellablePromise<void> {
     return $Call.ByID(2470895138);
@@ -115,8 +149,8 @@ export function GetDesignatedFolder(prog: radikron$0.Prog | null, ruleFolder: st
 }
 
 /**
- * GetDownloads returns scheduled programs with their download state and the
- * downloads finished in this session.
+ * GetDownloads returns scheduled programs with their download state, the
+ * finished downloads, and the skipped programs.
  */
 export function GetDownloads(): $CancellablePromise<$models.Downloads> {
     return $Call.ByID(3093261880).then(($result: any) => {
@@ -142,11 +176,20 @@ export function GetSchedules(): $CancellablePromise<radikron$0.Progs> {
 }
 
 /**
+ * GetSettings returns the current settings.
+ */
+export function GetSettings(): $CancellablePromise<$models.Settings> {
+    return $Call.ByID(2554697378).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+/**
  * GetStationNames returns display names keyed by station ID.
  */
 export function GetStationNames(): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(2645635047).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType9($result);
     });
 }
 
@@ -156,7 +199,7 @@ export function GetStationNames(): $CancellablePromise<{ [_ in string]?: string 
  */
 export function GetStatus(): $CancellablePromise<$models.Status> {
     return $Call.ByID(1043986649).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType10($result);
     });
 }
 
@@ -170,11 +213,12 @@ export function HandleDownloadCompleted(stationID: string, title: string, startT
 }
 
 /**
- * HandleDownloadCompletedByID is called when a download completes with a known program ID.
- * This is more reliable than matching by station/title/time as it uses the program ID directly.
+ * ImportConfigFile asks for a config file and replaces the settings and rules
+ * with the ones in it, saved to Radikron's own config file. It returns the
+ * imported file, or nil when the user cancels.
  */
-export function HandleDownloadCompletedByID(programID: string, stationID: string, title: string, $3: string): $CancellablePromise<void> {
-    return $Call.ByID(681301072, programID, stationID, title, $3);
+export function ImportConfigFile(): $CancellablePromise<string | null> {
+    return $Call.ByID(859494620);
 }
 
 /**
@@ -188,11 +232,11 @@ export function InjectProgram(prog: radikron$0.Prog | null, ruleName: string): $
 }
 
 /**
- * IsManualInjection checks if a program is manually injected.
- * It returns true if the program ID exists in the manual injections map.
+ * IsManualInjection reports whether the program on stationID starting at
+ * start was added from Search.
  */
-export function IsManualInjection(programID: string): $CancellablePromise<boolean> {
-    return $Call.ByID(1033822608, programID);
+export function IsManualInjection(stationID: string, start: string): $CancellablePromise<boolean> {
+    return $Call.ByID(1033822608, stationID, start);
 }
 
 /**
@@ -208,6 +252,17 @@ export function LoadConfig(filename: string): $CancellablePromise<void> {
  */
 export function OpenDirectory(dirPath: string): $CancellablePromise<void> {
     return $Call.ByID(4113378380, dirPath);
+}
+
+/**
+ * PreviewRule lists the programs in radiko's weekly schedule that rule
+ * matches, so the user can check a rule before saving it. The rule's name is
+ * not needed.
+ */
+export function PreviewRule(rule: radikron$0.Rule | null): $CancellablePromise<radikron$0.Progs> {
+    return $Call.ByID(106876769, rule).then(($result: any) => {
+        return $$createType4($result);
+    });
 }
 
 /**
@@ -227,6 +282,14 @@ export function RefreshStations(): $CancellablePromise<string[]> {
 }
 
 /**
+ * RemoveRule removes the rule called name and saves the config file. Programs
+ * it already scheduled stay scheduled.
+ */
+export function RemoveRule(name: string): $CancellablePromise<void> {
+    return $Call.ByID(1379976755, name);
+}
+
+/**
  * Retry retries what failed: startup when the configuration could not be
  * loaded, otherwise the last configuration reload and station catalog fetch.
  * It returns the first failure that remains.
@@ -242,7 +305,7 @@ export function Retry(): $CancellablePromise<void> {
  */
 export function RuleFromProgram(prog: radikron$0.Prog | null): $CancellablePromise<radikron$0.Rule> {
     return $Call.ByID(905458793, prog).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType11($result);
     });
 }
 
@@ -252,6 +315,14 @@ export function RuleFromProgram(prog: radikron$0.Prog | null): $CancellablePromi
  */
 export function SaveConfig(filename: string): $CancellablePromise<void> {
     return $Call.ByID(3442292638, filename);
+}
+
+/**
+ * SaveSettings checks s, saves it to the config file, and applies it. If the
+ * save fails, the running configuration stays as it was.
+ */
+export function SaveSettings(s: $models.Settings | null): $CancellablePromise<void> {
+    return $Call.ByID(1949631069, s);
 }
 
 /**
@@ -273,6 +344,14 @@ export function SelectDirectory(): $CancellablePromise<string> {
 }
 
 /**
+ * SkipDownload skips a scheduled program, or cancels it while it downloads.
+ * Rules leave it alone afterwards, even after a restart, until UndoSkip.
+ */
+export function SkipDownload(stationID: string, start: string): $CancellablePromise<void> {
+    return $Call.ByID(3801545914, stationID, start);
+}
+
+/**
  * StartMonitoring starts the monitoring loop.
  * It creates a context, sets up the monitoring goroutine, and begins continuous program monitoring.
  */
@@ -289,10 +368,28 @@ export function StopMonitoring(): $CancellablePromise<void> {
 }
 
 /**
+ * UndoSkip lets Radikron download a skipped program again: rules pick it up
+ * at the next check, which starts now, and a program added from Search is
+ * added again.
+ */
+export function UndoSkip(stationID: string, start: string): $CancellablePromise<void> {
+    return $Call.ByID(3191497788, stationID, start);
+}
+
+/**
  * UpdateConfig updates the current configuration with new values
  */
 export function UpdateConfig(newConfig: config$0.Config | null): $CancellablePromise<void> {
     return $Call.ByID(481689322, newConfig);
+}
+
+/**
+ * UpdateRule replaces the rule called name with rule, which may rename it, and
+ * saves the config file. It wakes automatic checks so the changed rule applies
+ * right away.
+ */
+export function UpdateRule(name: string, rule: radikron$0.Rule | null): $CancellablePromise<void> {
+    return $Call.ByID(480709666, name, rule);
 }
 
 /**
@@ -317,6 +414,7 @@ var $$createType4 = (function $$initCreateType4(...args: any[]): any {
 const $$createType5 = radikron$0.Prog.createFrom;
 const $$createType6 = $Create.Nullable($$createType5);
 const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = $Create.Map($Create.Any, $Create.Any);
-const $$createType9 = $models.Status.createFrom;
-const $$createType10 = radikron$0.Rule.createFrom;
+const $$createType8 = $models.Settings.createFrom;
+const $$createType9 = $Create.Map($Create.Any, $Create.Any);
+const $$createType10 = $models.Status.createFrom;
+const $$createType11 = radikron$0.Rule.createFrom;

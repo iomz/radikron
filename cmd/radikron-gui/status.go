@@ -166,3 +166,8 @@ func (a *App) Retry() error {
 	}
 	return errors.Join(errs...)
 }
+
+// CheckNow starts a check right away instead of waiting for the next one.
+func (a *App) CheckNow() {
+	a.signalConfigChanged()
+}

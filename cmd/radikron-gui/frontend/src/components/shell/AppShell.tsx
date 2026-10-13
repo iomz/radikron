@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { nextDownloads } from '@/lib/downloads';
-import { formatCheckTime } from '@/lib/status';
+import { formatCheckTime, statusShortLabel } from '@/lib/status';
 import { screens, type ScreenId } from '@/lib/navigation';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UpdateButton } from '@/components/UpdateButton';
@@ -28,9 +28,7 @@ const SidebarStatus: React.FC = () => {
   if (!status) {
     return null;
   }
-  let label = 'Downloads off';
-  if (status.starting) label = 'Starting…';
-  else if (status.monitoring) label = 'Downloads on';
+  const label = statusShortLabel(status);
   const next = formatCheckTime(status.nextCheck);
   const detail = status.checking ? 'Checking now…' : next ? `Next check ${next}` : '';
   const failing = Boolean(status.configError || status.stationsError);
@@ -59,12 +57,20 @@ export const AppShell: React.FC<AppShellProps> = ({ screen, onNavigate, children
   const downloads = useAppStore((state) => state.downloads);
   const pending = nextDownloads(downloads, Number.POSITIVE_INFINITY).length;
   const counts: Partial<Record<ScreenId, number>> = { downloads: pending };
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Each screen opens at its top.
+  useEffect(() => {
+    mainRef.current?.scrollTo?.({ top: 0 });
+  }, [screen]);
 
   return (
-    <div className="min-h-screen flex flex-wrap bg-background text-foreground text-sm">
+    // Side by side, the sidebar stays put and only the screen scrolls; on a
+    // narrow window the sidebar sits on top and the page scrolls as a whole.
+    <div className="min-h-screen min-[780px]:h-screen min-[780px]:overflow-hidden flex flex-wrap bg-background text-foreground text-sm">
       <nav
         aria-label="Main"
-        className="flex-[1_1_220px] max-w-60 box-border px-3.5 py-5 bg-sidebar border-r border-border flex flex-col gap-1"
+        className="flex-[1_1_220px] max-w-60 min-[780px]:h-full min-[780px]:overflow-y-auto box-border px-3.5 py-5 bg-sidebar border-r border-border flex flex-col gap-1"
       >
         <div className="flex items-center gap-2.5 px-2.5 pt-1 pb-5 text-signal">
           <TunerMark />
@@ -96,7 +102,9 @@ export const AppShell: React.FC<AppShellProps> = ({ screen, onNavigate, children
           <ThemeToggle />
         </div>
       </nav>
-      <main className="flex-[999_1_560px] min-w-0 box-border px-8 pt-7 pb-10">{children}</main>
+      <main ref={mainRef} className="flex-[999_1_560px] min-w-0 min-[780px]:h-full min-[780px]:overflow-y-auto box-border px-8 pt-7 pb-10">
+        {children}
+      </main>
     </div>
   );
 };

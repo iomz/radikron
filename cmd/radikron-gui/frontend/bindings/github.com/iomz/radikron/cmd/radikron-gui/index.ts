@@ -10,5 +10,6 @@ export {
     DownloadItem,
     DownloadState,
     Downloads,
+    Settings,
     Status
 } from "./models.js";

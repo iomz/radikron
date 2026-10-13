@@ -3,11 +3,11 @@ import { ErrorBoundary } from "react-error-boundary";
 import { Events } from "@wailsio/runtime";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dashboard } from "@/components/Dashboard";
-import { RulesEditor } from "@/components/RulesEditor";
-import { ScheduledDownloads } from "@/components/ScheduledDownloads";
-import { ProgramSearchBrowser } from "@/components/ProgramSearchBrowser";
-import { Settings } from "@/components/Settings";
+import { Overview } from "@/components/screens/Overview";
+import { Downloads } from "@/components/screens/Downloads";
+import { Rules } from "@/components/screens/Rules";
+import { Search } from "@/components/screens/Search";
+import { Settings } from "@/components/screens/Settings";
 import { Timetable } from "@/components/Timetable";
 import { AppShell } from "@/components/shell/AppShell";
 import type { ScreenId } from "@/lib/navigation";
@@ -205,11 +205,11 @@ const AppComponent: React.FC = () => {
         </div>
       ) : (
         <AppShell screen={screen} onNavigate={setScreen}>
-          {screen === "overview" && <Dashboard />}
-          {screen === "downloads" && <ScheduledDownloads />}
+          {screen === "overview" && <Overview onNavigate={setScreen} />}
+          {screen === "downloads" && <Downloads />}
           {screen === "timetable" && <Timetable />}
-          {screen === "search" && <ProgramSearchBrowser />}
-          {screen === "rules" && <RulesEditor />}
+          {screen === "search" && <Search />}
+          {screen === "rules" && <Rules onNavigate={setScreen} />}
           {screen === "settings" && <Settings />}
         </AppShell>
       )}

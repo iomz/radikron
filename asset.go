@@ -50,9 +50,11 @@ type Asset struct {
 	DownloadDir       string // directory name for downloads (default: "radiko")
 	Regions           Regions
 	Rules             Rules
-	Schedules         Schedules
-	Stations          Stations
-	Versions          Versions
+	// Schedules is kept by the GUI for the programs it tracks; Download does
+	// not consult it.
+	Schedules Schedules
+	Stations  Stations
+	Versions  Versions
 	// MaxDownloadingConcurrency limits concurrent download operations
 	MaxDownloadingConcurrency int
 	// MaxEncodingConcurrency limits concurrent encoding operations (MP3 conversion)

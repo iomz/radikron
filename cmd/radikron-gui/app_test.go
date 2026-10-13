@@ -213,7 +213,7 @@ func TestGetSchedulesFiltersDownloadedInvalidAndUnsupportedPrograms(t *testing.T
 			{ID: "unsupported", StationID: "JOAK", Title: "NHK", Ft: "20260820140000"},
 		},
 	}
-	app.manualInjections["pending"] = &manualInjection{ProgramID: "pending"}
+	app.manualInjections[downloadKey("TBS", "20260820130000")] = &manualInjection{ProgramID: "pending"}
 
 	schedules, err := app.GetSchedules()
 	if err != nil {
@@ -346,29 +346,31 @@ func TestSleepUntilNextFetchStopsOnContextCancellation(t *testing.T) {
 	}
 }
 
-func TestHandleDownloadCompletedByIDRemovesInjectionAndSchedule(t *testing.T) {
+func TestManualDownloadCompletedRemovesInjectionAndSchedule(t *testing.T) {
 	manualInjectionsFile := filepath.Join(t.TempDir(), "manual-injections.json")
 	app := NewApp()
 	app.manualInjectionsFile = manualInjectionsFile
 	app.asset = &radikron.Asset{
-		Schedules: radikron.Schedules{{ID: "program-1", StationID: "TBS", Title: "Test"}},
+		Schedules: radikron.Schedules{{ID: "program-1", StationID: "TBS", Title: "Test", Ft: "20260820120000"}},
 	}
-	app.manualInjections["program-1"] = &manualInjection{
+	key := downloadKey("TBS", "20260820120000")
+	app.manualInjections[key] = &manualInjection{
 		ProgramID: "program-1",
 		StationID: "TBS",
 		Title:     "Test",
+		Ft:        "20260820120000",
 	}
-	app.pendingManualDownloads["program-1"] = "program-1"
+	app.pendingManualDownloads[key] = "program-1"
 
-	app.HandleDownloadCompletedByID("program-1", "TBS", "Test", "20260820120000")
+	app.handleManualDownloadCompleted(key, "TBS", "Test")
 
 	if len(app.asset.Schedules) != 0 {
 		t.Errorf("completed program remains scheduled: %+v", app.asset.Schedules)
 	}
-	if app.IsManualInjection("program-1") {
+	if app.IsManualInjection("TBS", "20260820120000") {
 		t.Error("completed program remains a manual injection")
 	}
-	if _, exists := app.pendingManualDownloads["program-1"]; exists {
+	if _, exists := app.pendingManualDownloads[key]; exists {
 		t.Error("completed program remains pending")
 	}
 	data, err := os.ReadFile(manualInjectionsFile)

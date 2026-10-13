@@ -19,12 +19,12 @@ vi.mock('@wailsio/runtime', () => ({
 }));
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
-vi.mock('@/components/Dashboard', () => ({ Dashboard: () => <div>Dashboard content</div> }));
-vi.mock('@/components/RulesEditor', () => ({ RulesEditor: () => <div>Rules content</div> }));
-vi.mock('@/components/ScheduledDownloads', () => ({ ScheduledDownloads: () => <div>Schedules content</div> }));
-vi.mock('@/components/ProgramSearchBrowser', () => ({ ProgramSearchBrowser: () => <div>Programs content</div> }));
+vi.mock('@/components/screens/Overview', () => ({ Overview: () => <div>Dashboard content</div> }));
+vi.mock('@/components/screens/Rules', () => ({ Rules: () => <div>Rules content</div> }));
+vi.mock('@/components/screens/Downloads', () => ({ Downloads: () => <div>Schedules content</div> }));
+vi.mock('@/components/screens/Search', () => ({ Search: () => <div>Programs content</div> }));
 vi.mock('@/components/ThemeToggle', () => ({ ThemeToggle: () => <button>Theme</button> }));
-vi.mock('@/components/Settings', () => ({ Settings: () => <div>Settings content</div> }));
+vi.mock('@/components/screens/Settings', () => ({ Settings: () => <div>Settings content</div> }));
 vi.mock('@/components/Timetable', () => ({ Timetable: () => <div>Timetable content</div> }));
 vi.mock('@/components/UpdateButton', () => ({ UpdateButton: () => null }));
 
@@ -47,7 +47,7 @@ describe('App shell events', () => {
     backend.GetAvailableStations.mockResolvedValue(['TBS']);
     backend.GetStationNames.mockResolvedValue({ TBS: 'Tokyo Broadcasting System' });
     backend.GetStatus.mockResolvedValue({ monitoring: true } as Awaited<ReturnType<typeof Backend.GetStatus>>);
-    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [] } as Awaited<ReturnType<typeof Backend.GetDownloads>>);
+    backend.GetDownloads.mockResolvedValue({ scheduled: [], recent: [], skipped: [] } as Awaited<ReturnType<typeof Backend.GetDownloads>>);
     useAppStore.setState({
       configInfo: null,
       stations: [],
@@ -69,8 +69,6 @@ describe('App shell events', () => {
     await screen.findByText('Dashboard content');
     expect(screen.getByText('Dashboard content')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /start monitoring|stop monitoring/i })).toBeNull();
-    expect(screen.queryByText('Running')).toBeNull();
-    expect(screen.queryByText('Stopped')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
     expect(screen.getByText('Rules content')).toBeTruthy();
