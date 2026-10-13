@@ -20,6 +20,8 @@ import (
 
 var version = "(devel)"
 
+const usageErrorExitCode = 2
+
 // ProgramFetcher is an interface for fetching weekly programs
 type ProgramFetcher interface {
 	FetchWeeklyPrograms(stationID string) (radikron.Progs, error)
@@ -271,7 +273,7 @@ func main() {
 		return
 	}
 	if err != nil {
-		os.Exit(2)
+		os.Exit(usageErrorExitCode)
 	}
 
 	current := currentVersion()

@@ -24,9 +24,21 @@ func TestParseOptions(t *testing.T) {
 		{"assignments", []string{"--config=custom.yml", "--debug=true", "--version=false"}, options{configFile: "custom.yml", debug: true}},
 		{"legacy assignments", []string{"-c=custom.yml", "-d=true", "-v=false"}, options{configFile: "custom.yml", debug: true}},
 		{"legacy double dash", []string{"--c", "custom.yml", "--d", "--v"}, options{configFile: "custom.yml", debug: true, version: true}},
-		{"single dash named aliases", []string{"-config", "custom.yml", "-debug", "-version"}, options{configFile: "custom.yml", debug: true, version: true}},
-		{"legacy updates", []string{"-check-update", "-self-update", "-no-update-check"}, options{configFile: "config.yml", checkUpdate: true, selfUpdate: true, noUpdateCheck: true}},
-		{"long updates", []string{"--check-update", "--self-update", "--no-update-check"}, options{configFile: "config.yml", checkUpdate: true, selfUpdate: true, noUpdateCheck: true}},
+		{
+			"single dash named aliases",
+			[]string{"-config", "custom.yml", "-debug", "-version"},
+			options{configFile: "custom.yml", debug: true, version: true},
+		},
+		{
+			"legacy updates",
+			[]string{"-check-update", "-self-update", "-no-update-check"},
+			options{configFile: "config.yml", checkUpdate: true, selfUpdate: true, noUpdateCheck: true},
+		},
+		{
+			"long updates",
+			[]string{"--check-update", "--self-update", "--no-update-check"},
+			options{configFile: "config.yml", checkUpdate: true, selfUpdate: true, noUpdateCheck: true},
+		},
 		{"last alias wins", []string{"-c", "first.yml", "--config", "last.yml", "-d", "--debug=false"}, options{configFile: "last.yml"}},
 		{"positional stops parsing", []string{"unused", "--debug"}, options{configFile: "config.yml"}},
 		{"terminator", []string{"--", "--debug"}, options{configFile: "config.yml"}},
@@ -98,6 +110,7 @@ func TestCLIExit(t *testing.T) {
 		t.Run(tt.arg, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
+			// #nosec G204 G702 -- Launches the current test binary with arguments from a fixed test table.
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCLIExit$", "--", "--config", "missing-config.yml", tt.arg)
 			cmd.Env = append(os.Environ(), "RADIKRON_TEST_CLI=1")
 			cmd.Dir = t.TempDir()
