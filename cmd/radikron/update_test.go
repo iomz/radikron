@@ -48,7 +48,7 @@ func TestCheckUpdate(t *testing.T) {
 		name, current, latest, mode string
 		want                        []string
 	}{
-		{"newer", "0.10.0", "0.11.0", "enabled", []string{"0.11.0 is available (current: 0.10.0)", "radikron -self-update"}},
+		{"newer", "0.10.0", "0.11.0", "enabled", []string{"0.11.0 is available (current: 0.10.0)", "radikron --self-update"}},
 		{"newer, disabled build", "0.10.0", "0.11.0", "disabled", []string{"is available", "Self-update is disabled"}},
 		{"up to date", "0.11.0", "0.11.0", "enabled", []string{"0.11.0 is up to date"}},
 		{"devel build", "(devel)", "0.11.0", "enabled", []string{"not a release build; the latest release is 0.11.0"}},

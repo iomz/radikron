@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -265,25 +266,24 @@ func runWithDefaults(wg *sync.WaitGroup, configFileName string, done <-chan stru
 }
 
 func main() {
-	// Parse flags
-	conf := flag.String("c", "config.yml", "the config.yml to use.")
-	enableDebug := flag.Bool("d", false, "enable debug mode.")
-	printVersion := flag.Bool("v", false, "print version.")
-	checkForUpdate := flag.Bool("check-update", false, "check for a newer release and exit.")
-	applyUpdate := flag.Bool("self-update", false, "install the latest release and exit.")
-	noUpdateCheck := flag.Bool("no-update-check", false, "do not check for a newer release at startup.")
-	flag.Parse()
+	opts, err := parseOptions(os.Args[1:], os.Stdout, os.Stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
+	if err != nil {
+		os.Exit(2)
+	}
 
 	current := currentVersion()
 
 	// Print version
-	if *printVersion {
+	if opts.version {
 		fmt.Printf("%v\n", current)
 		return
 	}
 
-	if *checkForUpdate || *applyUpdate {
-		if err := runUpdateCommand(*applyUpdate, current); err != nil {
+	if opts.checkUpdate || opts.selfUpdate {
+		if err := runUpdateCommand(opts.selfUpdate, current); err != nil {
 			fmt.Fprintf(os.Stderr, "radikron: %v\n", err)
 			os.Exit(1)
 		}
@@ -291,15 +291,15 @@ func main() {
 	}
 
 	// Enable debug logging
-	if *enableDebug {
+	if opts.debug {
 		log.SetFlags(log.LstdFlags | log.Lshortfile)
 	}
 
 	log.Println("starting radikron")
 
-	if !*noUpdateCheck {
+	if !opts.noUpdateCheck {
 		if src, err := update.NewClient(current); err == nil {
-			go logAvailableUpdate(context.Background(), src, current, *enableDebug)
+			go logAvailableUpdate(context.Background(), src, current, opts.debug)
 		}
 	}
 
@@ -314,7 +314,7 @@ func main() {
 	wg := sync.WaitGroup{}
 	loopDone := make(chan error, 1)
 	go func() {
-		loopDone <- runWithDefaults(&wg, *conf, done)
+		loopDone <- runWithDefaults(&wg, opts.configFile, done)
 	}()
 
 	// Stop scheduling work before waiting for downloads. Waiting on wg while

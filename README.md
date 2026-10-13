@@ -336,10 +336,10 @@ These tags are embedded in both AAC and MP3 files, making it easy to organize an
 
 **Basic Usage**:
 
-Simply run radikron with your configuration file:
+Radikron automatically saves radiko.jp timeshift programs matching your configured rules. Run it with your configuration file:
 
 ```bash
-radikron -c config.yml
+radikron --config config.yml
 ```
 
 By default, radikron will use `$HOME/Downloads/radiko` as the download directory. Temporary files are stored in the system temporary directory.
@@ -357,19 +357,22 @@ The application will:
 
 **Command-Line Options**:
 
-- **`-c <file>`**: Specify the configuration file (default: `config.yml`)
-- **`-d`**: Enable debug mode with detailed logging
-- **`-v`**: Print version information
-- **`-check-update`**: Check GitHub Releases for a newer version and exit
-- **`-self-update`**: Download the latest release, verify its signature, replace the running executable, and exit
-- **`-no-update-check`**: Skip the update check at startup
+- **`-h`, `--help`**: Show help and exit
+- **`-c`, `--config <file>`**: Read configuration from the specified file (default: `config.yml`)
+- **`-d`, `--debug`**: Include source locations and update-check errors in logs
+- **`-v`, `--version`**: Print version and exit
+- **`--check-update`**: Check for a newer GitHub release and exit
+- **`--self-update`**: Download the latest release, verify its signature, replace the running executable, and exit
+- **`--no-update-check`**: Skip the startup update check
+
+Existing single-hyphen options, including `-check-update`, `-self-update`, and `-no-update-check`, remain supported.
 
 **Updates**:
 
 At startup, radikron checks GitHub Releases once and logs a line when a newer version exists.
-It never installs anything on its own; run `radikron -self-update` to update, then restart radikron.
+It never installs anything on its own; run `radikron --self-update` to update, then restart radikron.
 The update is installed only if its archive's `.sig` verifies against the release key built into radikron (see [Verifying Downloads](#verifying-downloads)).
-Docker images disable `-self-update`; pull a new image instead.
+Docker images disable `--self-update`; pull a new image instead.
 
 **Running as a Service**:
 
@@ -400,13 +403,27 @@ For detailed GUI setup and development instructions, see the [GUI README](cmd/ra
 
 [![docker image size](https://ghcr-badge.egpl.dev/iomz/radikron/size)](https://github.com/iomz/radikron/pkgs/container/radikron)
 
-By default, it mounts `./config.yml` and `./radiko` to the container.
+Docker Compose reads `compose.yaml`. It mounts `./config.yml` read-only and stores downloads in `./radiko`. Create the configuration file and download directory before starting:
+
+```console
+cp config.yml.template config.yml
+mkdir -p radiko
+```
+
+Edit `config.yml` to set your rules. Keep `downloads: /radiko` for the container. The container runs as UID/GID `1000:1000` by default; ensure that user can write to `./radiko`. To use your host UID/GID instead:
+
+```console
+export RADIKRON_UID=$(id -u)
+export RADIKRON_GID=$(id -g)
+```
+
+Start the service:
 
 ```console
 docker compose up
 ```
 
-To update, pull the new image and recreate the container (`-self-update` is disabled in the image):
+To update, pull the new image and recreate the container (`--self-update` is disabled in the image):
 
 ```console
 docker compose pull

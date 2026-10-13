@@ -1,0 +1,18 @@
+services:
+  radikron:
+    build: .
+    image: ghcr.io/iomz/radikron:latest
+    restart: unless-stopped
+    user: "${RADIKRON_UID:-1000}:${RADIKRON_GID:-1000}"
+    command: ["--config", "/app/config.yml"]
+    init: true
+    volumes:
+      - type: bind
+        source: ./config.yml
+        target: /app/config.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./radiko
+        target: /radiko
