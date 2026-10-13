@@ -12,20 +12,12 @@ jobs:
         include:
           - os: macos-latest
             goos: darwin
-            goarch: amd64
-            platform: macOS_Intel
-          - os: macos-latest
-            goos: darwin
             goarch: arm64
             platform: macOS_Apple_Silicon
           - os: windows-latest
             goos: windows
             goarch: amd64
             platform: Windows_x64
-          - os: windows-latest
-            goos: windows
-            goarch: arm64
-            platform: Windows_ARM64
     runs-on: ${{ matrix.os }}
     env:
       GO111MODULE: on
@@ -119,15 +111,10 @@ jobs:
             echo "Checking for macOS build output..."
             ls -la bin/ || echo "bin/ does not exist"
             if [ -d "bin/Radikron.app" ]; then
-              case "${{ matrix.goarch }}" in
-                amd64) expected_arch=x86_64 ;;
-                arm64) expected_arch=arm64 ;;
-                *) echo "Unsupported macOS architecture: ${{ matrix.goarch }}"; exit 1 ;;
-              esac
               app_binary="bin/Radikron.app/Contents/MacOS/radikron-gui"
               actual_arch=$(lipo -archs "$app_binary")
-              if [ "$actual_arch" != "$expected_arch" ]; then
-                echo "Expected $expected_arch app binary, got $actual_arch"
+              if [ "$actual_arch" != "${{ matrix.goarch }}" ]; then
+                echo "Expected ${{ matrix.goarch }} app binary, got $actual_arch"
                 exit 1
               fi
               codesign --force --deep --sign - bin/Radikron.app
@@ -252,15 +239,23 @@ jobs:
             exit 1
           fi
           key_file="$RUNNER_TEMP/release-signing-key.pem"
-          trap 'rm -f "$key_file"' EXIT
+          sig_file="$RUNNER_TEMP/asset.sig"
+          trap 'rm -f "$key_file" "$sig_file"' EXIT
           (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key_file")
-          for asset in release-assets/*; do
+          # signatures.txt lists every asset's signature, one
+          # "<base64 signature>  <asset>" line each, for the updaters
+          # (internal/releasekey).
+          : > "$RUNNER_TEMP/signatures.txt"
+          cd release-assets
+          for asset in *; do
             # ECDSA P-256 over SHA-256 of the asset, DER-encoded
-            openssl dgst -sha256 -sign "$key_file" -out "$asset.sig" "$asset"
+            openssl dgst -sha256 -sign "$key_file" -out "$sig_file" "$asset"
             # Fail if the secret does not match the public key shipped in the binaries
-            openssl dgst -sha256 -verify internal/releasekey/public_key.pem \
-              -signature "$asset.sig" "$asset"
+            openssl dgst -sha256 -verify "$GITHUB_WORKSPACE/internal/releasekey/public_key.pem" \
+              -signature "$sig_file" "$asset"
+            printf '%s  %s\n' "$(base64 -w0 "$sig_file")" "$asset" >> "$RUNNER_TEMP/signatures.txt"
           done
+          mv "$RUNNER_TEMP/signatures.txt" signatures.txt
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -269,3 +264,33 @@ jobs:
           tag_name: ${{ github.event.release.tag_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add download guide to the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # The asset list is long and the names differ only by platform, so
+          # the notes start with a table that names each download in plain words.
+          marker="<!-- download-guide -->"
+          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body)
+          case "$body" in *"$marker"*) exit 0 ;; esac
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          link() { printf '[`%s`](%s/%s)' "$1" "$base" "$1"; }
+          {
+            echo "$marker"
+            echo "## Which file do I need?"
+            echo
+            echo "| You have | App (GUI) | Command line (CLI) |"
+            echo "|---|---|---|"
+            echo "| Mac with Apple Silicon (M1 or later) | $(link radikron-gui_darwin_arm64-installer.dmg) | $(link radikron_Darwin_arm64.tar.gz) |"
+            echo "| Windows PC (64-bit) | $(link radikron-gui_windows_amd64.exe) | $(link radikron_Windows_x86_64.zip) |"
+            echo "| Linux (x86-64) | – | $(link radikron_Linux_x86_64.tar.gz) |"
+            echo "| Linux (ARM64, such as Raspberry Pi) | – | $(link radikron_Linux_arm64.tar.gz) |"
+            echo
+            echo "\`checksums.txt\` and \`signatures.txt\` let you verify a download; see [Verifying Downloads](https://github.com/$GITHUB_REPOSITORY#verifying-downloads)."
+            echo "The \`.app.zip\` file is what the app downloads to update itself."
+            echo
+            printf '%s\n' "$body"
+          } > "$RUNNER_TEMP/notes.md"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"

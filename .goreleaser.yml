@@ -23,10 +23,12 @@ builds:
     goarch:
       - amd64
       - arm64
-      - 386
+    # Releases cover Apple Silicon Macs and x86-64 Windows only.
     ignore:
       - goos: darwin
-        goarch: 386
+        goarch: amd64
+      - goos: windows
+        goarch: arm64
 
 archives:
   - id: radikron-cli
@@ -40,7 +42,6 @@ archives:
       {{ .ProjectName }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
 
 # The release workflow writes one checksums.txt covering CLI and GUI assets.

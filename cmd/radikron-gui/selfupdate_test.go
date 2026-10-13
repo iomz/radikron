@@ -8,8 +8,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,23 +23,26 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
-// releaseAssetNames mirrors the assets of a real release (v0.12.1).
+// releaseAssetNames mirrors the assets release.yml publishes (v0.16.0).
 var releaseAssetNames = []string{
 	"checksums.txt",
+	"signatures.txt",
 	"radikron_Darwin_arm64.tar.gz",
-	"radikron_Darwin_x86_64.tar.gz",
+	"radikron_Linux_arm64.tar.gz",
+	"radikron_Linux_x86_64.tar.gz",
 	"radikron_Windows_x86_64.zip",
-	"radikron-gui_darwin_amd64-installer.dmg",
-	"radikron-gui_darwin_amd64-installer.dmg.sig",
-	"radikron-gui_darwin_amd64.app.zip",
-	"radikron-gui_darwin_amd64.app.zip.sig",
 	"radikron-gui_darwin_arm64-installer.dmg",
 	"radikron-gui_darwin_arm64.app.zip",
-	"radikron-gui_darwin_arm64.app.zip.sig",
 	"radikron-gui_windows_amd64.exe",
-	"radikron-gui_windows_amd64.exe.sig",
-	"radikron-gui_windows_arm64.exe",
-	"radikron-gui_windows_arm64.exe.sig",
+}
+
+// signaturesFile returns a signatures.txt line for each name and signature.
+func signaturesFile(sigs map[string][]byte) []byte {
+	var buf bytes.Buffer
+	for name, sig := range sigs {
+		fmt.Fprintf(&buf, "%s  %s\n", base64.StdEncoding.EncodeToString(sig), name)
+	}
+	return buf.Bytes()
 }
 
 func TestGUIVersionMatchesFrontendPackage(t *testing.T) {
@@ -70,9 +75,9 @@ func TestMatchGUIAsset(t *testing.T) {
 		want         string
 	}{
 		{"darwin", "arm64", "radikron-gui_darwin_arm64.app.zip"},
-		{"darwin", "amd64", "radikron-gui_darwin_amd64.app.zip"},
+		{"darwin", "amd64", ""},
 		{"windows", "amd64", "radikron-gui_windows_amd64.exe"},
-		{"windows", "arm64", "radikron-gui_windows_arm64.exe"},
+		{"windows", "arm64", ""},
 		{"linux", "amd64", ""},
 		{"windows", "386", ""},
 	}
@@ -90,17 +95,20 @@ func TestMatchGUIAsset(t *testing.T) {
 
 func TestCanSelfUpdate(t *testing.T) {
 	tests := []struct {
-		goos, exe string
-		want      bool
+		goos, goarch, exe string
+		want              bool
 	}{
-		{"darwin", "/Applications/Radikron.app/Contents/MacOS/radikron-gui", true},
-		{"darwin", "/Users/me/radikron/cmd/radikron-gui/bin/radikron-gui", false},
-		{"windows", `C:\Users\me\radikron-gui.exe`, true},
-		{"linux", "/usr/local/bin/radikron-gui", false},
+		{"darwin", "arm64", "/Applications/Radikron.app/Contents/MacOS/radikron-gui", true},
+		{"darwin", "arm64", "/Users/me/radikron/cmd/radikron-gui/bin/radikron-gui", false},
+		// Releases no longer ship the GUI for Intel Macs or Windows on ARM.
+		{"darwin", "amd64", "/Applications/Radikron.app/Contents/MacOS/radikron-gui", false},
+		{"windows", "amd64", `C:\Users\me\radikron-gui.exe`, true},
+		{"windows", "arm64", `C:\Users\me\radikron-gui.exe`, false},
+		{"linux", "amd64", "/usr/local/bin/radikron-gui", false},
 	}
 	for _, tt := range tests {
-		if got := canSelfUpdate(tt.goos, "amd64", tt.exe); got != tt.want {
-			t.Errorf("canSelfUpdate(%s, %s) = %v, want %v", tt.goos, tt.exe, got, tt.want)
+		if got := canSelfUpdate(tt.goos, tt.goarch, tt.exe); got != tt.want {
+			t.Errorf("canSelfUpdate(%s/%s, %s) = %v, want %v", tt.goos, tt.goarch, tt.exe, got, tt.want)
 		}
 	}
 }
@@ -153,8 +161,11 @@ func testProvider(t *testing.T, srv *httptest.Server) *signedProvider {
 func TestSignedProviderAttachesSignature(t *testing.T) {
 	const asset = "radikron-gui_windows_amd64.exe"
 	srv := releaseServer(t, "v9.0.0", releaseAssetNames, map[string][]byte{
-		asset:          []byte("binary"),
-		asset + ".sig": []byte("signature"),
+		asset: []byte("binary"),
+		"signatures.txt": signaturesFile(map[string][]byte{
+			"radikron-gui_darwin_arm64.app.zip": []byte("other"),
+			asset:                               []byte("signature"),
+		}),
 	})
 	rel, err := testProvider(t, srv).Check(context.Background(), updater.CheckRequest{
 		CurrentVersion: "0.12.1", Platform: "windows", Arch: "amd64",
@@ -172,12 +183,22 @@ func TestSignedProviderAttachesSignature(t *testing.T) {
 
 func TestSignedProviderRejectsMissingSignature(t *testing.T) {
 	const asset = "radikron-gui_windows_amd64.exe"
-	srv := releaseServer(t, "v9.0.0", []string{asset}, map[string][]byte{asset: []byte("binary")})
-	_, err := testProvider(t, srv).Check(context.Background(), updater.CheckRequest{
-		CurrentVersion: "0.12.1", Platform: "windows", Arch: "amd64",
-	})
-	if err == nil || !strings.Contains(err.Error(), "signature") {
-		t.Fatalf("Check error = %v, want a missing signature error", err)
+	for name, files := range map[string]map[string][]byte{
+		"no signatures.txt": {asset: []byte("binary")},
+		"asset not listed": {
+			asset:            []byte("binary"),
+			"signatures.txt": signaturesFile(map[string][]byte{"checksums.txt": []byte("signature")}),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := releaseServer(t, "v9.0.0", []string{asset, "signatures.txt"}, files)
+			_, err := testProvider(t, srv).Check(context.Background(), updater.CheckRequest{
+				CurrentVersion: "0.12.1", Platform: "windows", Arch: "amd64",
+			})
+			if err == nil || !strings.Contains(err.Error(), "signature") {
+				t.Fatalf("Check error = %v, want a missing signature error", err)
+			}
+		})
 	}
 }
 
@@ -231,9 +252,9 @@ func TestUpdaterVerifiesReleaseSignature(t *testing.T) {
 		{"tampered", []byte("tampered radikron-gui build"), true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := releaseServer(t, "v9.0.0", []string{asset, asset + ".sig"}, map[string][]byte{
-				asset:          tt.served,
-				asset + ".sig": sig,
+			srv := releaseServer(t, "v9.0.0", []string{asset, "signatures.txt"}, map[string][]byte{
+				asset:            tt.served,
+				"signatures.txt": signaturesFile(map[string][]byte{asset: sig}),
 			})
 			u := updater.New(testHost{})
 			err := u.Init(updater.Config{

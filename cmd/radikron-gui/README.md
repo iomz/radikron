@@ -154,7 +154,7 @@ cmd/radikron-gui/
 ### Updates
 
 `selfupdate.go` configures the Wails v3 updater (`app.Updater`) against GitHub Releases.
-The Wails GitHub provider only reads checksum files, so `signedProvider` wraps it and attaches each asset's `.sig` as an `ecdsa-p256` signature, which the updater verifies against `internal/releasekey/public_key.pem` before installing.
+The Wails GitHub provider only reads checksum files, so `signedProvider` wraps it and attaches the update asset's signature from the release's `signatures.txt` as an `ecdsa-p256` signature, which the updater verifies against `internal/releasekey/public_key.pem` before installing.
 The running version is `info.version` from `build/config.yml`, embedded at build time.
 
 ## Integration with Core Package

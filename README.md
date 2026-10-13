@@ -142,7 +142,7 @@ If you're building the GUI version from source (Linux users), you'll also need:
 - **Wails v3 CLI**: Install with `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28`
 - **GTK4 and WebKitGTK 6.0** development packages on Linux: `sudo apt install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev` on Ubuntu
 
-**Note**: macOS and Windows users can download pre-built binaries and don't need these build tools.
+**Note**: Apple Silicon Mac and x64 Windows users can download pre-built binaries and don't need these build tools.
 
 ## Installation
 
@@ -154,16 +154,20 @@ Install the command-line version:
 go install github.com/iomz/radikron/cmd/radikron@latest
 ```
 
+Or download a pre-built archive for Apple Silicon Macs, x64 Windows, or x86-64 or ARM64 Linux from the [Releases page](https://github.com/iomz/radikron/releases).
+
 ### GUI Version
 
 #### macOS and Windows Users
 
-Pre-built binaries are available for macOS and Windows. Download the latest release from the [Releases page](https://github.com/iomz/radikron/releases):
+Pre-built binaries are available for Apple Silicon Macs and 64-bit Windows. Download the latest release from the [Releases page](https://github.com/iomz/radikron/releases); the table at the top of each release names the file for your computer:
 
-- **macOS**: Download `radikron-gui_darwin_arm64-installer.dmg` (Apple Silicon) or `radikron-gui_darwin_amd64-installer.dmg` (Intel)
-- **Windows**: Download `radikron-gui_windows_amd64.exe` (x64) or `radikron-gui_windows_arm64.exe` (ARM64)
+- **macOS** (Apple Silicon): Download `radikron-gui_darwin_arm64-installer.dmg`
+- **Windows** (x64): Download `radikron-gui_windows_amd64.exe`
 
-The `radikron-gui_darwin_*.app.zip` assets contain the same app and are intended for automatic updates.
+Releases from v0.16.0 on no longer include builds for Intel Macs, Windows on ARM, or 32-bit systems.
+Windows 11 on ARM runs the x64 build through emulation.
+The `radikron-gui_darwin_arm64.app.zip` asset contains the same app and is intended for automatic updates.
 The macOS app requires macOS 12 or later.
 
 macOS downloads are ad-hoc signed but not notarized. Gatekeeper may require manual approval: only if you downloaded Radikron from the official Releases page, Control-click `Radikron.app`, choose **Open**, then confirm **Open**. The app is not signed with a paid Apple Developer ID.
@@ -172,7 +176,7 @@ macOS downloads are ad-hoc signed but not notarized. Gatekeeper may require manu
 
 On macOS and Windows, the GUI checks for a new release when it starts and once a day while it runs, and shows a notification when one is available.
 Choose **Update…** in the notification, the update button in the header, or **Radikron > Check for Updates…** on macOS to open the update window.
-The window downloads the update and keeps it only if its `.sig` verifies against the release key built into Radikron (see [Verifying Downloads](#verifying-downloads)).
+The window downloads the update and keeps it only if its signature in `signatures.txt` verifies against the release key built into Radikron (see [Verifying Downloads](#verifying-downloads)).
 Choose **Restart & Apply** to restart into the new version, or **Close** to keep running the current one.
 The background check never downloads anything.
 On macOS, the app updates itself only when it runs as `Radikron.app` from a writable location such as `/Applications`, not from the mounted DMG.
@@ -180,16 +184,17 @@ Builds from source on Linux do not update themselves.
 
 #### Verifying Downloads
 
-Every release asset has a matching `.sig` file: an ECDSA P-256 signature over the asset's SHA-256 digest.
-Verify a download against the public key in this repository:
+Every release has a `signatures.txt` that lists each asset's signature, one `<base64 signature>  <asset>` line each: an ECDSA P-256 signature over the asset's SHA-256 digest.
+Download `signatures.txt` next to the asset and verify the asset against the public key in this repository:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/iomz/radikron/main/internal/releasekey/public_key.pem
 asset="radikron-gui_darwin_arm64-installer.dmg"
+grep "  $asset\$" signatures.txt | cut -d' ' -f1 | base64 -d > "$asset.sig"
 openssl dgst -sha256 -verify public_key.pem -signature "$asset.sig" "$asset"
 ```
 
-`checksums.txt` lists the SHA-256 digests of all assets and is signed the same way.
+`checksums.txt` lists the SHA-256 digests of all other assets, and `signatures.txt` signs it too.
 
 #### Linux Users
 
@@ -371,7 +376,7 @@ Existing single-hyphen options, including `-check-update`, `-self-update`, and `
 
 At startup, radikron checks GitHub Releases once and logs a line when a newer version exists.
 It never installs anything on its own; run `radikron --self-update` to update, then restart radikron.
-The update is installed only if its archive's `.sig` verifies against the release key built into radikron (see [Verifying Downloads](#verifying-downloads)).
+The update is installed only if its archive's signature in `signatures.txt` verifies against the release key built into radikron (see [Verifying Downloads](#verifying-downloads)).
 Docker images disable `--self-update`; pull a new image instead.
 
 **Running as a Service**:
