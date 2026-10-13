@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import { useProgramSearch } from '@/hooks/useProgramSearch';
@@ -23,6 +23,8 @@ function searchDays(now: Date): string[] {
     return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
   });
 }
+
+const htmlClass = 'leading-relaxed text-foreground/85 [&_a]:text-signal [&_a]:underline';
 
 // SEARCH_DELAY is how long typing must pause before the results update.
 const SEARCH_DELAY = 400;
@@ -271,7 +273,28 @@ export const Search: React.FC = () => {
               {open && (
                 <div className="flex flex-col gap-3 px-5 pb-[18px]">
                   {prog.Pfm && <span className="text-muted-foreground">Host: {prog.Pfm}</span>}
-                  {prog.Desc && <SanitizedHTML html={prog.Desc} className="leading-relaxed text-foreground/85 [&_a]:text-signal [&_a]:underline" />}
+                  {/* Show every field the keyword searches, so the user can see why a program matched. */}
+                  {(prog.Desc || prog.Info) && (
+                    <details className="group">
+                      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                        Description
+                        <ChevronDown aria-hidden="true" className="size-4 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="mt-2 flex flex-col gap-3">
+                        {prog.Desc && <SanitizedHTML html={prog.Desc} className={htmlClass} />}
+                        {prog.Info && <SanitizedHTML html={prog.Info} className={htmlClass} />}
+                      </div>
+                    </details>
+                  )}
+                  {prog.Tags && prog.Tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {prog.Tags.map((tag) => (
+                        <span key={tag} className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2.5 pt-1">
                     {action !== 'expired' && !scheduled && (
                       <button type="button" className={primaryButton} onClick={() => openSave(prog)}>
