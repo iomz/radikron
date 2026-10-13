@@ -6,7 +6,7 @@ import { downloadsList, formatAirTime } from '@/lib/downloads';
 import { describeRule, timestampRuleName, ruleActivity, ruleProblem, weekdays, windowOptions } from '@/lib/rules';
 import type { ScreenId } from '@/lib/navigation';
 import { RulePreview } from '@/components/RulePreview';
-import { SelectField, fieldClass, primaryButton, secondaryButton } from '@/components/form';
+import { SelectField, dangerButton, fieldClass, primaryButton, secondaryButton } from '@/components/form';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import * as App from '../../../bindings/github.com/iomz/radikron/cmd/radikron-gui/app';
@@ -415,7 +415,7 @@ export const Rules: React.FC<{ onNavigate: (screen: ScreenId) => void }> = ({ on
                   <button type="button" className={secondaryButton} onClick={() => setConfirmDelete(false)} disabled={busy}>
                     Keep
                   </button>
-                  <button type="button" className={cn(primaryButton, 'bg-state-failed text-white')} onClick={() => void remove()} disabled={busy}>
+                  <button type="button" className={dangerButton} onClick={() => void remove()} disabled={busy}>
                     {busy ? 'Deleting…' : 'Delete'}
                   </button>
                 </span>

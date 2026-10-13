@@ -8,6 +8,10 @@ export const fieldClass =
 export const primaryButton =
   'min-h-11 cursor-pointer rounded-[10px] border-none bg-primary px-[18px] font-semibold text-primary-foreground disabled:cursor-default disabled:opacity-50';
 
+// dangerButton confirms an action that deletes or forgets something.
+export const dangerButton =
+  'min-h-11 cursor-pointer rounded-[10px] border-none bg-danger px-[18px] font-semibold text-danger-foreground hover:brightness-110 disabled:cursor-default disabled:opacity-50';
+
 export const secondaryButton =
   'min-h-11 cursor-pointer rounded-[10px] border border-input bg-transparent px-[18px] text-foreground disabled:cursor-default disabled:opacity-50';
 
