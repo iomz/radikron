@@ -180,6 +180,7 @@ The window downloads the update and keeps it only if its signature in `signature
 Choose **Restart & Apply** to restart into the new version, or **Close** to keep running the current one.
 The background check never downloads anything.
 On macOS, the app updates itself only when it runs as `Radikron.app` from a writable location such as `/Applications`, not from the mounted DMG.
+Versions up to v0.15.x look for a separate `.sig` file per asset and cannot update themselves to v0.16.0; download v0.16.0 manually once.
 Builds from source on Linux do not update themselves.
 
 #### Verifying Downloads
@@ -377,6 +378,7 @@ Existing single-hyphen options, including `-check-update`, `-self-update`, and `
 At startup, radikron checks GitHub Releases once and logs a line when a newer version exists.
 It never installs anything on its own; run `radikron --self-update` to update, then restart radikron.
 The update is installed only if its archive's signature in `signatures.txt` verifies against the release key built into radikron (see [Verifying Downloads](#verifying-downloads)).
+radikron up to v0.15.x looks for a separate `.sig` file per archive and cannot update itself to v0.16.0; download v0.16.0 manually once.
 Docker images disable `--self-update`; pull a new image instead.
 
 **Running as a Service**:
