@@ -42,7 +42,11 @@ func TestTLSVerificationEMudhra(t *testing.T) {
 				"https://dv-g3b-emudhra.we-have-a-problem.com/",
 				"https://dv-g3b-aaa-emudhra.we-have-a-problem.com/",
 			} {
-				resp, err := bounded.Get(endpoint)
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, endpoint, http.NoBody)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, err := bounded.Do(req)
 				if resp != nil {
 					resp.Body.Close()
 				}
@@ -53,7 +57,11 @@ func TestTLSVerificationEMudhra(t *testing.T) {
 				}
 				t.Logf("%s: rejected: %v", endpoint, verificationError)
 			}
-			resp, err := bounded.Get("https://radiko.jp/area")
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://radiko.jp/area", http.NoBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := bounded.Do(req)
 			if err != nil {
 				t.Fatalf("normal HTTPS failed: %v", err)
 			}
