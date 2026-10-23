@@ -47,6 +47,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          pull: true
           push: true
           platforms: "${{ env.platforms }}"
           tags: ${{ steps.meta.outputs.tags }}

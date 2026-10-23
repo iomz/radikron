@@ -137,7 +137,7 @@ Close and reopen Radikron after installing FFmpeg so it inherits the updated `PA
 
 If you're building the GUI version from source (Linux users), you'll also need:
 
-- **Go 1.26+**
+- **Go 1.26.10+** on the 1.26 release line, or **Go 1.27.3+** on the 1.27 release line
 - **Node.js 20+ and pnpm 10+**
 - **Wails v3 CLI**: Install with `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28`
 - **GTK4 and WebKitGTK 6.0** development packages on Linux: `sudo apt install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev` on Ubuntu

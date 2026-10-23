@@ -19,7 +19,7 @@ The GUI provides a user-friendly interface for managing Radikron while keeping t
 
 ### Prerequisites
 
-- Go 1.26+
+- Go 1.26.10+ on the 1.26 release line, or Go 1.27.3+ on the 1.27 release line
 - Node.js 20+
 - pnpm 10+
 - Wails v3 CLI `v3.0.0-beta.28`: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28`
@@ -180,7 +180,7 @@ This ensures:
 
 **Solutions**:
 
-- Ensure Go 1.26+ is installed: `go version`
+- Ensure patched Go 1.26.10+ (or 1.27.3+) is installed: `go version`
 - Verify Wails is properly installed: `wails3 version`
 - Check system dependencies: `wails3 doctor`
 - Reinstall Wails if needed: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28`
