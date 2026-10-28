@@ -9,9 +9,9 @@ info:
   productName: "Radikron" # The name of the application
   productIdentifier: "com.wails.Radikron" # The unique product identifier
   description: "GUI for radikron - automated radio program downloader for radiko" # The application description
-  copyright: "Copyright © 2025" # Copyright text
+  copyright: "Copyright © 2026" # Copyright text
   comments: "GUI for radikron - automated radio program downloader for radiko" # Comments
-  version: "0.16.1" # The application version
+  version: "0.16.2" # The application version
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
   #                               # Should match the name of your .icon file without the extension
   #                               # If not set and Assets.car exists, defaults to "appicon"

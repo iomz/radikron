@@ -479,7 +479,7 @@ func downloadProgram(
 	}
 
 	stage = "saving output file"
-	if err = writeOutputFile(ctx, concatedFile, output); err != nil {
+	if err = writeOutputFile(ctx, concatedFile, output, prog); err != nil {
 		failed(err)
 		return
 	}
@@ -489,11 +489,13 @@ func downloadProgram(
 		return
 	}
 
-	stage = "writing metadata"
-	err = writeID3Tag(output, prog)
-	if err != nil {
-		failed(err)
-		return
+	// M4A tags are written while remuxing; MP3 gets ID3v2 tags afterwards.
+	if output.AudioFormat() == AudioFormatMP3 {
+		stage = "writing metadata"
+		if err = writeID3Tag(output, prog); err != nil {
+			failed(err)
+			return
+		}
 	}
 
 	// Report completion only after final output and metadata are saved.
@@ -502,11 +504,11 @@ func downloadProgram(
 }
 
 // writeOutputFile writes the concatenated file to the output location,
-// handling format conversion (AAC to MP3) if needed.
-func writeOutputFile(ctx context.Context, concatedFile string, output *OutputConfig) error {
+// remuxing AAC into M4A or converting it to MP3.
+func writeOutputFile(ctx context.Context, concatedFile string, output *OutputConfig, prog *Prog) error {
 	switch output.AudioFormat() {
 	case AudioFormatAAC:
-		return moveFile(concatedFile, output.AbsPath())
+		return remuxAACtoM4A(ctx, concatedFile, output.AbsPath(), output.FileBaseName, prog)
 	case AudioFormatMP3:
 		// Limit concurrent encoding operations to prevent resource exhaustion
 		encodingSem <- struct{}{}
@@ -547,29 +549,63 @@ func validateAndCleanupOutputFile(ctx context.Context, output *OutputConfig) boo
 	return false
 }
 
+// remuxAACtoM4A copies the ADTS stream into an MP4 container without
+// re-encoding. MP4 records the exact duration and the HE-AAC configuration,
+// which raw ADTS lacks, and holds the program metadata as MP4 tags.
+func remuxAACtoM4A(ctx context.Context, sourceFile, destFile, title string, prog *Prog) error {
+	args := []string{"-i", sourceFile, "-c", "copy", "-movflags", "+faststart"}
+	args = append(args, m4aMetadataArgs(title, prog)...)
+	return runFFmpeg(ctx, "remux", destFile, args...)
+}
+
+// m4aMetadataArgs mirrors the fields writeID3Tag sets on MP3 files.
+func m4aMetadataArgs(title string, prog *Prog) []string {
+	tags := [][2]string{
+		{"title", title},
+		{"artist", prog.Pfm},
+		{"album", prog.Title},
+		{"comment", prog.Info},
+	}
+	const yearDigits = len("2006")
+	if len(prog.Ft) >= yearDigits {
+		tags = append(tags, [2]string{"date", prog.Ft[:yearDigits]})
+	}
+	if prog.RuleName != "" {
+		tags = append(tags, [2]string{"album_artist", prog.RuleName})
+	}
+	var args []string
+	for _, tag := range tags {
+		args = append(args, "-metadata", tag[0]+"="+tag[1])
+	}
+	return args
+}
+
 // convertAACtoMP3 converts an AAC file to MP3 format using ffmpeg.
 func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
-	// Check if ffmpeg is available
+	// -acodec libmp3lame: use MP3 codec
+	// -b:a: match the source bitrate instead of LAME's 128k default
+	// -ar 44100: sample rate 44.1kHz
+	return runFFmpeg(ctx, "conversion", destFile,
+		"-i", sourceFile,
+		"-acodec", "libmp3lame",
+		"-map_metadata", "0",
+		"-b:a", MP3Bitrate,
+		"-ar", "44100",
+	)
+}
+
+// runFFmpeg runs ffmpeg with args writing to destFile, overwriting it, and
+// removes a partial destFile when ffmpeg fails.
+func runFFmpeg(ctx context.Context, operation, destFile string, args ...string) error {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return fmt.Errorf("ffmpeg not found; install FFmpeg and ensure it is available in PATH: %w", err)
 	}
 
-	// Build ffmpeg command:
-	// -i: input file
-	// -acodec libmp3lame: use MP3 codec
-	// -ar 44100: sample rate 44.1kHz
 	// -y: overwrite output file if it exists
 	// -loglevel error: only show errors
-	cmd := exec.CommandContext(ctx, ffmpegPath,
-		"-i", sourceFile,
-		"-acodec", "libmp3lame",
-		"-map_metadata", "0",
-		"-ar", "44100",
-		"-y",
-		"-loglevel", "error",
-		destFile,
-	)
+	args = append(args, "-y", "-loglevel", "error", destFile)
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	hideFFmpegConsole(cmd)
 
 	// Capture stderr for error messages
@@ -578,9 +614,9 @@ func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 
 	if err := cmd.Run(); err != nil {
 		if removeErr := os.Remove(destFile); removeErr != nil && !os.IsNotExist(removeErr) {
-			return fmt.Errorf("ffmpeg conversion failed: %w (stderr: %s; failed to remove partial output: %v)", err, stderr.String(), removeErr)
+			return fmt.Errorf("ffmpeg %s failed: %w (stderr: %s; failed to remove partial output: %v)", operation, err, stderr.String(), removeErr)
 		}
-		return fmt.Errorf("ffmpeg conversion failed: %w (stderr: %s)", err, stderr.String())
+		return fmt.Errorf("ffmpeg %s failed: %w (stderr: %s)", operation, err, stderr.String())
 	}
 
 	return nil
@@ -935,8 +971,8 @@ func checkConfiguredFoldersForDuplicate(
 		if configuredOutput.AbsPath() == targetPath {
 			continue
 		}
-		if configuredOutput.IsExist() {
-			return true, configuredOutput.AbsPath()
+		if path, ok := configuredOutput.ExistingPath(); ok {
+			return true, path
 		}
 	}
 	return false, ""
@@ -1004,20 +1040,23 @@ func handleDuplicate(
 		return nil
 	}
 	defaultOutput := newOutputConfigFromPath(defaultPath, fileBaseName, fileFormat)
-	if !defaultOutput.IsExist() {
+	existingPath, ok := defaultOutput.ExistingPath()
+	if !ok {
 		return nil
 	}
 
 	// If file exists in default folder and there's a configured folder, move it
+	// under its own name so a legacy .aac recording keeps its extension.
 	if configuredFolder != "" {
-		return handleMoveFromDefaultFolder(ctx, defaultOutput.AbsPath(), output.AbsPath(), output, stationID, title, startTime)
+		movedPath := filepath.Join(output.DirFullPath, filepath.Base(existingPath))
+		return handleMoveFromDefaultFolder(ctx, existingPath, movedPath, output, stationID, title, startTime)
 	}
 
 	// File exists in default folder, no configured folder - skip
 	emitDownloadSkipped(ctx, "already exists", stationID, title, startTime)
 	emitLogMessage(ctx, "info", fmt.Sprintf(
 		"file already exists in default folder, skipping [%s]%s: %s",
-		stationID, title, defaultOutput.AbsPath()))
+		stationID, title, existingPath))
 	return nil
 }
 

@@ -46,7 +46,7 @@ Sometimes we miss our favorite shows on [radiko.jp](https://radiko.jp/) and they
   - [Configuration Options](#configuration-options)
   - [Rule Configuration](#rule-configuration)
   - [Example Configuration](#example-configuration)
-  - [ID3 Tags](#id3-tags)
+  - [Tags](#tags)
 - [Usage](#usage)
   - [CLI Usage](#cli-usage)
   - [GUI Usage](#gui-usage)
@@ -73,8 +73,8 @@ Flexible rules to automatically capture programs using multiple criteria: title/
 ### 📁 Flexible File Organization {#flexible-file-organization}
 
 - Rule-based folder organization with configurable download directories
-- Support for AAC (default) and MP3 formats
-- Automatic ID3 tagging with program metadata
+- Support for AAC (default, saved as `.m4a`) and MP3 formats
+- Automatic tagging with program metadata
 
 ### 🛡️ Intelligent Download Management {#intelligent-download-management}
 
@@ -113,7 +113,7 @@ Pre-built Docker images with all dependencies included, ready for easy deploymen
 
 ### Common Requirements
 
-- **[FFmpeg](https://ffmpeg.org/download.html)**: Required to combine m3u8 chunks to a single AAC file (or convert to MP3). Make sure `ffmpeg` exists in your `$PATH`. On macOS, Radikron also checks standard Homebrew locations (`/opt/homebrew/bin` and `/usr/local/bin`), including for apps launched from Finder.
+- **[FFmpeg](https://ffmpeg.org/download.html)**: Required to combine m3u8 chunks to a single M4A file (or convert to MP3). Make sure `ffmpeg` exists in your `$PATH`. On macOS, Radikron also checks standard Homebrew locations (`/opt/homebrew/bin` and `/usr/local/bin`), including for apps launched from Finder.
   - The [docker image](#try-with-docker) already contains all the requirements including FFmpeg.
 
 ### Installing FFmpeg on Windows
@@ -225,7 +225,7 @@ Create a configuration file (`config.yml`) to define rules for recording. The co
 ### Configuration Options
 
 - **`area-id`**: Your region code (e.g., `JP13` for Tokyo). If unset, defaults to your detected region.
-- **`file-format`**: Output audio format - `aac` (default) or `mp3`.
+- **`file-format`**: Output audio format - `aac` (default) or `mp3`. AAC is saved without re-encoding in an `.m4a` file, so players show the correct length and can seek; `.aac` files from earlier versions still count as downloaded. MP3 is re-encoded at 64 kbps.
 - **`downloads`**: Directory path for downloaded files (default: `$HOME/Downloads/radiko` on all platforms).
 - **`extra-stations`**: List of station IDs to include even if they're not in your region.
 - **`ignore-stations`**: List of station IDs to exclude from monitoring.
@@ -323,9 +323,9 @@ rules:
 
 The base directory for downloads defaults to `$HOME/Downloads/radiko` (cross-platform: `~/Downloads/radiko` on Unix/macOS, `%USERPROFILE%\Downloads\radiko` on Windows). If the home directory cannot be determined, it falls back to `./radiko` in the current working directory.
 
-### ID3 Tags
+### Tags
 
-All downloaded audio files (both AAC and MP3) are automatically tagged with ID3v2 metadata:
+All downloaded audio files are automatically tagged with program metadata (MP4 tags in `.m4a` files, ID3v2 tags in MP3 files):
 
 - **Title**: File base name (format: `YYYY-MM-DD-HHMM_StationID_ProgramTitle`)
 - **Artist**: Program personality/performer (`pfm`)
@@ -334,7 +334,7 @@ All downloaded audio files (both AAC and MP3) are automatically tagged with ID3v
 - **Comment**: Program information (`info`)
 - **Album Artist**: Rule name (if the program matched a rule)
 
-These tags are embedded in both AAC and MP3 files, making it easy to organize and identify your downloaded programs in music players and media libraries.
+These tags are embedded in both M4A and MP3 files, making it easy to organize and identify your downloaded programs in music players and media libraries.
 
 ## Usage
 
@@ -358,7 +358,7 @@ The application will:
 - Fetch program schedules for all monitored stations
 - Match programs against your configured rules
 - Download matching programs automatically
-- Tag files with ID3 metadata
+- Tag files with program metadata
 - Continue monitoring and downloading on a schedule
 
 **Command-Line Options**:
