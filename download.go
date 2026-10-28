@@ -583,11 +583,13 @@ func m4aMetadataArgs(title string, prog *Prog) []string {
 // convertAACtoMP3 converts an AAC file to MP3 format using ffmpeg.
 func convertAACtoMP3(ctx context.Context, sourceFile, destFile string) error {
 	// -acodec libmp3lame: use MP3 codec
+	// -b:a: match the source bitrate instead of LAME's 128k default
 	// -ar 44100: sample rate 44.1kHz
 	return runFFmpeg(ctx, "conversion", destFile,
 		"-i", sourceFile,
 		"-acodec", "libmp3lame",
 		"-map_metadata", "0",
+		"-b:a", MP3Bitrate,
 		"-ar", "44100",
 	)
 }

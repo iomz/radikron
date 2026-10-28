@@ -225,7 +225,7 @@ Create a configuration file (`config.yml`) to define rules for recording. The co
 ### Configuration Options
 
 - **`area-id`**: Your region code (e.g., `JP13` for Tokyo). If unset, defaults to your detected region.
-- **`file-format`**: Output audio format - `aac` (default) or `mp3`. AAC is saved without re-encoding in an `.m4a` file, so players show the correct length and can seek; `.aac` files from earlier versions still count as downloaded.
+- **`file-format`**: Output audio format - `aac` (default) or `mp3`. AAC is saved without re-encoding in an `.m4a` file, so players show the correct length and can seek; `.aac` files from earlier versions still count as downloaded. MP3 is re-encoded at 64 kbps.
 - **`downloads`**: Directory path for downloaded files (default: `$HOME/Downloads/radiko` on all platforms).
 - **`extra-stations`**: List of station IDs to include even if they're not in your region.
 - **`ignore-stations`**: List of station IDs to exclude from monitoring.
