@@ -330,7 +330,7 @@ export const Settings: React.FC = () => {
                 </button>
               </span>
             </Row>
-            <Row label="File format" hint="AAC is what radiko sends. MP3 is converted after each download, which takes longer.">
+            <Row label="File format" hint="AAC is what radiko sends, saved as .m4a. MP3 is converted after each download, which takes longer.">
               <div role="radiogroup" aria-label="File format" className="flex w-fit rounded-[10px] border border-input p-1">
                 {[
                   { id: 'aac', label: 'AAC' },

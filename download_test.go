@@ -492,18 +492,6 @@ func TestWriteID3TagMP3(t *testing.T) {
 	testWriteID3Tag(t, tmpDir, AudioFormatMP3, "test-mp3")
 }
 
-func TestWriteID3TagAAC(t *testing.T) {
-	// Create a temporary directory for test files
-	tmpDir, err := os.MkdirTemp("", "radikron-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Test AAC format
-	testWriteID3Tag(t, tmpDir, AudioFormatAAC, "test-aac")
-}
-
 func testWriteID3Tag(t *testing.T, tmpDir, fileFormat, fileBaseName string) {
 	// Create output config
 	output := &OutputConfig{
@@ -922,7 +910,7 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Test: File doesn't exist
-	output := newOutputConfigFromPath(tmpDir, "nonexistent", AudioFormatAAC)
+	output := newOutputConfigFromPath(tmpDir, "nonexistent", AudioFormatMP3)
 	prog := &Prog{
 		Title: "Test Title",
 		Pfm:   "Test Artist",
@@ -939,13 +927,13 @@ func TestWriteID3Tag_ErrorCases(t *testing.T) {
 	// making it impossible to clean up reliably before t.TempDir() cleanup runs.
 	// The error handling is still tested on other platforms.
 	if runtime.GOOS != osWindows {
-		dirPath := filepath.Join(tmpDir, "dir.aac")
+		dirPath := filepath.Join(tmpDir, "dir.mp3")
 		err = os.MkdirAll(dirPath, DirPermissions)
 		if err != nil {
 			t.Fatalf("Failed to create test directory: %v", err)
 		}
 
-		output2 := newOutputConfigFromPath(tmpDir, "dir", AudioFormatAAC)
+		output2 := newOutputConfigFromPath(tmpDir, "dir", AudioFormatMP3)
 		err = writeID3Tag(output2, prog)
 		if err == nil {
 			t.Error("writeID3Tag should return error when path is a directory")
@@ -1445,25 +1433,6 @@ func TestWriteOutputFile(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Test AAC format (should just rename)
-	sourceFile := filepath.Join(downloadsDir, "source.aac")
-	err = os.WriteFile(sourceFile, []byte("test aac content"), 0600)
-	if err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
-	}
-
-	output := newOutputConfigFromPath(downloadsDir, "test-output", AudioFormatAAC)
-	err = writeOutputFile(ctx, sourceFile, output)
-	if err != nil {
-		t.Errorf("writeOutputFile failed for AAC: %v", err)
-	}
-	if _, err := os.Stat(output.AbsPath()); os.IsNotExist(err) {
-		t.Error("Output file should exist after writeOutputFile for AAC")
-	}
-	if _, err := os.Stat(sourceFile); err == nil {
-		t.Error("Source file should not exist after writeOutputFile (renamed)")
-	}
-
 	// Test MP3 format (requires ffmpeg, skip if not available)
 	sourceFile2 := filepath.Join(downloadsDir, "source2.aac")
 	err = os.WriteFile(sourceFile2, []byte("test aac content for mp3"), 0600)
@@ -1472,7 +1441,7 @@ func TestWriteOutputFile(t *testing.T) {
 	}
 
 	output2 := newOutputConfigFromPath(downloadsDir, "test-output2", AudioFormatMP3)
-	err = writeOutputFile(ctx, sourceFile2, output2)
+	err = writeOutputFile(ctx, sourceFile2, output2, &Prog{})
 	if err != nil {
 		// ffmpeg might not be available, that's okay
 		if !strings.Contains(err.Error(), "ffmpeg not found") {
@@ -1497,7 +1466,7 @@ func TestWriteOutputFile(t *testing.T) {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
 
-	err = writeOutputFile(ctx, sourceFile3, output3)
+	err = writeOutputFile(ctx, sourceFile3, output3, &Prog{})
 	if err == nil {
 		t.Error("writeOutputFile should return error for invalid format")
 	}
@@ -2355,7 +2324,7 @@ func TestConvertAACtoMP3RemovesPartialOutputOnFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	destFile := filepath.Join(tmpDir, "partial.mp3")
 	fakeFFmpeg := filepath.Join(tmpDir, "ffmpeg")
-	script := "#!/bin/sh\nprintf partial > \"${12}\"\nexit 1\n"
+	script := "#!/bin/sh\nfor dest; do :; done\nprintf partial > \"$dest\"\nexit 1\n"
 	if err := os.WriteFile(fakeFFmpeg, []byte(script), 0600); err != nil {
 		t.Fatalf("create fake ffmpeg: %v", err)
 	}
@@ -2542,5 +2511,93 @@ func TestRuleFolderPath(t *testing.T) {
 	}
 	if output.DirFullPath != abs {
 		t.Errorf("NewOutputConfig() with an absolute folder saves to %q, want %q", output.DirFullPath, abs)
+	}
+}
+
+func TestOutputConfigPaths(t *testing.T) {
+	dir := t.TempDir()
+	aac := newOutputConfigFromPath(dir, "prog", AudioFormatAAC)
+	mp3 := newOutputConfigFromPath(dir, "prog", AudioFormatMP3)
+
+	if got, want := aac.AbsPath(), filepath.Join(dir, "prog.m4a"); got != want {
+		t.Errorf("AAC AbsPath() = %q, want %q", got, want)
+	}
+	if got, want := mp3.AbsPath(), filepath.Join(dir, "prog.mp3"); got != want {
+		t.Errorf("MP3 AbsPath() = %q, want %q", got, want)
+	}
+	if aac.IsExist() {
+		t.Fatal("IsExist() = true before any file exists")
+	}
+
+	legacy := filepath.Join(dir, "prog.aac")
+	if err := os.WriteFile(legacy, []byte("adts"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if path, ok := aac.ExistingPath(); !ok || path != legacy {
+		t.Errorf("ExistingPath() = %q, %v; want legacy %q", path, ok, legacy)
+	}
+	if mp3.IsExist() {
+		t.Error("MP3 output should not treat a legacy .aac file as existing")
+	}
+
+	if err := os.WriteFile(aac.AbsPath(), []byte("mp4"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if path, _ := aac.ExistingPath(); path != aac.AbsPath() {
+		t.Errorf("ExistingPath() = %q, want %q to take precedence", path, aac.AbsPath())
+	}
+}
+
+func TestM4AMetadataArgs(t *testing.T) {
+	prog := &Prog{Title: "Show", Pfm: "Host", Ft: "20230605130000", Info: "About", RuleName: "rule"}
+	got := m4aMetadataArgs("base", prog)
+	want := []string{
+		"-metadata", "title=base",
+		"-metadata", "artist=Host",
+		"-metadata", "album=Show",
+		"-metadata", "comment=About",
+		"-metadata", "date=2023",
+		"-metadata", "album_artist=rule",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("m4aMetadataArgs() = %q, want %q", got, want)
+	}
+}
+
+func TestWriteOutputFile_RemuxesAACToM4A(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not available")
+	}
+	ffprobe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe not available")
+	}
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "concated.aac")
+	gen := exec.CommandContext(t.Context(), ffmpeg, "-loglevel", "error", "-f", "lavfi", "-i", "sine=f=440:d=2",
+		"-c:a", "aac", "-f", "adts", source)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Fatalf("generate ADTS: %v: %s", err, out)
+	}
+
+	output := newOutputConfigFromPath(dir, "prog", AudioFormatAAC)
+	prog := &Prog{Title: "Show", Pfm: "Host", Ft: "20230605130000", Info: "About", RuleName: "rule"}
+	if err := writeOutputFile(context.Background(), source, output, prog); err != nil {
+		t.Fatalf("writeOutputFile() error = %v", err)
+	}
+
+	probe := exec.CommandContext(t.Context(), ffprobe, "-v", "error",
+		"-show_entries", "format=format_name:format_tags=title,album,album_artist",
+		"-of", "default=noprint_wrappers=1", output.AbsPath())
+	out, err := probe.Output()
+	if err != nil {
+		t.Fatalf("ffprobe: %v", err)
+	}
+	for _, want := range []string{"mp4", "TAG:title=prog", "TAG:album=Show", "TAG:album_artist=rule"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("ffprobe output missing %q:\n%s", want, out)
+		}
 	}
 }

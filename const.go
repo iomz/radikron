@@ -5,6 +5,8 @@ const (
 	AudioFormatAAC = "aac"
 	// AudioFormatMP3 is the converted output format.
 	AudioFormatMP3 = "mp3"
+	// FileExtM4A is the file extension for AAC recordings.
+	FileExtM4A = "m4a"
 
 	// BufferMinutes for fetching the playlist.m3u8 chunks
 	BufferMinutes = 5
